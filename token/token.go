@@ -11,7 +11,6 @@ const (
 	INT = "INT"
 	FLOAT = "FLOAT"
 
-
 	// Operators
 	ASSIGN = "<<"
 	
@@ -39,7 +38,7 @@ const (
 
 	// Keywords
 	FUNCTION = "FUNCTION"
-	LET = "LET"
+	VAR = "VAR"
 	TRUE = "TRUE"
 	FALSE = "FALSE"
 	IF = "IF"
@@ -54,7 +53,7 @@ type Token struct {
 
 var keywords = map[string]TokenType{
 	"fct":  FUNCTION,
-	"var": LET,
+	"var": VAR,
 	"t": TRUE,
 	"f": FALSE,
 	"if": IF,
