@@ -1,6 +1,6 @@
 package lexer
 
-import "../token"
+import ("../token")
 
 type Lexer struct{
 	input string
@@ -30,12 +30,15 @@ func (l *Lexer) NextToken() token.Token {
 
 	l.skipWhitespace()
 
+
 	switch l.ch {
 	case '<':
 		if l.peekChar() == '<' {
 			ch := l.ch
 			l.readChar()
 			tok = token.Token{Type: token.ASSIGN, Literal: string(ch) + string(l.ch)}
+			l.readChar()
+			return tok
 		} else {
 			tok = newToken(token.LT, l.ch)
 		}
