@@ -3,7 +3,7 @@ package lexer
 import (
 	"testing"
 
-	"../token"
+	"vaja/token"
 )
 
 func TestNextToken(t *testing.T) {
@@ -81,7 +81,6 @@ func TestNextToken(t *testing.T) {
 		{token.SEMICOLON, ";"},
 		{token.RBRACE, "}"},
 		{token.EOF, ""},
-
 	}
 
 	l := New(input)

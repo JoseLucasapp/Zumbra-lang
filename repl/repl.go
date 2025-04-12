@@ -1,11 +1,12 @@
 package repl
 
-import(
+import (
 	"bufio"
 	"fmt"
 	"io"
-	"../lexer"
-	"../token"
+
+	"vaja/lexer"
+	"vaja/token"
 )
 
 const PROMPT = ">> "
@@ -16,7 +17,7 @@ func Start(in io.Reader, out io.Writer) {
 	for {
 		fmt.Printf(PROMPT)
 		scanned := scanner.Scan()
-		if !scanned{
+		if !scanned {
 			return
 		}
 

@@ -1,10 +1,10 @@
 package main
 
-import(
+import (
 	"fmt"
 	"os"
 	"os/user"
-	"./repl"
+	"vaja/repl"
 )
 
 func main() {
