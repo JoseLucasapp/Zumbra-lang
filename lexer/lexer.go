@@ -81,14 +81,6 @@ func (l *Lexer) NextToken() token.Token {
 		} else {
 			tok = newToken(token.BANG, l.ch)
 		}
-	case 'c':
-		if l.peekChar() == '/' {
-			ch := l.ch
-			l.readChar()
-			tok = token.Token{Type: token.COMMENT, Literal: string(ch) + string(l.ch)}
-		} else {
-			tok = newToken(token.ILLEGAL, l.ch)
-		}
 	case '*':
 		if l.peekChar() == '*' {
 			ch := l.ch
