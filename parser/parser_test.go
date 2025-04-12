@@ -2,9 +2,10 @@ package parser
 
 import (
 	"testing"
-	"../ast"
-	"../lexer"
-	"../token"
+
+	"vaja/ast"
+	"vaja/lexer"
+	"vaja/token"
 )
 
 func TestVarStatements(t *testing.T) {
@@ -17,13 +18,15 @@ func TestVarStatements(t *testing.T) {
 	p := New(l)
 	program := p.ParseProgram()
 
+	checkParserErrors(t, p)
+
 	if program == nil {
 		t.Fatalf("ParseProgram() returned nil")
 	}
 
 	if len(program.Statements) != 3 {
 		t.Fatalf("program.Statements does not contain 3 statements. got=%d",
-		len(program.Statements))
+			len(program.Statements))
 	}
 
 	tests := []struct {
@@ -34,7 +37,7 @@ func TestVarStatements(t *testing.T) {
 		{"foobar"},
 	}
 	for i, tt := range tests {
-		
+
 		if program.Statements[i] == nil {
 			t.Fatalf("Statement %d is nil", i)
 		}
@@ -43,7 +46,7 @@ func TestVarStatements(t *testing.T) {
 		if !testVarStatement(t, stmt, tt.expectedIdentifier) {
 			return
 		}
-		
+
 	}
 }
 func testVarStatement(t *testing.T, s ast.Statement, name string) bool {
@@ -66,7 +69,7 @@ func testVarStatement(t *testing.T, s ast.Statement, name string) bool {
 		t.Errorf("s.Name not '%s'. got=%s", name, varStmt.Name)
 		return false
 	}
-	
+
 	return true
 }
 func TestVarStatements2(t *testing.T) {
@@ -80,5 +83,48 @@ func TestVarStatements2(t *testing.T) {
 	// Debug: veja se o "var" vira VAR mesmo
 	for tok := l.NextToken(); tok.Type != token.EOF; tok = l.NextToken() {
 		t.Logf("TOKEN: Type=%s, Literal=%s", tok.Type, tok.Literal)
+	}
+}
+
+func checkParserErrors(t *testing.T, p *Parser) {
+	errors := p.Errors()
+	if len(errors) == 0 {
+		return
+	}
+
+	t.Errorf("parser has %d errors", len(errors))
+	for _, msg := range errors {
+		t.Errorf("parser error: %q", msg)
+	}
+	t.FailNow()
+}
+
+func TestReturnStatements(t *testing.T) {
+	input := `
+		return 5;
+		return 10;
+		return 838383;
+	`
+	l := lexer.New(input)
+	p := New(l)
+	program := p.ParseProgram()
+
+	checkParserErrors(t, p)
+
+	if len(program.Statements) != 3 {
+		t.Fatalf("program.Statements does not contain 3 statements. got=%d",
+			len(program.Statements))
+	}
+
+	for _, stmt := range program.Statements {
+		returnStmt, ok := stmt.(*ast.ReturnStatement)
+		if !ok {
+			t.Errorf("stmt not *ast.returnStatement. got=%T", stmt)
+			continue
+		}
+		if returnStmt.TokenLiteral() != "return" {
+			t.Errorf("returnStmt.TokenLiteral not 'return'. got=%q",
+				returnStmt.TokenLiteral())
+		}
 	}
 }
