@@ -7,9 +7,10 @@ const (
 	EOF     = "EOF"
 
 	// Identifiers
-	IDENT = "IDENT"
-	INT   = "INT"
-	FLOAT = "FLOAT"
+	IDENT  = "IDENT"
+	INT    = "INT"
+	FLOAT  = "FLOAT"
+	STRING = "STRING"
 
 	// Operators
 	ASSIGN = "<<"
