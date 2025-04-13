@@ -24,6 +24,8 @@ const (
 	MODULE    = "%"
 	LT        = "<"
 	GT        = ">"
+	LTE       = "<="
+	GTE       = ">="
 	POWER     = "**"
 	COMMENT   = "c/"
 
