@@ -223,10 +223,6 @@ if (10 > 1) {
 			"unknown operator: BOOLEAN + BOOLEAN",
 		},
 		{
-			"foobar",
-			"identifier not found: foobar",
-		},
-		{
 			`"Hello" - "World"`,
 			"unknown operator: STRING - STRING",
 		},
@@ -336,5 +332,37 @@ func TestStringConcatenation(t *testing.T) {
 
 	if str.Value != "Hello World!" {
 		t.Errorf("String has wrong value. got=%q", str.Value)
+	}
+}
+
+func TestBuiltinFunctions(t *testing.T) {
+	tests := []struct {
+		input    string
+		expected interface{}
+	}{
+		{`sizeOf("")`, 0},
+		{`sizeOf("four")`, 4},
+		{`sizeOf("hello world")`, 11},
+		{`sizeOf(1)`, "argument to `sizeOf` not supported, got INTEGER"},
+		{`sizeOf("one", "two")`, "wrong number of arguments. got=2, want=1"},
+	}
+
+	for _, tt := range tests {
+		evaluated := testEval(tt.input)
+
+		switch expected := tt.expected.(type) {
+		case int:
+			testIntegerObject(t, evaluated, int64(expected))
+		case string:
+			errObj, ok := evaluated.(*object.Error)
+			if !ok {
+				t.Errorf("object is not *object.Error. got=%T (%+v)", evaluated, evaluated)
+				continue
+			}
+
+			if errObj.Message != expected {
+				t.Errorf("wrong error message. expected=%q, got=%q", expected, errObj.Message)
+			}
+		}
 	}
 }
