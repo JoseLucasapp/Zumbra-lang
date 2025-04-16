@@ -1,6 +1,7 @@
 package evaluator
 
 import (
+	"fmt"
 	"vaja/object"
 )
 
@@ -119,6 +120,15 @@ var builtins = map[string]*object.Builtin{
 
 			arr.Elements = append(arr.Elements[:index], arr.Elements[index+1:]...)
 			return arr
+		},
+	},
+
+	"show": &object.Builtin{
+		Fn: func(args ...object.Object) object.Object {
+			for _, arg := range args {
+				fmt.Println(arg.Inspect())
+			}
+			return NULL
 		},
 	},
 }
