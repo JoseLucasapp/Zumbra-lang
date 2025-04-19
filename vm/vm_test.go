@@ -106,6 +106,32 @@ func testExpectedObject(t *testing.T, expected interface{}, actual object.Object
 				t.Errorf("testIntegerObject failed: %s", err)
 			}
 		}
+
+	case map[object.DictKey]int64:
+		dict, ok := actual.(*object.Dict)
+		if !ok {
+			t.Errorf("object is not Dict. got=%T (%+v)", actual, actual)
+			return
+		}
+
+		if len(dict.Pairs) != len(expected) {
+			t.Errorf("dict has wrong number of Pairs. want=%d, got=%d",
+				len(expected), len(dict.Pairs))
+			return
+		}
+
+		for expectedKey, expectedValue := range expected {
+			pair, ok := dict.Pairs[expectedKey]
+			if !ok {
+				t.Errorf("no pair for given key in Pairs")
+			}
+
+			err := testIntegerObject(expectedValue, pair.Value)
+			if err != nil {
+				t.Errorf("testIntegerObject failed: %s", err)
+			}
+		}
+
 	}
 }
 
@@ -234,6 +260,29 @@ func TestArrayLiterals(t *testing.T) {
 		{"[]", []int{}},
 		{"[1, 2, 3]", []int{1, 2, 3}},
 		{"[1 + 2, 3 * 4, 5 + 6]", []int{3, 12, 11}},
+	}
+	runVmTests(t, tests)
+}
+
+func TestDictLiterals(t *testing.T) {
+	tests := []vmTestCase{
+		{
+			"{}", map[object.DictKey]int64{},
+		},
+		{
+			"{1: 2, 2: 3}",
+			map[object.DictKey]int64{
+				(&object.Integer{Value: 1}).DictKey(): 2,
+				(&object.Integer{Value: 2}).DictKey(): 3,
+			},
+		},
+		{
+			"{1 + 1: 2 * 2, 3 + 3: 4 * 4}",
+			map[object.DictKey]int64{
+				(&object.Integer{Value: 2}).DictKey(): 4,
+				(&object.Integer{Value: 6}).DictKey(): 16,
+			},
+		},
 	}
 	runVmTests(t, tests)
 }

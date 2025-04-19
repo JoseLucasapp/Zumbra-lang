@@ -138,6 +138,22 @@ func (vm *VM) Run() error {
 			if err != nil {
 				return err
 			}
+
+		case code.OpDict:
+			numElements := int(code.ReadUint16(vm.instructions[ip+1:]))
+			ip += 2
+
+			dict, err := vm.buildDict(vm.sp-numElements, vm.sp)
+			if err != nil {
+				return err
+			}
+
+			vm.sp = vm.sp - numElements
+
+			err = vm.push(dict)
+			if err != nil {
+				return err
+			}
 		}
 
 	}
@@ -311,4 +327,24 @@ func (vm *VM) buildArray(startIndex, endIndex int) object.Object {
 	}
 
 	return &object.Array{Elements: elements}
+}
+
+func (vm *VM) buildDict(startIndex, endIndex int) (object.Object, error) {
+	dictedPairs := make(map[object.DictKey]object.DictPair)
+
+	for i := startIndex; i < endIndex; i += 2 {
+		key := vm.stack[i]
+		value := vm.stack[i+1]
+
+		pair := object.DictPair{Key: key, Value: value}
+
+		dictKey, ok := key.(object.Dictable)
+		if !ok {
+			return nil, fmt.Errorf("unusable as hash key: %s", key.Type())
+		}
+
+		dictedPairs[dictKey.DictKey()] = pair
+	}
+
+	return &object.Dict{Pairs: dictedPairs}, nil
 }
