@@ -240,3 +240,10 @@ func (c *Compiler) changeOperand(pos int, operand int) {
 	newInstruction := code.Make(op, operand)
 	c.replaceInstruction(pos, newInstruction)
 }
+
+func NewWithState(s *SymbolTable, constants []object.Object) *Compiler {
+	c := New()
+	c.symbolTable = s
+	c.constants = constants
+	return c
+}

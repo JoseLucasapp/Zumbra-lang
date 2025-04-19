@@ -165,3 +165,12 @@ func TestConditionals(t *testing.T) {
 	}
 	runVmTests(t, tests)
 }
+
+func TestGlobalVarStatements(t *testing.T) {
+	tests := []vmTestCase{
+		{"var one << 1; one", 1},
+		{"var one << 1; var two << 2; one + two", 3},
+		{"var one << 1; var two << one + one; one + two", 3},
+	}
+	runVmTests(t, tests)
+}
