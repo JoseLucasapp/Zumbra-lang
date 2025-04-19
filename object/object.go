@@ -6,21 +6,23 @@ import (
 	"hash/fnv"
 	"strings"
 	"vaja/ast"
+	"vaja/code"
 )
 
 type ObjectType string
 
 const (
-	INTEGER_OBJ      = "INTEGER"
-	BOOLEAN_OBJ      = "BOOLEAN"
-	NULL_OBJ         = "NULL"
-	RETURN_VALUE_OBJ = "RETURN_VALUE"
-	ERROR_OBJ        = "ERROR"
-	FUNCTION_OBJ     = "FUNCTION"
-	STRING_OBJ       = "STRING"
-	BUILTIN_OBJ      = "BUILTIN"
-	ARRAY_OBJ        = "ARRAY"
-	DICT_OBJ         = "DICT"
+	INTEGER_OBJ           = "INTEGER"
+	BOOLEAN_OBJ           = "BOOLEAN"
+	NULL_OBJ              = "NULL"
+	RETURN_VALUE_OBJ      = "RETURN_VALUE"
+	ERROR_OBJ             = "ERROR"
+	FUNCTION_OBJ          = "FUNCTION"
+	STRING_OBJ            = "STRING"
+	BUILTIN_OBJ           = "BUILTIN"
+	ARRAY_OBJ             = "ARRAY"
+	DICT_OBJ              = "DICT"
+	COMPILED_FUNCTION_OBJ = "COMPILED_FUNCTION"
 )
 
 type Object interface {
@@ -175,3 +177,10 @@ func (d *Dict) Inspect() string {
 type Dictable interface {
 	DictKey() DictKey
 }
+
+type CompiledFunction struct {
+	Instructions code.Instructions
+}
+
+func (c *CompiledFunction) Type() ObjectType { return COMPILED_FUNCTION_OBJ }
+func (c *CompiledFunction) Inspect() string  { return fmt.Sprintf("CompiledFunction[%p]", c) }
