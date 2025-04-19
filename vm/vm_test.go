@@ -78,6 +78,13 @@ func testExpectedObject(t *testing.T, expected interface{}, actual object.Object
 		if actual != Null {
 			t.Errorf("object is not *object.Null: %T (%+v)", actual, actual)
 		}
+
+	case string:
+		err := testStringObject(expected, actual)
+
+		if err != nil {
+			t.Errorf("testStringObject failed: %s", err)
+		}
 	}
 }
 
@@ -173,4 +180,30 @@ func TestGlobalVarStatements(t *testing.T) {
 		{"var one << 1; var two << one + one; one + two", 3},
 	}
 	runVmTests(t, tests)
+}
+
+func TestStringExpressions(t *testing.T) {
+	tests := []vmTestCase{
+		{`"Vaja"`, "Vaja"},
+		{`"Va" + "ja"`, "Vaja"},
+		{`"Va" + "ja" + "lang"`, "Vajalang"},
+	}
+	runVmTests(t, tests)
+}
+
+func testStringObject(expected string, actual object.Object) error {
+	result, ok := actual.(*object.String)
+
+	if !ok {
+		return fmt.Errorf("object is not String. got=%T (%+v)",
+			actual, actual)
+	}
+
+	if result.Value != expected {
+		return fmt.Errorf("object has wrong value. got=%q, want=%q",
+			result.Value, expected)
+
+	}
+
+	return nil
 }
