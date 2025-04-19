@@ -212,6 +212,19 @@ func (c *Compiler) Compile(node ast.Node) error {
 		}
 
 		c.emit(code.OpDict, len(node.Pairs)*2)
+
+	case *ast.IndexExpression:
+		err := c.Compile(node.Left)
+		if err != nil {
+			return err
+		}
+
+		err = c.Compile(node.Index)
+		if err != nil {
+			return err
+		}
+
+		c.emit(code.OpIndex)
 	}
 
 	return nil
