@@ -732,3 +732,26 @@ func TestRecursiveFunctions(t *testing.T) {
 	}
 	runVmTests(t, tests)
 }
+
+func TestRecursiveFibonacci(t *testing.T) {
+	tests := []vmTestCase{
+		{
+			input: `
+	var fibonacci << fct(x) {
+	if (x == 0) {
+	return 0;
+	} else {
+	if (x == 1) {
+	return 1;
+	} else {
+	fibonacci(x - 1) + fibonacci(x - 2);
+	}
+	}
+	};
+	fibonacci(15);
+	`,
+			expected: 610,
+		},
+	}
+	runVmTests(t, tests)
+}
