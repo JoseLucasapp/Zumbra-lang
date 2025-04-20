@@ -22,7 +22,7 @@ const (
 	BUILTIN_OBJ           = "BUILTIN"
 	ARRAY_OBJ             = "ARRAY"
 	DICT_OBJ              = "DICT"
-	COMPILED_FUNCTION_OBJ = "COMPILED_FUNCTION"
+	COMPILED_FUNCTION_OBJ = "COMPILED_FUNCTION_OBJ"
 )
 
 type Object interface {
@@ -179,8 +179,12 @@ type Dictable interface {
 }
 
 type CompiledFunction struct {
-	Instructions code.Instructions
+	Instructions  code.Instructions
+	NumLocals     int
+	NumParameters int
 }
 
-func (c *CompiledFunction) Type() ObjectType { return COMPILED_FUNCTION_OBJ }
-func (c *CompiledFunction) Inspect() string  { return fmt.Sprintf("CompiledFunction[%p]", c) }
+func (cf *CompiledFunction) Type() ObjectType { return COMPILED_FUNCTION_OBJ }
+func (cf *CompiledFunction) Inspect() string {
+	return fmt.Sprintf("CompiledFunction[%p]", cf)
+}

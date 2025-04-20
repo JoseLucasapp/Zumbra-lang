@@ -385,6 +385,168 @@ func TestFirstClassFunctions(t *testing.T) {
 	`,
 			expected: 1,
 		},
+		{
+			input: `
+	var returnsOneReturner << fct() {
+	var returnsOne << fct() { 1; };
+	returnsOne;
+	};
+	returnsOneReturner()();
+	`,
+			expected: 1,
+		},
 	}
 	runVmTests(t, tests)
+}
+
+func TestCallingFunctionsWithBindings(t *testing.T) {
+	tests := []vmTestCase{
+		{
+			input: `
+	var one << fct() { var one << 1; one };
+	one();
+	`,
+
+			expected: 1,
+		},
+		{
+			input: `
+	var oneAndTwo << fct() { var one << 1; var two << 2; one + two; };
+	oneAndTwo();
+	`,
+			expected: 3,
+		},
+		{
+			input: `
+	var oneAndTwo << fct() { var one << 1; var two << 2; one + two; };
+	var threeAndFour << fct() { var three << 3; var four << 4; three + four; };
+	oneAndTwo() + threeAndFour();
+	`,
+			expected: 10,
+		},
+		{
+			input: `
+	var firstFoobar << fct() { var foobar << 50; foobar; };
+	var secondFoobar << fct() { var foobar << 100; foobar; };
+	firstFoobar() + secondFoobar();
+	`,
+			expected: 150,
+		},
+		{
+			input: `
+			var globalSeed << 50;
+			var minusOne << fct() {
+			var num << 1;
+			globalSeed - num;
+			}
+			var minusTwo << fct() {
+			var num << 2;
+			globalSeed - num;
+			}
+			minusOne();
+			`,
+			expected: 97,
+		},
+	}
+	runVmTests(t, tests)
+}
+
+func TestCallingFunctionsWithArgumentsAndBindings(t *testing.T) {
+	tests := []vmTestCase{
+		{
+			input: `
+	207
+	var identity << fct(a) { a; };
+	identity(4);
+	`,
+			expected: 4,
+		},
+		{
+			input: `
+	var sum << fct(a, b) { a + b; };
+	sum(1, 2);
+	`,
+			expected: 3,
+		},
+		{
+			input: `
+			var sum << fct(a, b) {
+			var c << a + b;
+			c;
+			};
+			sum(1, 2);
+			`,
+			expected: 3,
+		},
+		{
+			input: `
+			var sum << fct(a, b) {
+			var c << a + b;
+			c;
+			};
+			sum(1, 2) + sum(3, 4);`,
+			expected: 10,
+		},
+		{
+			input: `
+			var sum << fct(a, b) {
+			var c << a + b;
+			c;
+			};
+			var outer << fct() {
+			sum(1, 2) + sum(3, 4);
+			};
+			outer();
+			`,
+			expected: 10,
+		},
+		{
+			input: `
+			var globalNum << 10;
+			var sum << fct(a, b) {
+			var c << a + b;
+			c + globalNum;
+			};
+			var outer << fct() {
+			sum(1, 2) + sum(3, 4) + globalNum;
+			};
+			outer() + globalNum;
+			`,
+			expected: 50,
+		},
+	}
+	runVmTests(t, tests)
+}
+
+func TestCallingFunctionsWithWrongArguments(t *testing.T) {
+	tests := []vmTestCase{
+		{
+			input:    `fct() { 1; }(1);`,
+			expected: `wrong number of arguments: want=0, got=1`,
+		},
+		{
+			input:    `fct(a) { a; }();`,
+			expected: `wrong number of arguments: want=1, got=0`,
+		},
+		{
+			input:    `fct(a, b) { a + b; }(1);`,
+			expected: `wrong number of arguments: want=2, got=1`,
+		},
+	}
+	for _, tt := range tests {
+		program := parse(tt.input)
+		comp := compiler.New()
+		err := comp.Compile(program)
+		if err != nil {
+			t.Fatalf("compiler error: %s", err)
+		}
+		vm := New(comp.Bytecode())
+		err = vm.Run()
+		if err == nil {
+			t.Fatalf("expected VM error but resulted in none.")
+		}
+		if err.Error() != tt.expected {
+			t.Fatalf("wrong VM error: want=%q, got=%q", tt.expected, err)
+		}
+	}
 }
