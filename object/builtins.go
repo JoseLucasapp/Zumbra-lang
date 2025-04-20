@@ -1,0 +1,163 @@
+package object
+
+import "fmt"
+
+var Builtins = []struct {
+	Name    string
+	Builtin *Builtin
+}{
+	{
+		"sizeOf",
+		&Builtin{
+			Fn: func(args ...Object) Object {
+				if len(args) != 1 {
+					return NewError("wrong number of arguments. got=%d, want=1", len(args))
+				}
+
+				switch arg := args[0].(type) {
+				case *Array:
+					return &Integer{Value: int64(len(arg.Elements))}
+				case *String:
+					return &Integer{Value: int64(len(arg.Value))}
+				default:
+					return NewError("argument to `sizeOf` not supported, got %s", args[0].Type())
+				}
+			},
+		},
+	},
+	{
+		"show",
+		&Builtin{
+			Fn: func(args ...Object) Object {
+				for _, arg := range args {
+					fmt.Println(arg.Inspect())
+				}
+				return nil
+			},
+		},
+	},
+	{
+		"first",
+		&Builtin{
+			Fn: func(args ...Object) Object {
+				if len(args) != 1 {
+					return NewError("wrong number of arguments. got=%d, want=1", len(args))
+				}
+
+				if args[0].Type() != ARRAY_OBJ {
+					return NewError("argument to `first` must be ARRAY, got %s", args[0].Type())
+				}
+
+				arr := args[0].(*Array)
+				if len(arr.Elements) > 0 {
+					return arr.Elements[0]
+				}
+
+				return nil
+			},
+		},
+	},
+	{
+		"last",
+		&Builtin{
+			Fn: func(args ...Object) Object {
+				if len(args) != 1 {
+					return NewError("wrong number of arguments. got=%d, want=1", len(args))
+				}
+
+				if args[0].Type() != ARRAY_OBJ {
+					return NewError("argument to `last` must be ARRAY, got %s", args[0].Type())
+				}
+
+				arr := args[0].(*Array)
+				length := len(arr.Elements)
+				if length > 0 {
+					return arr.Elements[length-1]
+				}
+
+				return nil
+			},
+		},
+	},
+	{
+		"allButFirst",
+		&Builtin{
+			Fn: func(args ...Object) Object {
+				if len(args) != 1 {
+					return NewError("wrong number of arguments. got=%d, want=1", len(args))
+				}
+
+				if args[0].Type() != ARRAY_OBJ {
+					return NewError("argument to `allButFirst` must be ARRAY, got %s", args[0].Type())
+				}
+
+				arr := args[0].(*Array)
+				length := len(arr.Elements)
+				if length > 0 {
+					newElements := make([]Object, length-1, length-1)
+					copy(newElements, arr.Elements[1:])
+					return &Array{Elements: newElements}
+				}
+
+				return nil
+			},
+		},
+	},
+	{
+		"addToArray",
+		&Builtin{
+			Fn: func(args ...Object) Object {
+				if len(args) != 2 {
+					return NewError("wrong number of arguments. got=%d, want=2", len(args))
+				}
+				if args[0].Type() != ARRAY_OBJ {
+					return NewError("argument to `push` must be ARRAY, got %s", args[0].Type())
+				}
+
+				arr := args[0].(*Array)
+
+				arr.Elements = append(arr.Elements, args[1])
+				return arr
+			},
+		},
+	},
+	{
+		"removeFromArray",
+		&Builtin{
+			Fn: func(args ...Object) Object {
+				if len(args) != 2 {
+					return NewError("wrong number of arguments. got=%d, want=2", len(args))
+				}
+				if args[0].Type() != ARRAY_OBJ {
+					return NewError("argument to `removeFromArray` must be ARRAY, got %s", args[0].Type())
+				}
+				if args[1].Type() != INTEGER_OBJ {
+					return NewError("index argument to `removeFromArray` must be INTEGER, got %s", args[1].Type())
+				}
+
+				arr := args[0].(*Array)
+				index := args[1].(*Integer).Value
+
+				if index < 0 || int(index) >= len(arr.Elements) {
+					return NewError("index out of bounds: %d", index)
+				}
+
+				arr.Elements = append(arr.Elements[:index], arr.Elements[index+1:]...)
+				return arr
+			},
+		},
+	},
+}
+
+func NewError(format string, a ...interface{}) *Error {
+	return &Error{Message: fmt.Sprintf(format, a...)}
+}
+
+func GetBuiltinByName(name string) *Builtin {
+	for _, builtin := range Builtins {
+		if builtin.Name == name {
+			return builtin.Builtin
+		}
+	}
+	return nil
+}

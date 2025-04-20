@@ -316,7 +316,11 @@ func applyFunction(fct object.Object, args []object.Object) object.Object {
 		return unwrapReturnValue(evaluated)
 
 	case *object.Builtin:
-		return fct.Fn(args...)
+		if result := fct.Fn(args...); result != nil {
+			return result
+		}
+
+		return NULL
 
 	default:
 		return newError("not a function: %s", fct.Type())
