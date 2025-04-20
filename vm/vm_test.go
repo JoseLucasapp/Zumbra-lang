@@ -46,6 +46,17 @@ func runVmTests(t *testing.T, tests []vmTestCase) {
 			t.Fatalf("compiler error: %s", err)
 		}
 
+		for i, constant := range comp.Bytecode().Constants {
+			fmt.Printf("CONSTANT %d %p (%T):\n", i, constant, constant)
+			switch constant := constant.(type) {
+			case *object.CompiledFunction:
+				fmt.Printf(" Instructions:\n%s", constant.Instructions)
+			case *object.Integer:
+				fmt.Printf(" Value: %d\n", constant.Value)
+			}
+			fmt.Printf("\n")
+		}
+
 		vm := New(comp.Bytecode())
 		err = vm.Run()
 		if err != nil {
@@ -587,6 +598,136 @@ func TestBuiltinFunctions(t *testing.T) {
 			&object.Error{
 				Message: "argument to `addToArray` must be ARRAY, got INTEGER",
 			},
+		},
+	}
+	runVmTests(t, tests)
+}
+
+func TestClosures(t *testing.T) {
+	tests := []vmTestCase{
+		{
+			input: `
+	var newClosure << fct(a) {
+	fct() { a; };
+	};
+	var closure << newClosure(99);
+	closure();
+	`,
+			expected: 99,
+		},
+		{
+			input: `
+			var newAdder << fct(a, b) {
+			fct(c) { a + b + c };
+			};
+			var adder << newAdder(1, 2);
+			adder(8);
+			`,
+			expected: 11,
+		},
+		{
+			input: `
+			var newAdder << fct(a, b) {
+			var c << a + b;
+			fct(d) { c + d };
+			};
+			var adder << newAdder(1, 2);
+			adder(8);
+			`,
+			expected: 11,
+		},
+		{
+			input: `
+			var newAdderOuter << fct(a, b) {
+			var c << a + b;
+			fct(d) {
+			var e << d + c;
+			fct(f) { e + f; };
+			};
+			};
+			var newAdderInner << newAdderOuter(1, 2);
+			var adder << newAdderInner(3);
+			adder(8);
+			`,
+			expected: 14,
+		},
+		{
+			input: `
+			var a << 1;
+			var newAdderOuter << fct(b) {
+			fct(c) {
+			fct(d) { a + b + c + d };
+			};
+			};
+			var newAdderInner << newAdderOuter(2);
+			var adder << newAdderInner(3);
+			adder(8);
+			`,
+			expected: 14,
+		},
+		{
+			input: `
+			var newClosure << fct(a, b) {
+			var one << fct() { a; };
+			var two << fct() { b; };
+			fct() { one() + two(); };
+			};
+			var closure << newClosure(9, 90);
+			closure();
+			`,
+			expected: 99,
+		},
+	}
+	runVmTests(t, tests)
+}
+
+func TestRecursiveFunctions(t *testing.T) {
+	tests := []vmTestCase{
+		{
+			input: `
+	var countDown << fct(x) {
+	if (x == 0) {
+	return 0;
+	} else {
+	countDown(x - 1);
+	}
+	};
+	countDown(1);
+	`,
+			expected: 0,
+		},
+		{
+			input: `
+			var countDown << fct(x) {
+			if (x == 0) {
+			return 0;
+			} else {
+			countDown(x - 1);
+			}
+			};
+			var wrapper << fct() {
+			countDown(1);
+			};
+			wrapper();
+			`,
+			expected: 0,
+		},
+		{
+			input: `
+			var wrapper << fct() {
+			var countDown << fct(x) {
+				if (x == 0) {
+					return 0;
+				} else {
+				countDown(x - 1);
+				};
+			};
+			
+			countDown(1);
+			};
+			wrapper();
+			`,
+			expected: 0,
 		},
 	}
 	runVmTests(t, tests)

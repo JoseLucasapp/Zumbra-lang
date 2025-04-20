@@ -881,3 +881,29 @@ func TestParsingDictLiteralsWithExpressions(t *testing.T) {
 		testFunc(value)
 	}
 }
+
+func TestFunctionLiteralWithName(t *testing.T) {
+	input := `var myFunction << fct() { };`
+	l := lexer.New(input)
+	p := New(l)
+	program := p.ParseProgram()
+	checkParserErrors(t, p)
+	if len(program.Statements) != 1 {
+		t.Fatalf("program.Body does not contain %d statements. got=%d\n",
+			1, len(program.Statements))
+	}
+	stmt, ok := program.Statements[0].(*ast.VarStatement)
+	if !ok {
+		t.Fatalf("program.Statements[0] is not ast.VarStatement. got=%T",
+			program.Statements[0])
+	}
+	function, ok := stmt.Value.(*ast.FunctionLiteral)
+	if !ok {
+		t.Fatalf("stmt.Value is not ast.FunctionLiteral. got=%T",
+			stmt.Value)
+	}
+	if function.Name != "myFunction" {
+		t.Fatalf("function literal name wrong. want 'myFunction', got=%q\n",
+			function.Name)
+	}
+}
