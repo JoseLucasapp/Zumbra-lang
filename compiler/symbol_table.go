@@ -1,5 +1,7 @@
 package compiler
 
+import "fmt"
+
 type SymbolScope string
 
 const (
@@ -21,8 +23,11 @@ type SymbolTable struct {
 }
 
 func NewEnclosedSymbolTable(outer *SymbolTable) *SymbolTable {
-	s := NewSymbolTable()
-	s.Outer = outer
+	s := &SymbolTable{
+		store:          make(map[string]Symbol),
+		Outer:          outer,
+		numDefinitions: 0,
+	}
 	return s
 }
 
@@ -41,6 +46,7 @@ func (s *SymbolTable) Define(name string) Symbol {
 
 	s.store[name] = symbol
 	s.numDefinitions++
+
 	return symbol
 }
 
@@ -48,7 +54,10 @@ func (s *SymbolTable) Resolve(name string) (Symbol, bool) {
 	obj, ok := s.store[name]
 	if !ok && s.Outer != nil {
 		obj, ok = s.Outer.Resolve(name)
-		return obj, ok
+	}
+	if !ok {
+		fmt.Printf("Erro: variável %s não encontrada\n", name)
+
 	}
 	return obj, ok
 }

@@ -436,14 +436,16 @@ func TestCallingFunctionsWithBindings(t *testing.T) {
 			input: `
 			var globalSeed << 50;
 			var minusOne << fct() {
-			var num << 1;
-			globalSeed - num;
+				var num << 1;
+				globalSeed << globalSeed - num;
+				globalSeed;
 			}
 			var minusTwo << fct() {
-			var num << 2;
-			globalSeed - num;
+				var num << 2;
+				globalSeed << globalSeed - num;
+				globalSeed;
 			}
-			minusOne();
+			minusOne() + minusTwo();
 			`,
 			expected: 97,
 		},

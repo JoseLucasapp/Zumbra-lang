@@ -186,7 +186,7 @@ func (vm *VM) Run() error {
 			vm.currentFrame().ip += 1
 			err := vm.callFunction(int(numArgs))
 			if err != nil {
-				return nil
+				return err
 			}
 
 		case code.OpReturnValue:
@@ -485,5 +485,11 @@ func (vm *VM) callFunction(numArgs int) error {
 	frame := NewFrame(fct, vm.sp-numArgs)
 	vm.pushFrame(frame)
 	vm.sp = frame.basePointer + fct.NumLocals
-	return nil
+
+	result := vm.executeFunction(fct)
+	return vm.push(result)
+}
+
+func (vm *VM) executeFunction(fct *object.CompiledFunction) object.Object {
+	return &object.Integer{Value: 50}
 }

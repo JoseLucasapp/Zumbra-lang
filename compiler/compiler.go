@@ -37,6 +37,7 @@ func New() *Compiler {
 }
 
 func (c *Compiler) Compile(node ast.Node) error {
+
 	switch node := node.(type) {
 	case *ast.Program:
 		for _, statement := range node.Statements {
@@ -191,11 +192,7 @@ func (c *Compiler) Compile(node ast.Node) error {
 			return fmt.Errorf("undefined variable %s", node.Value)
 		}
 
-		if symbol.Scope == GlobalScope {
-			c.emit(code.OpGetGlobal, symbol.Index)
-		} else {
-			c.emit(code.OpGetLocal, symbol.Index)
-		}
+		c.loadSymbol(symbol)
 
 	case *ast.ArrayLiteral:
 		for _, el := range node.Elements {
@@ -399,7 +396,7 @@ func (c *Compiler) enterScope() {
 }
 
 func (c *Compiler) leaveScope() code.Instructions {
-	instructions := c.currentInstructions()
+	instructions := c.scopes[c.scopeIndex].instructions
 
 	c.scopes = c.scopes[:len(c.scopes)-1]
 	c.scopeIndex--
@@ -421,4 +418,13 @@ func (c *Compiler) replaceLastPopWithReturn() {
 	c.replaceInstruction(lastPos, code.Make(code.OpReturnValue))
 
 	c.scopes[c.scopeIndex].lastInstruction.Opcode = code.OpReturnValue
+}
+
+func (c *Compiler) loadSymbol(s Symbol) {
+	switch s.Scope {
+	case GlobalScope:
+		c.emit(code.OpGetGlobal, s.Index)
+	case LocalScope:
+		c.emit(code.OpGetLocal, s.Index)
+	}
 }
