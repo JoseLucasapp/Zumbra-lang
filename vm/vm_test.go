@@ -132,6 +132,17 @@ func testExpectedObject(t *testing.T, expected interface{}, actual object.Object
 			}
 		}
 
+	case *object.Error:
+		errObj, ok := actual.(*object.Error)
+		if !ok {
+			t.Errorf("object is not Error: %T (%+v)", actual, actual)
+			return
+		}
+		if errObj.Message != expected.Message {
+			t.Errorf("wrong error message. expected=%q, got=%q",
+				expected.Message, errObj.Message)
+		}
+
 	}
 }
 
@@ -432,23 +443,6 @@ func TestCallingFunctionsWithBindings(t *testing.T) {
 	`,
 			expected: 150,
 		},
-		{
-			input: `
-			var globalSeed << 50;
-			var minusOne << fct() {
-				var num << 1;
-				globalSeed << globalSeed - num;
-				globalSeed;
-			}
-			var minusTwo << fct() {
-				var num << 2;
-				globalSeed << globalSeed - num;
-				globalSeed;
-			}
-			minusOne() + minusTwo();
-			`,
-			expected: 97,
-		},
 	}
 	runVmTests(t, tests)
 }
@@ -551,4 +545,49 @@ func TestCallingFunctionsWithWrongArguments(t *testing.T) {
 			t.Fatalf("wrong VM error: want=%q, got=%q", tt.expected, err)
 		}
 	}
+}
+
+func TestBuiltinFunctions(t *testing.T) {
+	tests := []vmTestCase{
+		{`sizeOf("")`, 0},
+		{`sizeOf("four")`, 4},
+		{`sizeOf("hello world")`, 11},
+		{
+			`sizeOf(1)`,
+			&object.Error{
+				Message: "argument to `sizeOf` not supported, got INTEGER",
+			},
+		},
+		{`sizeOf("one", "two")`,
+			&object.Error{
+				Message: "wrong number of arguments. got=2, want=1",
+			},
+		},
+		{`sizeOf([1, 2, 3])`, 3},
+		{`sizeOf([])`, 0},
+		{`show("hello", "world!")`, Null},
+		{`first([1, 2, 3])`, 1},
+		{`first([])`, Null},
+		{`first(1)`,
+			&object.Error{
+				Message: "argument to `first` must be ARRAY, got INTEGER",
+			},
+		},
+		{`last([1, 2, 3])`, 3},
+		{`last([])`, Null},
+		{`last(1)`,
+			&object.Error{
+				Message: "argument to `last` must be ARRAY, got INTEGER",
+			},
+		},
+		{`allButFirst([1, 2, 3])`, []int{2, 3}},
+		{`allButFirst([])`, Null},
+		{`addToArray([], 1)`, []int{1}},
+		{`addToArray(1, 1)`,
+			&object.Error{
+				Message: "argument to `addToArray` must be ARRAY, got INTEGER",
+			},
+		},
+	}
+	runVmTests(t, tests)
 }

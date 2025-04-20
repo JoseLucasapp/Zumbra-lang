@@ -21,15 +21,29 @@ func Start(in io.Reader, out io.Writer) {
 	globals := make([]object.Object, vm.GlobalSize)
 	symbolTable := compiler.NewSymbolTable()
 
+	for i, v := range object.Builtins {
+		symbolTable.DefineBuiltin(i, v.Name)
+	}
+
 	for {
+		var lines string
+		var openBraces int
+
 		fmt.Printf(PROMPT)
-		scanned := scanner.Scan()
-		if !scanned {
-			return
+		for scanner.Scan() {
+			line := scanner.Text()
+			lines += line + "\n"
+
+			openBraces += countChar(line, '{')
+			openBraces -= countChar(line, '}')
+
+			if openBraces <= 0 {
+				break
+			}
+			fmt.Printf(".. ")
 		}
 
-		line := scanner.Text()
-		l := lexer.New(line)
+		l := lexer.New(lines)
 		p := parser.New(l)
 
 		program := p.ParseProgram()
@@ -59,6 +73,16 @@ func Start(in io.Reader, out io.Writer) {
 		io.WriteString(out, lastPopped.Inspect())
 		io.WriteString(out, "\n")
 	}
+}
+
+func countChar(s string, ch rune) int {
+	count := 0
+	for _, c := range s {
+		if c == ch {
+			count++
+		}
+	}
+	return count
 }
 
 func printParserErrors(out io.Writer, errors []string) {

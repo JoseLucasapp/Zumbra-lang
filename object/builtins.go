@@ -111,7 +111,7 @@ var Builtins = []struct {
 					return NewError("wrong number of arguments. got=%d, want=2", len(args))
 				}
 				if args[0].Type() != ARRAY_OBJ {
-					return NewError("argument to `push` must be ARRAY, got %s", args[0].Type())
+					return NewError("argument to `addToArray` must be ARRAY, got %s", args[0].Type())
 				}
 
 				arr := args[0].(*Array)

@@ -184,7 +184,7 @@ func (vm *VM) Run() error {
 
 			numArgs := code.ReadUint8(ins[ip+1:])
 			vm.currentFrame().ip += 1
-			err := vm.callFunction(int(numArgs))
+			err := vm.executeCall(int(numArgs))
 			if err != nil {
 				return err
 			}
@@ -222,6 +222,18 @@ func (vm *VM) Run() error {
 
 			frame := vm.currentFrame()
 			err := vm.push(vm.stack[frame.basePointer+int(localIndex)])
+			if err != nil {
+				return err
+			}
+
+		case code.OpGetBuiltin:
+			builtinIndex := code.ReadUint8(ins[ip+1:])
+			vm.currentFrame().ip += 1
+
+			definition := object.Builtins[builtinIndex]
+
+			err := vm.push(definition.Builtin)
+
 			if err != nil {
 				return err
 			}
@@ -472,12 +484,7 @@ func (vm *VM) popFrame() *Frame {
 	return vm.frames[vm.framesIndex]
 }
 
-func (vm *VM) callFunction(numArgs int) error {
-	fct, ok := vm.stack[vm.sp-1-numArgs].(*object.CompiledFunction)
-	if !ok {
-		return fmt.Errorf("calling non-function and %s", vm.stack[vm.sp-1-numArgs].Type())
-	}
-
+func (vm *VM) callFunction(fct *object.CompiledFunction, numArgs int) error {
 	if numArgs != fct.NumParameters {
 		return fmt.Errorf("wrong number of arguments: want=%d, got=%d", fct.NumParameters, numArgs)
 	}
@@ -486,10 +493,33 @@ func (vm *VM) callFunction(numArgs int) error {
 	vm.pushFrame(frame)
 	vm.sp = frame.basePointer + fct.NumLocals
 
-	result := vm.executeFunction(fct)
-	return vm.push(result)
+	return nil
 }
 
-func (vm *VM) executeFunction(fct *object.CompiledFunction) object.Object {
-	return &object.Integer{Value: 50}
+func (vm *VM) executeCall(numArgs int) error {
+	callee := vm.stack[vm.sp-1-numArgs]
+
+	switch callee := callee.(type) {
+	case *object.CompiledFunction:
+		return vm.callFunction(callee, numArgs)
+	case *object.Builtin:
+		return vm.callBuiltin(callee, numArgs)
+	default:
+		return fmt.Errorf("calling non-function and non-built-in object: %s", callee.Type())
+	}
+}
+
+func (vm *VM) callBuiltin(builtin *object.Builtin, numArgs int) error {
+	args := vm.stack[vm.sp-numArgs : vm.sp]
+
+	result := builtin.Fn(args...)
+	vm.sp = vm.sp - numArgs - 1
+
+	if result != nil {
+		vm.push(result)
+	} else {
+		vm.push(Null)
+	}
+
+	return nil
 }
