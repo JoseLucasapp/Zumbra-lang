@@ -1,14 +1,14 @@
-# VAJA Programming Language
+# ZUMBRA Programming Language
 
-> ⚙️ *VAJA is a simple, fun, and expressive programming language made for learning, experimenting, and enjoying the beauty of code.*
+> ⚙️ *ZUMBRA is a simple, fun, and expressive programming language made for learning, experimenting, and enjoying the beauty of code.*
 
 ---
 
-## ✨ What is VAJA?
+## ✨ What is ZUMBRA?
 
-VAJA is a custom programming language built with its own parser, compiler, and virtual machine. It supports function definitions, scoped variables, custom operators, and more — all with a minimalist syntax and a playful soul.
+ZUMBRA is a custom programming language built with its own parser, compiler, and virtual machine. It supports function definitions, scoped variables, custom operators, and more — all with a minimalist syntax and a playful soul.
 
-Not your typical cup of J..., try a shot of VAJA.
+Not your typical cup of J..., try a shot of ZUMBRA.
 
 ---
 
@@ -32,14 +32,14 @@ Not your typical cup of J..., try a shot of VAJA.
 
 ## 🛠 Code examples
 
-```vaja
+```zumbra
 show("Whats your name ?");
 var name << input();
 
 show("My name is " + name);
 ```
 
-```vaja
+```zumbra
 var sum << fct(a, b){
     return a + b;
 };
@@ -56,56 +56,56 @@ show(sub(2, 5));
 
 ## 📥 How to Run
 
-You can execute `.vaja` code using the compiled VAJA binary on different platforms.
+You can execute `.zum` code using the compiled ZUMBRA binary on different platforms.
 
 ### **Windows** 🖥️
 
-1. Download the `vaja.exe` file for Windows from the [GitHub Release](https://github.com/JoseLucasapp/VAJA/releases/download/v0.0.1/vaja.exe).
+1. Download the `zumbra.exe` file for Windows from the [GitHub Release](https://github.com/JoseLucasapp/ZUMBRA/releases/download/v0.0.1/zumbra.exe).
 2. Open a command prompt or PowerShell window and run the following command:
 
    ```bash
-   vaja.exe myscript.vaja
+   zumbra.exe myscript.zum
    ```
 
 ### **Linux** 🐧
 
-1. Download the `vaja-linux` file for Linux from the [GitHub Release](https://github.com/JoseLucasapp/VAJA/releases/download/linuxv0.0.1/vaja-linux).
+1. Download the `zumbra-linux` file for Linux from the [GitHub Release](https://github.com/JoseLucasapp/ZUMBRA/releases/download/linuxv0.0.1/zumbra-linux).
 2. Make the file executable by running:
 
    ```bash
-   chmod +x vaja-linux
+   chmod +x zumbra-linux
    ```
 
 3. Run the script with the following command in your terminal:
 
    ```bash
-   ./vaja-linux myscript.vaja
+   ./zumbra-linux myscript.zum
    ```
 
 ---
 
 ### ⚡ Additional Notes:
-- Make sure the VAJA binary file (`vaja-linux`, `vaja.exe`) has execution permissions on your system.
+- Make sure the ZUMBRA binary file (`zumbra-linux`, `zumbra.exe`) has execution permissions on your system.
 - For **Windows**, just run the command without additional configuration.
 - For **Linux**, use the `chmod` command to make the file executable.
 
 ---
 
-## 🦝 Meet the Mascot
+## Meet the Mascot
 
-VAJA is proudly represented by its friendly mascot: **Pinguelim**, the coding gambazin!
+ZUMBRA is proudly represented by its friendly mascot: **Zumbrita**, the coding gambazin!
 
 <p align="center">
-    <img src="./assets/mascot.png" width="200" alt="Pinguelim">
+    <img src="./assets/mascot.png" width="200" alt="Zumbrita">
 </p>
 
-Feel free to include Pinguelim in your projects or documentation! He loves code and caffeine ☕.
+Feel free to include Zumbrita in your projects or documentation! He loves code and caffeine ☕.
 
 ---
 
-## 💻 Developing VAJA
+## 💻 Developing ZUMBRA
 
-VAJA is written in Go and includes a custom-built:
+ZUMBRA is written in Go and includes a custom-built:
 
 - Lexer
 - Parser (Pratt-style)
@@ -115,14 +115,14 @@ VAJA is written in Go and includes a custom-built:
 ### Compile it:
 
 ```bash
-go build -o vaja
+go build -o zumbra
 ```
 
 ---
 
 ## 📎 VS Code Integration
 
-We provide a [VAJA VS Code Extension](https://marketplace.visualstudio.com/items/?itemName=joselucasapp.vaja-lang-support) for syntax highlighting and `.vaja` file support.
+We provide a [ZUMBRA VS Code Extension](https://marketplace.visualstudio.com/items/?itemName=joselucasapp.zum-lang-support) for syntax highlighting and `.zum` file support.
 
 > Includes keyword coloring, strings, and built-in function recognition.
 
@@ -139,4 +139,4 @@ MIT License. See `LICENSE` for details.
 ---
 
 ## Joselucasapp
-Bringing VAJA to life with love, logic, and a hint of rebellion.
+Bringing ZUMBRA to life with love, logic, and a hint of rebellion.

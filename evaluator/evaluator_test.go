@@ -2,9 +2,9 @@ package evaluator
 
 import (
 	"testing"
-	"vaja/lexer"
-	"vaja/object"
-	"vaja/parser"
+	"zumbra/lexer"
+	"zumbra/object"
+	"zumbra/parser"
 )
 
 func TestEvalIntegerExpression(t *testing.T) {

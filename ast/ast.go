@@ -3,7 +3,7 @@ package ast
 import (
 	"bytes"
 	"strings"
-	"vaja/token"
+	"zumbra/token"
 )
 
 type Node interface {

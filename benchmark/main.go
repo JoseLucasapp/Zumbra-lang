@@ -4,12 +4,12 @@ import (
 	"flag"
 	"fmt"
 	"time"
-	"vaja/compiler"
-	"vaja/evaluator"
-	"vaja/lexer"
-	"vaja/object"
-	"vaja/parser"
-	"vaja/vm"
+	"zumbra/compiler"
+	"zumbra/evaluator"
+	"zumbra/lexer"
+	"zumbra/object"
+	"zumbra/parser"
+	"zumbra/vm"
 )
 
 var engine = flag.String("engine", "vm", "use 'vm' or 'eval'")

@@ -2,9 +2,9 @@ package vm
 
 import (
 	"fmt"
-	"vaja/code"
-	"vaja/compiler"
-	"vaja/object"
+	"zumbra/code"
+	"zumbra/compiler"
+	"zumbra/object"
 )
 
 const StackSize = 2048

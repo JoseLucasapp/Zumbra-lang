@@ -3,11 +3,11 @@ package compiler
 import (
 	"fmt"
 	"testing"
-	"vaja/ast"
-	"vaja/code"
-	"vaja/lexer"
-	"vaja/object"
-	"vaja/parser"
+	"zumbra/ast"
+	"zumbra/code"
+	"zumbra/lexer"
+	"zumbra/object"
+	"zumbra/parser"
 )
 
 type compilerTestCase struct {

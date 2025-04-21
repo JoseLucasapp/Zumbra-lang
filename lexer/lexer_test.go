@@ -3,7 +3,7 @@ package lexer
 import (
 	"testing"
 
-	"vaja/token"
+	"zumbra/token"
 )
 
 func TestNextToken(t *testing.T) {

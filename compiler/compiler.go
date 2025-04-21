@@ -3,9 +3,9 @@ package compiler
 import (
 	"fmt"
 	"sort"
-	"vaja/ast"
-	"vaja/code"
-	"vaja/object"
+	"zumbra/ast"
+	"zumbra/code"
+	"zumbra/object"
 )
 
 type CompilationScope struct {

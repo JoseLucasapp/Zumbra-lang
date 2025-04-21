@@ -5,8 +5,8 @@ import (
 	"fmt"
 	"hash/fnv"
 	"strings"
-	"vaja/ast"
-	"vaja/code"
+	"zumbra/ast"
+	"zumbra/code"
 )
 
 type ObjectType string

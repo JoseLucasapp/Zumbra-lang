@@ -5,11 +5,11 @@ import (
 	"fmt"
 	"io"
 
-	"vaja/compiler"
-	"vaja/lexer"
-	"vaja/object"
-	"vaja/parser"
-	"vaja/vm"
+	"zumbra/compiler"
+	"zumbra/lexer"
+	"zumbra/object"
+	"zumbra/parser"
+	"zumbra/vm"
 )
 
 const PROMPT = ">> "

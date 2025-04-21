@@ -4,9 +4,9 @@ import (
 	"fmt"
 	"testing"
 
-	"vaja/ast"
-	"vaja/lexer"
-	"vaja/token"
+	"zumbra/ast"
+	"zumbra/lexer"
+	"zumbra/token"
 )
 
 func TestVarStatements(t *testing.T) {

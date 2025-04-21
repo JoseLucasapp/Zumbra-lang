@@ -1,8 +1,8 @@
 package vm
 
 import (
-	"vaja/code"
-	"vaja/object"
+	"zumbra/code"
+	"zumbra/object"
 )
 
 type Frame struct {

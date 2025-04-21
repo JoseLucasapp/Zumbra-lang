@@ -4,9 +4,9 @@ import (
 	"fmt"
 
 	"strconv"
-	"vaja/ast"
-	"vaja/lexer"
-	"vaja/token"
+	"zumbra/ast"
+	"zumbra/lexer"
+	"zumbra/token"
 )
 
 var precedences = map[token.TokenType]int{

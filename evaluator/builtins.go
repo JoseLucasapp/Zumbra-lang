@@ -1,7 +1,7 @@
 package evaluator
 
 import (
-	"vaja/object"
+	"zumbra/object"
 )
 
 var builtins = map[string]*object.Builtin{

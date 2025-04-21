@@ -1,7 +1,7 @@
 package lexer
 
 import (
-	"vaja/token"
+	"zumbra/token"
 )
 
 type Lexer struct {

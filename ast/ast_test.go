@@ -2,7 +2,7 @@ package ast
 
 import (
 	"testing"
-	"vaja/token"
+	"zumbra/token"
 )
 
 func TestString(t *testing.T) {

@@ -6,12 +6,12 @@ import (
 	"os"
 	"os/user"
 
-	"vaja/compiler"
-	"vaja/lexer"
-	"vaja/object"
-	"vaja/parser"
-	"vaja/repl"
-	"vaja/vm"
+	"zumbra/compiler"
+	"zumbra/lexer"
+	"zumbra/object"
+	"zumbra/parser"
+	"zumbra/repl"
+	"zumbra/vm"
 )
 
 func main() {
@@ -25,7 +25,7 @@ func main() {
 		return
 	}
 
-	fmt.Printf("Hello %s! This is the VAJA programming language!\n", user.Username)
+	fmt.Printf("Hello %s! This is the ZUMBRA programming language!\n", user.Username)
 	fmt.Printf("Feel free to type in commands\n")
 	repl.Start(os.Stdin, os.Stdout)
 }

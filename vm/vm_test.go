@@ -3,11 +3,11 @@ package vm
 import (
 	"fmt"
 	"testing"
-	"vaja/ast"
-	"vaja/compiler"
-	"vaja/lexer"
-	"vaja/object"
-	"vaja/parser"
+	"zumbra/ast"
+	"zumbra/compiler"
+	"zumbra/lexer"
+	"zumbra/object"
+	"zumbra/parser"
 )
 
 func parse(input string) *ast.Program {
@@ -253,9 +253,9 @@ func TestGlobalVarStatements(t *testing.T) {
 
 func TestStringExpressions(t *testing.T) {
 	tests := []vmTestCase{
-		{`"Vaja"`, "Vaja"},
-		{`"Va" + "ja"`, "Vaja"},
-		{`"Va" + "ja" + "lang"`, "Vajalang"},
+		{`"Zumbra"`, "Zumbra"},
+		{`"Zum" + "bra"`, "Zumbra"},
+		{`"Zum" + "bra" + "lang"`, "Zumbralang"},
 	}
 	runVmTests(t, tests)
 }

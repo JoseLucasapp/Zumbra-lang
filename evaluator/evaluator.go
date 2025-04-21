@@ -2,8 +2,8 @@ package evaluator
 
 import (
 	"fmt"
-	"vaja/ast"
-	"vaja/object"
+	"zumbra/ast"
+	"zumbra/object"
 )
 
 var (
