@@ -19,4 +19,5 @@ var builtins = map[string]*object.Builtin{
 
 	"show":     object.GetBuiltinByName("show"),
 	"middleOf": object.GetBuiltinByName("middleOf"),
+	"input":    object.GetBuiltinByName("input"),
 }

@@ -70,8 +70,11 @@ func Start(in io.Reader, out io.Writer) {
 		}
 
 		lastPopped := machine.LastPoppedStackElem()
-		io.WriteString(out, lastPopped.Inspect())
-		io.WriteString(out, "\n")
+		if lastPopped.Type() != object.NULL_OBJ {
+			io.WriteString(out, lastPopped.Inspect())
+			io.WriteString(out, "\n")
+		}
+
 	}
 }
 

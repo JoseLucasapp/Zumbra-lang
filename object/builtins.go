@@ -37,6 +37,19 @@ var Builtins = []struct {
 		},
 	},
 	{
+		"input",
+		&Builtin{
+			Fn: func(args ...Object) Object {
+				var input string
+				if len(args) > 0 {
+					return &String{Value: fmt.Sprintf("%v", args[0])}
+				}
+				fmt.Scanln(&input)
+				return &String{Value: input}
+			},
+		},
+	},
+	{
 		"first",
 		&Builtin{
 			Fn: func(args ...Object) Object {
