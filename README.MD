@@ -60,7 +60,7 @@ You can execute `.vaja` code using the compiled VAJA binary on different platfor
 
 ### **Windows** 🖥️
 
-1. Download the `vaja.exe` file for Windows from the [GitHub Release](https://github.com/your-username/your-repo/releases/download/v1.0.0/vaja.exe).
+1. Download the `vaja.exe` file for Windows from the [GitHub Release](https://github.com/JoseLucasapp/VAJA/releases/download/v0.0.1/vaja.exe).
 2. Open a command prompt or PowerShell window and run the following command:
 
    ```bash
@@ -69,7 +69,7 @@ You can execute `.vaja` code using the compiled VAJA binary on different platfor
 
 ### **Linux** 🐧
 
-1. Download the `vaja-linux` file for Linux from the [GitHub Release](https://github.com/your-username/your-repo/releases/download/v1.0.0/vaja-linux).
+1. Download the `vaja-linux` file for Linux from the [GitHub Release](https://github.com/JoseLucasapp/VAJA/releases/download/linuxv0.0.1/vaja-linux).
 2. Make the file executable by running:
 
    ```bash
@@ -82,27 +82,12 @@ You can execute `.vaja` code using the compiled VAJA binary on different platfor
    ./vaja-linux myscript.vaja
    ```
 
-### **macOS** 🍏
-
-1. Download the `vaja-macos` file for macOS from the [GitHub Release](https://github.com/your-username/your-repo/releases/download/v1.0.0/vaja-macos).
-2. Make the file executable if it's not already by running:
-
-   ```bash
-   chmod +x vaja-macos
-   ```
-
-3. Run the script with the following command in your terminal:
-
-   ```bash
-   ./vaja-macos myscript.vaja
-   ```
-
 ---
 
 ### ⚡ Additional Notes:
-- Make sure the VAJA binary file (`vaja-linux`, `vaja-macos`, `vaja.exe`) has execution permissions on your system.
+- Make sure the VAJA binary file (`vaja-linux`, `vaja.exe`) has execution permissions on your system.
 - For **Windows**, just run the command without additional configuration.
-- For **Linux** and **macOS**, use the `chmod` command to make the file executable.
+- For **Linux**, use the `chmod` command to make the file executable.
 
 ---
 
