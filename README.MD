@@ -58,7 +58,7 @@ You can execute `.zum` code using the compiled ZUMBRA binary on different platfo
 
 ### **Windows** 🖥️
 
-1. Download the `zumbra.exe` file for Windows from the [GitHub Release](https://github.com/JoseLucasapp/ZUMBRA/releases/download/v0.0.1/zumbra.exe).
+1. Download the `zumbra.exe` file for Windows from the [GitHub Release](https://github.com/Zumbra-lang/Zumbra-lang/releases/download/v0.0.1/zumbra-release-win.zip).
 2. Open a command prompt or PowerShell window and run the following command:
 
    ```bash
@@ -67,7 +67,7 @@ You can execute `.zum` code using the compiled ZUMBRA binary on different platfo
 
 ### **Linux** 🐧
 
-1. Download the `zumbra-linux` file for Linux from the [GitHub Release](https://github.com/JoseLucasapp/ZUMBRA/releases/download/linuxv0.0.1/zumbra-linux).
+1. Download the `zumbra-linux` file for Linux from the [GitHub Release](https://github.com/Zumbra-lang/Zumbra-lang/releases/download/linuxv0.0.1/zumbra-linux).
 2. Make the file executable by running:
 
    ```bash
