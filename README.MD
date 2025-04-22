@@ -6,7 +6,7 @@
 
 ## ✨ What is ZUMBRA?
 
-ZUMBRA is a custom programming language built with its own parser, compiler, and virtual machine. It supports function definitions, scoped variables, custom operators, and more — all with a minimalist syntax and a playful soul.
+ZUMBRA is a custom programming language built with its own parser, compiler, and virtual machine. It supports function definitions, scoped variables, custom operators, and more — all with a easy syntax and a playful soul.
 
 Not your typical cup of J..., try a shot of ZUMBRA.
 
@@ -21,9 +21,7 @@ Not your typical cup of J..., try a shot of ZUMBRA.
 - 🔧 Custom assignment operator: `<<`
 - 📚 Built-in functions:
   - `sizeOf`
-  - `addToArray`
-  - `removeFromArray`
-  - `first`, `last`, `allButFirst`
+  - `addToArray`, `removeFromArray`, `first`, `last`, `allButFirst`, `min`, `max` 
   - `show`
   - `input`
 - 🧠 **Don't forget the ";"**
