@@ -1,6 +1,9 @@
 package object
 
-import "fmt"
+import (
+	"fmt"
+	"math"
+)
 
 var Builtins = []struct {
 	Name    string
@@ -157,6 +160,55 @@ var Builtins = []struct {
 
 				arr.Elements = append(arr.Elements[:index], arr.Elements[index+1:]...)
 				return arr
+			},
+		},
+	},
+	{
+		"max", &Builtin{
+			Fn: func(args ...Object) Object {
+				if len(args) != 1 {
+					return NewError("wrong number of arguments. got=%d, want=1", len(args))
+				}
+				if args[0].Type() != ARRAY_OBJ {
+					return NewError("argument to `max` must be ARRAY, got %s", args[0].Type())
+				}
+
+				arr := args[0].(*Array)
+				if len(arr.Elements) == 0 {
+					return nil
+				}
+				max := arr.Elements[0]
+				for _, el := range arr.Elements[1:] {
+					if math.Max(float64(max.(*Integer).Value), float64(el.(*Integer).Value)) == float64(el.(*Integer).Value) {
+						max = el
+					}
+				}
+				return max
+			},
+		},
+	},
+	{
+		"min", &Builtin{
+			Fn: func(args ...Object) Object {
+				if len(args) != 1 {
+					return NewError("wrong number of arguments. got=%d, want=1", len(args))
+				}
+				if args[0].Type() != ARRAY_OBJ {
+					return NewError("argument to `min` must be ARRAY, got %s", args[0].Type())
+				}
+
+				arr := args[0].(*Array)
+				if len(arr.Elements) == 0 {
+					return nil
+				}
+
+				min := arr.Elements[0]
+				for _, el := range arr.Elements[1:] {
+					if math.Min(float64(min.(*Integer).Value), float64(el.(*Integer).Value)) == float64(el.(*Integer).Value) {
+						min = el
+					}
+				}
+				return min
 			},
 		},
 	},
