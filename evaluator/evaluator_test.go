@@ -507,3 +507,29 @@ func TestDictIndexExpressions(t *testing.T) {
 		}
 	}
 }
+
+func TestMinAndMaxBuiltins(t *testing.T) {
+	tests := []struct {
+		input    string
+		expected interface{}
+	}{
+		{`max([1, 2, 3])`, 3},
+		{`min([1, 2, 3])`, 1},
+		{`max([])`, nil},
+		{`min([])`, nil},
+		{`max([1])`, 1},
+		{`min([1])`, 1},
+		{`max([1, 2, 3, 4, 5])`, 5},
+		{`min([1, 2, 3, 4, 5])`, 1},
+	}
+
+	for _, tt := range tests {
+		evaluated := testEval(tt.input)
+		integer, ok := tt.expected.(int)
+		if ok {
+			testIntegerObject(t, evaluated, int64(integer))
+		} else {
+			testNullObject(t, evaluated)
+		}
+	}
+}
