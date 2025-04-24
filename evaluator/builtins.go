@@ -22,4 +22,5 @@ var builtins = map[string]*object.Builtin{
 	"input":    object.GetBuiltinByName("input"),
 	"max":      object.GetBuiltinByName("max"),
 	"min":      object.GetBuiltinByName("min"),
+	"indexOf":  object.GetBuiltinByName("indexOf"),
 }

@@ -358,6 +358,7 @@ func TestBuiltinFunctions(t *testing.T) {
 		{`sizeOf("hello world")`, 11},
 		{`sizeOf(1)`, "argument to `sizeOf` not supported, got INTEGER"},
 		{`sizeOf("one", "two")`, "wrong number of arguments. got=2, want=1"},
+		{`indexOf([1, 2, 3], 3)`, 2},
 	}
 
 	for _, tt := range tests {

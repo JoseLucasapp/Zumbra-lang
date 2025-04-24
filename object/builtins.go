@@ -212,8 +212,37 @@ var Builtins = []struct {
 			},
 		},
 	},
+	{
+		"indexOf", &Builtin{
+			Fn: func(args ...Object) Object {
+				if len(args) != 2 {
+					return NewError("wrong number of arguments. got=%d, want=2", len(args))
+				}
+				if args[0].Type() != ARRAY_OBJ {
+					return NewError("argument to `indexOf` must be ARRAY, got %s", args[0].Type())
+				}
+				if args[1].Type() != INTEGER_OBJ {
+					return NewError("index argument to `indexOf` must be INTEGER, got %s", args[1].Type())
+				}
+
+				arr := args[0].(*Array)
+				index := args[1].(*Integer).Value
+
+				for i, el := range arr.Elements {
+					if el.(*Integer).Value == index {
+						return NewInteger(int64(i))
+					}
+
+				}
+				return NewInteger(-1)
+			},
+		},
+	},
 }
 
+func NewInteger(value int64) *Integer {
+	return &Integer{Value: value}
+}
 func NewError(format string, a ...interface{}) *Error {
 	return &Error{Message: fmt.Sprintf(format, a...)}
 }
