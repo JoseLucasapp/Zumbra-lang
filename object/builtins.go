@@ -221,16 +221,35 @@ var Builtins = []struct {
 				if args[0].Type() != ARRAY_OBJ {
 					return NewError("argument to `indexOf` must be ARRAY, got %s", args[0].Type())
 				}
-				if args[1].Type() != INTEGER_OBJ {
+				if args[1].Type() != INTEGER_OBJ && args[1].Type() != STRING_OBJ {
 					return NewError("index argument to `indexOf` must be INTEGER, got %s", args[1].Type())
 				}
 
+				var index any
+				var typeOf string
+
 				arr := args[0].(*Array)
-				index := args[1].(*Integer).Value
+				if args[1].Type() == INTEGER_OBJ {
+					index = args[1].(*Integer).Value
+					typeOf = INTEGER_OBJ
+				}
+
+				if args[1].Type() == STRING_OBJ {
+					index = args[1].(*String).Value
+					typeOf = STRING_OBJ
+				}
 
 				for i, el := range arr.Elements {
-					if el.(*Integer).Value == index {
-						return NewInteger(int64(i))
+					if typeOf == INTEGER_OBJ {
+						if el.(*Integer).Value == index.(int64) {
+							return NewInteger(int64(i))
+						}
+					}
+
+					if typeOf == STRING_OBJ {
+						if el.(*String).Value == index.(string) {
+							return NewInteger(int64(i))
+						}
 					}
 
 				}
