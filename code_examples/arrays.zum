@@ -1,14 +1,14 @@
 var array << ["lucasapp", "Hello", "Jose"];
 
-show(array[2] + array[0]);
-show(indexOf(array, "Hello"));
-addToArray(array, "World");
-show(array[1] + " " + array[3]);
+show(array[2] + array[0]); // Joselucasapp
+show(indexOf(array, "Hello")); // 1
+addToArray(array, "World"); 
+show(array[1] + " " + array[3]); // Hello World
 
 var numArray << [1,2,34,55];
 
-show(max(numArray));
-show(min(numArray));
-show(allButFirst(numArray));
-removeFromArray(numArray, 2);
-show(numArray);
+show(max(numArray));//55
+show(min(numArray));//1
+show(allButFirst(numArray)); // [2,34,55]
+removeFromArray(numArray, 2); //array, index = 33
+show(numArray);//[1,2,55]

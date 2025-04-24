@@ -79,7 +79,15 @@ func (l *Lexer) NextToken() token.Token {
 			tok = newToken(token.MINUS, l.ch)
 		}
 	case '/':
-		tok = newToken(token.SLASH, l.ch)
+		if l.peekChar() == '/' {
+			l.readChar()
+			for l.ch != '\n' && l.ch != 0 {
+				l.readChar()
+			}
+			return l.NextToken()
+		} else {
+			tok = newToken(token.SLASH, l.ch)
+		}
 	case '>':
 		if l.peekChar() == '=' {
 			ch := l.ch

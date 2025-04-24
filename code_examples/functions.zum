@@ -3,8 +3,8 @@ var sum << fct(a,b){
 };
 
 var sub << fct (a,b){
-    a - b;
+    a - b; //Returns are not necessary.
 };
 
-show(sub(30,10));
-show(sum(10,10));
+show(sub(30,10)); //20
+show(sum(10,10)); //20
