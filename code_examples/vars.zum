@@ -1,0 +1,4 @@
+var firstName << "Jose";
+var lastName << "lucasapp";
+
+show(firstName + lastName);
