@@ -1,0 +1,10 @@
+var sum << fct(a,b){
+    return a + b;
+};
+
+var sub << fct (a,b){
+    a - b;
+};
+
+show(sub(30,10));
+show(sum(10,10));
