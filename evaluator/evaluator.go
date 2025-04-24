@@ -86,61 +86,6 @@ func Eval(node ast.Node, env *object.Environment) object.Object {
 		}
 		return evalInfixExpression(node.Operator, left, right)
 
-	case *ast.PostfixExpression:
-		val := Eval(node.Operand, env)
-		if isError(val) {
-			return val
-		}
-
-		ident, ok := node.Operand.(*ast.Identifier)
-		if !ok {
-			return newError("operand of postfix must be identifier, got=%T", node.Operand)
-		}
-
-		switch node.Operator {
-		case "++":
-			if intVal, ok := val.(*object.Integer); ok {
-				newVal := &object.Integer{Value: intVal.Value + 1}
-				env.Set(ident.Value, newVal)
-				return newVal
-			}
-			return newError("operator ++ not supported on type %T", val)
-		case "--":
-			if intVal, ok := val.(*object.Integer); ok {
-				newVal := &object.Integer{Value: intVal.Value - 1}
-				env.Set(ident.Value, newVal)
-				return newVal
-			}
-			return newError("operator -- not supported on type %T", val)
-		default:
-			return newError("unknown postfix operator: %s", node.Operator)
-		}
-
-	case *ast.ForExpression:
-		if node.Init != nil {
-			Eval(node.Init, env)
-		}
-
-		var result object.Object
-
-		for {
-			if node.Condition != nil {
-				condition := Eval(node.Condition, env)
-				if isError(condition) {
-					return condition
-				}
-				if !isTruthy(condition) {
-					break
-				}
-			}
-			result = Eval(node.Body, env)
-			if node.Post != nil {
-				Eval(node.Post, env)
-			}
-		}
-
-		return result
-
 	case *ast.IfExpression:
 		return evalIfExpression(node, env)
 
