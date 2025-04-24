@@ -88,6 +88,8 @@ func New(l *lexer.Lexer) *Parser {
 	p.registerInfix(token.GTE, p.parseInfixExpression)
 	p.registerInfix(token.LPAREN, p.parseCallExpression)
 	p.registerInfix(token.LBRACKET, p.parseIndexExpression)
+	p.registerInfix(token.PLUSPLUS, p.parsePostfixExpression)
+	p.registerInfix(token.MINUSMINUS, p.parsePostfixExpression)
 
 	p.nextToken()
 	p.nextToken()
@@ -506,4 +508,14 @@ func (p *Parser) parseDictLiteral() ast.Expression {
 	}
 
 	return dict
+}
+
+func (p *Parser) parsePostfixExpression(left ast.Expression) ast.Expression {
+	expr := &ast.PostfixExpression{
+		Token:    p.curToken,
+		Operator: p.curToken.Literal,
+		Operand:  left,
+	}
+	p.nextToken()
+	return expr
 }
