@@ -159,6 +159,35 @@ func TestIfElseExpressions(t *testing.T) {
 	}
 }
 
+func TestForExpressions(t *testing.T) {
+	tests := []struct {
+		input    string
+		expected interface{}
+	}{
+		{"for (false) { 10 }", nil},
+
+		{"for (true) { 10 }", 10},
+
+		{"var i << 0; var total << 0; for (i < 3) { total << total + i; i << i + 1; } total", 3},
+		{`
+			var total << 0;
+			for (var i << 0; i < 5; i++) {
+				total << total + i;
+			}
+			total
+		`, 10},
+	}
+
+	for _, tt := range tests {
+		evaluated := testEval(tt.input)
+		integer, ok := tt.expected.(int)
+		if ok {
+			testIntegerObject(t, evaluated, int64(integer))
+		} else {
+			testNullObject(t, evaluated)
+		}
+	}
+}
 func testNullObject(t *testing.T, obj object.Object) bool {
 	if obj != NULL {
 		t.Errorf("object is not NULL. got=%T (%+v)", obj, obj)
@@ -521,6 +550,30 @@ func TestMinAndMaxBuiltins(t *testing.T) {
 		{`min([1])`, 1},
 		{`max([1, 2, 3, 4, 5])`, 5},
 		{`min([1, 2, 3, 4, 5])`, 1},
+	}
+
+	for _, tt := range tests {
+		evaluated := testEval(tt.input)
+		integer, ok := tt.expected.(int)
+		if ok {
+			testIntegerObject(t, evaluated, int64(integer))
+		} else {
+			testNullObject(t, evaluated)
+		}
+	}
+}
+
+func TestPostfix(t *testing.T) {
+	tests := []struct {
+		input    string
+		expected interface{}
+	}{
+		{`
+		var i << 0;
+		i++;
+		i++;
+		i;
+		`, 2},
 	}
 
 	for _, tt := range tests {
