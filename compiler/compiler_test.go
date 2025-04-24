@@ -80,6 +80,7 @@ func TestIntegerArithmetic(t *testing.T) {
 	}
 	runCompilerTests(t, tests)
 }
+
 func runCompilerTests(t *testing.T, tests []compilerTestCase) {
 	t.Helper()
 	for _, tt := range tests {
