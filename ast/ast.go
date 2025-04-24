@@ -2,6 +2,7 @@ package ast
 
 import (
 	"bytes"
+	"fmt"
 	"strings"
 	"zumbra/token"
 )
@@ -194,6 +195,43 @@ func (ie *IfExpression) String() string {
 	return out.String()
 }
 
+type ForExpression struct {
+	Token     token.Token
+	Init      Statement
+	Condition Expression
+	Post      Statement
+	Body      *BlockStatement
+}
+
+func (fe *ForExpression) expressionNode()      {}
+func (fe *ForExpression) TokenLiteral() string { return fe.Token.Literal }
+
+func (fe *ForExpression) String() string {
+	var out bytes.Buffer
+
+	out.WriteString("for ")
+
+	if fe.Init != nil {
+		out.WriteString(fe.Init.String())
+		out.WriteString("; ")
+	}
+
+	if fe.Condition != nil {
+		out.WriteString(fe.Condition.String())
+	}
+
+	out.WriteString("; ")
+
+	if fe.Post != nil {
+		out.WriteString(fe.Post.String())
+	}
+
+	out.WriteString(" ")
+	out.WriteString(fe.Body.String())
+
+	return out.String()
+}
+
 type BlockStatement struct {
 	Token      token.Token
 	Statements []Statement
@@ -336,4 +374,16 @@ func (dl *DictLiteral) String() string {
 	out.WriteString("}")
 
 	return out.String()
+}
+
+type PostfixExpression struct {
+	Token    token.Token
+	Operator string
+	Operand  Expression
+}
+
+func (pe *PostfixExpression) expressionNode()      {}
+func (pe *PostfixExpression) TokenLiteral() string { return pe.Token.Literal }
+func (pe *PostfixExpression) String() string {
+	return fmt.Sprintf("(%s%s)", pe.Operand.String(), pe.Operator)
 }
