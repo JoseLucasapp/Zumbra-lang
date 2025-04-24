@@ -907,3 +907,23 @@ func TestFunctionLiteralWithName(t *testing.T) {
 			function.Name)
 	}
 }
+
+func TestFloatParsing(t *testing.T) {
+	input := `146.56`
+
+	l := lexer.New(input)
+	p := New(l)
+	program := p.ParseProgram()
+	checkParserErrors(t, p)
+
+	statement := program.Statements[0].(*ast.ExpressionStatement)
+	literal, ok := statement.Expression.(*ast.FloatLiteral)
+	if !ok {
+		t.Errorf("exp not *AST.Float. Got=%T", statement.Expression)
+	}
+
+	if literal.Value != 146.56 {
+		t.Errorf("Error float")
+	}
+
+}

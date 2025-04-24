@@ -303,6 +303,15 @@ func (vm *VM) executeBinaryOperation(op code.Opcode) error {
 	case leftType == object.INTEGER_OBJ && rightType == object.INTEGER_OBJ:
 		return vm.executeBinaryIntegerOperation(op, left, right)
 
+	case leftType == object.FLOAT_OBJ && rightType == object.FLOAT_OBJ:
+		return vm.executeFloatOperation(op, left, right)
+
+	case leftType == object.INTEGER_OBJ && rightType == object.FLOAT_OBJ:
+		return vm.executeIntLeftFloatRight(op, left, right)
+
+	case leftType == object.FLOAT_OBJ && rightType == object.INTEGER_OBJ:
+		return vm.executeIntRightFloatLeft(op, left, right)
+
 	case leftType == object.STRING_OBJ && rightType == object.STRING_OBJ:
 		return vm.executeBinaryStringOperation(op, left, right)
 	}
@@ -332,6 +341,72 @@ func (vm *VM) executeBinaryIntegerOperation(op code.Opcode, left, right object.O
 	}
 
 	return vm.push(&object.Integer{Value: result})
+}
+
+func (vm *VM) executeFloatOperation(op code.Opcode, left, right object.Object) error {
+	leftValue := left.(*object.Float).Value
+	rightValue := right.(*object.Float).Value
+
+	var result float64
+
+	switch op {
+	case code.OpAdd:
+		result = leftValue + rightValue
+	case code.OpSub:
+		result = leftValue - rightValue
+	case code.OpMul:
+		result = leftValue * rightValue
+	case code.OpDiv:
+		result = leftValue / rightValue
+	default:
+		return fmt.Errorf("unknown float operator: %d", op)
+	}
+
+	return vm.push(&object.Float{Value: result})
+}
+
+func (vm *VM) executeIntLeftFloatRight(op code.Opcode, left, right object.Object) error {
+	leftValue := left.(*object.Integer).Value
+	rightValue := right.(*object.Float).Value
+
+	var result float64
+
+	switch op {
+	case code.OpAdd:
+		result = float64(leftValue) + rightValue
+	case code.OpSub:
+		result = float64(leftValue) - rightValue
+	case code.OpMul:
+		result = float64(leftValue) * rightValue
+	case code.OpDiv:
+		result = float64(leftValue) / rightValue
+	default:
+		return fmt.Errorf("unknown float operator: %d", op)
+	}
+
+	return vm.push(&object.Float{Value: result})
+}
+
+func (vm *VM) executeIntRightFloatLeft(op code.Opcode, left, right object.Object) error {
+	leftValue := left.(*object.Float).Value
+	rightValue := right.(*object.Integer).Value
+
+	var result float64
+
+	switch op {
+	case code.OpAdd:
+		result = leftValue + float64(rightValue)
+	case code.OpSub:
+		result = leftValue - float64(rightValue)
+	case code.OpMul:
+		result = leftValue * float64(rightValue)
+	case code.OpDiv:
+		result = leftValue / float64(rightValue)
+	default:
+		return fmt.Errorf("unknown float operator: %d", op)
+	}
+
+	return vm.push(&object.Float{Value: result})
 }
 
 func (vm *VM) executeBinaryStringOperation(op code.Opcode, left, right object.Object) error {

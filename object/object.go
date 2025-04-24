@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"fmt"
 	"hash/fnv"
+	"strconv"
 	"strings"
 	"zumbra/ast"
 	"zumbra/code"
@@ -24,6 +25,7 @@ const (
 	DICT_OBJ              = "DICT"
 	COMPILED_FUNCTION_OBJ = "COMPILED_FUNCTION_OBJ"
 	CLOSURE_OBJ           = "CLOSURE_OBJ"
+	FLOAT_OBJ             = "FLOAT"
 )
 
 type Object interface {
@@ -198,4 +200,13 @@ type Closure struct {
 func (c *Closure) Type() ObjectType { return CLOSURE_OBJ }
 func (c *Closure) Inspect() string {
 	return fmt.Sprintf("Closure[%p]", c)
+}
+
+type Float struct {
+	Value float64
+}
+
+func (b *Float) Type() ObjectType { return FLOAT_OBJ }
+func (f *Float) Inspect() string {
+	return strconv.FormatFloat(f.Value, 'f', -1, 64)
 }
