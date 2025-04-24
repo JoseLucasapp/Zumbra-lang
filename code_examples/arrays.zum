@@ -1,0 +1,14 @@
+var array << ["lucasapp", "Hello", "Jose"];
+
+show(array[2] + array[0]);
+show(indexOf(array, "Hello"));
+addToArray(array, "World");
+show(array[1] + " " + array[3]);
+
+var numArray << [1,2,34,55];
+
+show(max(numArray));
+show(min(numArray));
+show(allButFirst(numArray));
+removeFromArray(numArray, 2);
+show(numArray);
