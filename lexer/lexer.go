@@ -1,6 +1,8 @@
 package lexer
 
 import (
+	"fmt"
+	"strings"
 	"zumbra/token"
 )
 
@@ -130,15 +132,13 @@ func (l *Lexer) NextToken() token.Token {
 			tok.Type = token.LookupIdent(tok.Literal)
 			return tok
 		} else if isDigit(l.ch) {
-			intPart := l.readInt()
-			if l.ch == '.' {
-				l.readChar()
+			tok.Literal = l.readNumber()
+			if strings.Contains(tok.Literal, ".") == true {
 				tok.Type = token.FLOAT
-				tok.Literal = l.readFloat(intPart)
 			} else {
 				tok.Type = token.INT
-				tok.Literal = intPart
 			}
+
 			return tok
 		} else {
 			tok = newToken(token.ILLEGAL, l.ch)
@@ -171,7 +171,7 @@ func (l *Lexer) peekChar() byte {
 }
 
 func isDigit(ch byte) bool {
-	return '0' <= ch && ch <= '9'
+	return '0' <= ch && ch <= '9' || ch == '.'
 }
 
 func isLetter(ch byte) bool {
@@ -209,4 +209,30 @@ func (l *Lexer) readFloat(start string) string {
 		l.readChar()
 	}
 	return start + "." + l.input[position:l.position]
+}
+
+func (l *Lexer) readNumber() string {
+	first_position := l.position
+	var number string
+	var middle int
+	var isFloat bool
+
+	for isDigit(l.ch) {
+		if l.ch == '.' {
+			number = l.input[first_position:l.position]
+			number = fmt.Sprintf("%s", number)
+			middle = l.position
+			isFloat = true
+		}
+		l.readChar()
+	}
+
+	floatin := fmt.Sprintf("%s%s", number, l.input[middle:l.position])
+
+	if isFloat {
+		return floatin
+	} else {
+		return l.input[first_position:l.position]
+	}
+
 }
