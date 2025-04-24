@@ -31,6 +31,11 @@ func Eval(node ast.Node, env *object.Environment) object.Object {
 		return &object.ReturnValue{Value: value}
 
 	case *ast.VarStatement:
+
+		if _, ok := env.Get(node.Name.Value); ok {
+			return newError("variável '%s' já declarada", node.Name.Value)
+		}
+
 		value := Eval(node.Value, env)
 		if isError(value) {
 			return value
@@ -54,6 +59,20 @@ func Eval(node ast.Node, env *object.Environment) object.Object {
 		return evalPrefixExpression(node.Operator, right)
 
 	case *ast.InfixExpression:
+
+		if node.Operator == "<<" {
+			ident, ok := node.Left.(*ast.Identifier)
+			if !ok {
+				return newError("On << left, must be an identifier. Got %T", node.Left)
+			}
+			val := Eval(node.Right, env)
+			if isError(val) {
+				return val
+			}
+			env.Set(ident.Value, val)
+			return val
+		}
+
 		left := Eval(node.Left, env)
 
 		if isError(left) {

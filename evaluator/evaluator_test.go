@@ -586,3 +586,30 @@ func TestPostfix(t *testing.T) {
 		}
 	}
 }
+
+func VarAttribuite(t *testing.T) {
+	tests := []struct {
+		input    string
+		expected interface{}
+	}{
+		{`var i << 0;
+i << 1;
+i;`, 1},
+		{
+			`var i << 0;
+i << 1;
+i << 2;
+i;`, 2,
+		},
+	}
+
+	for _, tt := range tests {
+		evaluated := testEval(tt.input)
+		integer, ok := tt.expected.(int)
+		if ok {
+			testIntegerObject(t, evaluated, int64(integer))
+		} else {
+			testNullObject(t, evaluated)
+		}
+	}
+}
