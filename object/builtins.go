@@ -257,6 +257,68 @@ var Builtins = []struct {
 			},
 		},
 	},
+	{
+		"addToDict", &Builtin{
+			Fn: func(args ...Object) Object {
+				if len(args) != 3 {
+					return NewError("wrong number of arguments. got=%d, want=3", len(args))
+				}
+
+				if args[0].Type() != DICT_OBJ {
+					return NewError("argument to `addToDict` must be DICT, got %s", args[0].Type())
+				}
+
+				if _, ok := args[1].(Dictable); !ok {
+					return NewError("key must be hashable (STRING, INTEGER, BOOLEAN), got %s", args[1].Type())
+				}
+
+				dict := args[0].(*Dict)
+				keyObj := args[1]
+				valueObj := args[2]
+
+				dictKey := keyObj.(Dictable).DictKey()
+
+				pair := DictPair{
+					Key:   keyObj,
+					Value: valueObj,
+				}
+
+				dict.Pairs[dictKey] = pair
+
+				return nil
+			},
+		},
+	},
+	{
+		"deleteFromDict", &Builtin{
+			Fn: func(args ...Object) Object {
+				if len(args) != 2 {
+					return NewError("wrong number of arguments. got=%d, want=2", len(args))
+				}
+
+				if args[0].Type() != DICT_OBJ {
+					return NewError("argument to `deleteFromDict` must be DICT, got %s", args[0].Type())
+				}
+
+				if _, ok := args[1].(Dictable); !ok {
+					return NewError("key must be hashable (STRING, INTEGER, BOOLEAN), got %s", args[1].Type())
+				}
+
+				dict := args[0].(*Dict)
+				keyObj := args[1]
+
+				dictKey := keyObj.(Dictable).DictKey()
+
+				delete(dict.Pairs, dictKey)
+
+				return nil
+			},
+		},
+	},
+}
+
+func NewString(value string) *String {
+	return &String{Value: value}
 }
 
 func NewInteger(value int64) *Integer {
