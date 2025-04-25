@@ -1,4 +1,8 @@
-var firstName << "Jose";
+var firstName << "Jose"; // Creatin a var firstname with the value "Lucas".
 var lastName << "lucasapp";
 
-show(firstName + lastName);
+show(firstName + lastName); //Joselucasapp.
+
+lastName << "Freitas"; //changing the value of a var
+
+show(firstName + " " + lastName); //Jose Freitas.
