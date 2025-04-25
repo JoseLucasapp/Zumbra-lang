@@ -130,6 +130,9 @@ func Eval(node ast.Node, env *object.Environment) object.Object {
 
 	case *ast.DictLiteral:
 		return evalDictLiteral(node, env)
+
+	case *ast.WhileStatement:
+		return evalWhileStatement(node, env)
 	}
 
 	return nil
@@ -514,4 +517,29 @@ func evalDictIndexExpression(left, index object.Object) object.Object {
 		return NULL
 	}
 	return pair.Value
+}
+
+func evalWhileStatement(ws *ast.WhileStatement, env *object.Environment) object.Object {
+	var result object.Object
+
+	for {
+		condition := Eval(ws.Condition, env)
+		if isError(condition) {
+			return condition
+		}
+
+		if !isTruthy(condition) {
+			break
+		}
+
+		result = Eval(ws.Body, env)
+
+		if result != nil {
+			if result.Type() == object.RETURN_VALUE_OBJ {
+				return result
+			}
+		}
+	}
+
+	return result
 }
