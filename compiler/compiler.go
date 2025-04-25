@@ -320,6 +320,12 @@ func (c *Compiler) Compile(node ast.Node) error {
 		if err != nil {
 			return err
 		}
+
+	case *ast.AssignStatement:
+		err := c.compileAssign(node)
+		if err != nil {
+			return err
+		}
 	}
 
 	return nil
@@ -475,6 +481,28 @@ func (c *Compiler) compileWhile(stmt *ast.WhileStatement) error {
 
 	afterLoopPos := len(c.currentInstructions())
 	c.changeOperand(jumpNotTruthyPos, afterLoopPos)
+
+	return nil
+}
+
+func (c *Compiler) compileAssign(stmt *ast.AssignStatement) error {
+	if err := c.Compile(stmt.Value); err != nil {
+		return err
+	}
+
+	symbol, ok := c.symbolTable.Resolve(stmt.Name.Value)
+	if !ok {
+		return fmt.Errorf("undefined variable %s", stmt.Name.Value)
+	}
+
+	switch symbol.Scope {
+	case GlobalScope:
+		c.emit(code.OpSetGlobal, symbol.Index)
+	case LocalScope:
+		c.emit(code.OpSetLocal, symbol.Index)
+	default:
+		return fmt.Errorf("unsupported assignment target scope: %s", symbol.Scope)
+	}
 
 	return nil
 }
