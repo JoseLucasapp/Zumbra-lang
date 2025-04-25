@@ -927,3 +927,72 @@ func TestFloatParsing(t *testing.T) {
 	}
 
 }
+
+func TestAssignStatement(t *testing.T) {
+	input := `var x << 5; x << 5;`
+
+	l := lexer.New(input)
+	p := New(l)
+	program := p.ParseProgram()
+	checkParserErrors(t, p)
+
+	if len(program.Statements) != 2 {
+		t.Fatalf("program.Statements does not contain 2 statements. got=%d\n", len(program.Statements))
+	}
+
+	// Testa a declaração com `var`
+	_, ok := program.Statements[1].(*ast.AssignStatement)
+	if !ok {
+		t.Fatalf("program.Statements[1] is not ast.AssignStatement. got=%T", program.Statements[1])
+	}
+
+	// Testa a atribuição pura `x << 5`
+	stmt, ok := program.Statements[1].(*ast.AssignStatement)
+	if !ok {
+		t.Fatalf("program.Statements[1] is not ast.AssignStatement. got=%T", program.Statements[1])
+	}
+
+	if !testIdentifier(t, stmt.Name, "x") {
+		return
+	}
+
+	if !testIntegerLiteral(t, stmt.Value, 5) {
+		return
+	}
+}
+
+func TestWhileStatement(t *testing.T) {
+	input := `
+	while (x < 10) {
+		x << x + 1
+	}
+	`
+	l := lexer.New(input)
+	p := New(l)
+	program := p.ParseProgram()
+	checkParserErrors(t, p)
+
+	if len(program.Statements) != 1 {
+		t.Fatalf("program.Statements does not contain 1 statement. got=%d\n", len(program.Statements))
+	}
+
+	stmt, ok := program.Statements[0].(*ast.WhileStatement)
+	if !ok {
+		t.Fatalf("program.Statements[0] is not ast.WhileStatement. got=%T", program.Statements[0])
+	}
+
+	if !testInfixExpression(t, stmt.Condition, "x", "<", 10) {
+		return
+	}
+
+	if len(stmt.Body.Statements) != 1 {
+		t.Errorf("body should contain 1 statement. got=%d\n", len(stmt.Body.Statements))
+	}
+
+	assignStmt, ok := stmt.Body.Statements[0].(*ast.AssignStatement)
+	if !ok {
+		t.Fatalf("Statements[0] is not ast.AssignStatement. got=%T", stmt.Body.Statements[0])
+	}
+
+	testInfixExpression(t, assignStmt.Value, "x", "+", 1)
+}
