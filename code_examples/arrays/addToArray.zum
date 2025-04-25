@@ -1,0 +1,5 @@
+var array << ["lucasapp", "Hello", "Jose"];
+
+show(array[2] + array[0]); // Joselucasapp
+addToArray(array, "World"); 
+show(array[1] + " " + array[3]); // Hello World

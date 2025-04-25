@@ -1,0 +1,3 @@
+var array << ["lucasapp", "Hello", "Jose"];
+
+show(array[1]); //Hello 

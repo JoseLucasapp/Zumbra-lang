@@ -1,0 +1,4 @@
+var numArray << [1,2,34,55];
+
+removeFromArray(numArray, 2); //array, index = 34
+show(numArray);//[1,2,55]
