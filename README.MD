@@ -1,4 +1,9 @@
-# ZUMBRA Programming Language
+
+<div style="display: flex; align-items: end;">
+  <img src="./assets/zumbra.png" width="200" style="margin: 0; margin-left: -20px;" />
+  <p style="margin: 0; font-size: 30px; margin-bottom: 10px;">ZUMBRA Programming Language</p>
+</div>
+
 
 > ⚙️ *ZUMBRA is a simple, fun, and expressive programming language made for learning, experimenting, and enjoying the beauty of code.*
 
