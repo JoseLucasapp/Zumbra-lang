@@ -46,16 +46,17 @@ func runVmTests(t *testing.T, tests []vmTestCase) {
 			t.Fatalf("compiler error: %s", err)
 		}
 
-		for i, constant := range comp.Bytecode().Constants {
-			fmt.Printf("CONSTANT %d %p (%T):\n", i, constant, constant)
-			switch constant := constant.(type) {
-			case *object.CompiledFunction:
-				fmt.Printf(" Instructions:\n%s", constant.Instructions)
-			case *object.Integer:
-				fmt.Printf(" Value: %d\n", constant.Value)
-			}
-			fmt.Printf("\n")
-		}
+		/*
+			for i, constant := range comp.Bytecode().Constants {
+				fmt.Printf("CONSTANT %d %p (%T):\n", i, constant, constant)
+				switch constant := constant.(type) {
+				case *object.CompiledFunction:
+					fmt.Printf(" Instructions:\n%s", constant.Instructions)
+				case *object.Integer:
+					fmt.Printf(" Value: %d\n", constant.Value)
+				}
+				fmt.Printf("\n")
+			}*/
 
 		vm := New(comp.Bytecode())
 		err = vm.Run()
@@ -751,6 +752,48 @@ func TestRecursiveFibonacci(t *testing.T) {
 	fibonacci(15);
 	`,
 			expected: 610,
+		},
+	}
+	runVmTests(t, tests)
+}
+
+func TestAssign(t *testing.T) {
+	tests := []vmTestCase{
+		{
+			input: `
+				var x << 0;
+				x << 1;
+				x;
+			`,
+			expected: 1,
+		},
+	}
+	runVmTests(t, tests)
+}
+
+func TestWhileLoops(t *testing.T) {
+	tests := []vmTestCase{
+		{
+			input: `
+				var x << 0;
+				while (x < 3) {
+					x << x + 1;
+				}
+				x
+			`,
+			expected: 3,
+		},
+		{
+			input: `
+				var result << 1;
+				var i << 1;
+				while (i < 4) {
+					result << result * i;
+					i << i + 1;
+				}
+				result
+			`,
+			expected: 6, // 1 * 2 * 3
 		},
 	}
 	runVmTests(t, tests)
