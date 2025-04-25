@@ -1,0 +1,7 @@
+var a << {"Lucas":2};
+
+show(a); //{Lucas:2}
+
+addToDict(a, "João", 39);
+
+show(a); //{Lucas:2, João:39}

@@ -1,0 +1,5 @@
+var a << {"Lucas":2, "João":39};
+
+deleteFromDict(a, "Lucas"); 
+
+show(a);//{João:39}

@@ -1,0 +1,3 @@
+var a << {"Lucas":2};
+
+show(a); //{Lucas:2}
