@@ -314,6 +314,12 @@ func (c *Compiler) Compile(node ast.Node) error {
 		}
 
 		c.emit(code.OpCall, len(node.Arguments))
+
+	case *ast.WhileStatement:
+		err := c.compileWhile(node)
+		if err != nil {
+			return err
+		}
 	}
 
 	return nil
@@ -450,4 +456,25 @@ func (c *Compiler) loadSymbol(s Symbol) {
 	case FunctionScope:
 		c.emit(code.OpCurrentClosure)
 	}
+}
+
+func (c *Compiler) compileWhile(stmt *ast.WhileStatement) error {
+	loopStartPos := len(c.currentInstructions())
+
+	if err := c.Compile(stmt.Condition); err != nil {
+		return err
+	}
+
+	jumpNotTruthyPos := c.emit(code.OpJumpNotTruthy, 9999)
+
+	if err := c.Compile(stmt.Body); err != nil {
+		return err
+	}
+
+	c.emit(code.OpJump, loopStartPos)
+
+	afterLoopPos := len(c.currentInstructions())
+	c.changeOperand(jumpNotTruthyPos, afterLoopPos)
+
+	return nil
 }
