@@ -22,8 +22,9 @@ Not your typical cup of J..., try a shot of ZUMBRA.
   - `input`
 - 🧠 **Don't forget the ";"**
 
+## 🛠 Code_examples
 
-<a href="./code_examples/"><h2>🛠 Code_examples</h2></a>
+<a href="./code_examples/">here</a>
 
 
 ## 📥 How to Run
