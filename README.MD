@@ -16,15 +16,17 @@ Not your typical cup of J..., try a shot of ZUMBRA.
 ## 📦 Features
 
 - 🧠 **User-defined functions** with `fct`
+- 🖥️ **See your outputs** with `show`
+- 🖥️ **Add info with the terminal** with `input`
+- 🔧 **Custom assignment operator:** `<<`
 - 📦 **Global and local variables** with `var`
 - 🧮 Arithmetic and logical operations: `+ - * / % = <= >=`
 - 🔁 Conditional logic: `if`, `else`, `return`
-- 🔧 Custom assignment operator: `<<`
+- 🔁 Create loops with `while`
 - 📚 Built-in functions:
   - `sizeOf`
   - `addToArray`, `removeFromArray`, `first`, `last`, `allButFirst`, `min`, `max`, `indexOf`
-  - `show`
-  - `input`
+  - `addToDict`, `removeFromDict`
 - 🧠 **Don't forget the ";"**
 
 ## 🛠 Code_examples
