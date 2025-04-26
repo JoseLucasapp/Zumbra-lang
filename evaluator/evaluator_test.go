@@ -598,6 +598,9 @@ func TestTypeConverter(t *testing.T) {
 		{`toInt(true)`, 1},
 		{`toInt(false)`, 0},
 		{`toInt(10.2)`, 10},
+		{`toFloat(10)`, 10.0},
+		{`toFloat("10.2")`, 10.2},
+		{`toFloat(true)`, 1.0},
 	}
 
 	for _, tt := range tests {

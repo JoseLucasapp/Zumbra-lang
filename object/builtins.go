@@ -372,8 +372,43 @@ var Builtins = []struct {
 			},
 		},
 	},
+	{
+		"toFloat", &Builtin{
+			Fn: func(args ...Object) Object {
+				if len(args) != 1 {
+					return NewError("wrong number of arguments. got=%d, want=1", len(args))
+				}
+
+				switch obj := args[0].(type) {
+				case *String:
+					value, errors := strconv.ParseFloat(obj.Value, 64)
+
+					if errors != nil {
+						return NewError("Error to parse string. %s", errors.Error())
+					}
+
+					return NewFloat(float64(value))
+				case *Float:
+					return obj
+				case *Boolean:
+					if obj.Value == true {
+						return NewFloat(1)
+					} else {
+						return NewFloat(0)
+					}
+				case *Integer:
+					return NewFloat(float64(obj.Value))
+				default:
+					return NewError("argument to `toFloat` not supported, got=%s", args[0].Type())
+				}
+			},
+		},
+	},
 }
 
+func NewFloat(value float64) *Float {
+	return &Float{Value: value}
+}
 func NewString(value string) *String {
 	return &String{Value: value}
 }
