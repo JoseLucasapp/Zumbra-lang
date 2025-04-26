@@ -584,3 +584,28 @@ i;`, 10},
 		}
 	}
 }
+
+func TestTypeConverter(t *testing.T) {
+	tests := []struct {
+		input    string
+		expected interface{}
+	}{
+		{`toString(1)`, "1"},
+		{`toString(true)`, "true"},
+		{`toString(333)`, "333"},
+	}
+
+	for _, tt := range tests {
+		evaluated := testEval(tt.input)
+		str, ok := evaluated.(*object.String)
+
+		if !ok {
+			t.Fatalf("object is not *object.String. got=%T (%+v)", evaluated, evaluated)
+		}
+
+		if str.Value != tt.expected {
+			t.Errorf("String has wrong value. got=%q", str.Value)
+		}
+
+	}
+}

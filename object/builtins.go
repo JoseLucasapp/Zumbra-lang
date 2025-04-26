@@ -315,6 +315,30 @@ var Builtins = []struct {
 			},
 		},
 	},
+	{
+		"toString", &Builtin{
+			Fn: func(args ...Object) Object {
+				if len(args) != 1 {
+					return NewError("wrong number of arguments. got=%d, want=1", len(args))
+				}
+
+				var value any
+
+				switch obj := args[0].(type) {
+				case *Integer:
+					value = obj.Value
+				case *Float:
+					value = obj.Value
+				case *Boolean:
+					value = obj.Value
+				default:
+					return NewError("argument to `toString` not supported, got=%s", args[0].Type())
+				}
+
+				return NewString(fmt.Sprintf("%v", value))
+			},
+		},
+	},
 }
 
 func NewString(value string) *String {
