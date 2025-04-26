@@ -1,0 +1,3 @@
+show(toInt("1"))//1
+show(toString(1))//"1"
+show(toFloat(true))//1.0

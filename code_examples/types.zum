@@ -1,0 +1,8 @@
+var text << "text"; //string
+var number << 10 //int
+var ok << true // boolean
+var notOk << false // boolean
+var array << [] //array
+var dict << {}// dict
+var float << 10.5 // float
+var function << fct(){} //function
