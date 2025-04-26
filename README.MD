@@ -31,6 +31,7 @@ Not your typical cup of J..., try a shot of ZUMBRA.
   - `sizeOf`
   - `addToArray`, `removeFromArray`, `first`, `last`, `allButFirst`, `min`, `max`, `indexOf`
   - `addToDict`, `removeFromDict`
+  - `toInt`, `toString`, `toFloat`
 - 🧠 **Don't forget the ";"**
 
 ## 🛠 Code_examples
