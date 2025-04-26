@@ -3,6 +3,7 @@ package object
 import (
 	"fmt"
 	"math"
+	"strconv"
 )
 
 var Builtins = []struct {
@@ -336,6 +337,38 @@ var Builtins = []struct {
 				}
 
 				return NewString(fmt.Sprintf("%v", value))
+			},
+		},
+	},
+	{
+		"toInt", &Builtin{
+			Fn: func(args ...Object) Object {
+				if len(args) != 1 {
+					return NewError("wrong number of arguments. got=%d, want=1", len(args))
+				}
+
+				switch obj := args[0].(type) {
+				case *String:
+					value, errors := strconv.Atoi(obj.Value)
+
+					if errors != nil {
+						return NewError("Error to parse string. %s", errors.Error())
+					}
+
+					return NewInteger(int64(value))
+				case *Float:
+					return NewInteger(int64(math.Floor(obj.Value)))
+				case *Boolean:
+					if obj.Value == true {
+						return NewInteger(1)
+					} else {
+						return NewInteger(0)
+					}
+				case *Integer:
+					return obj
+				default:
+					return NewError("argument to `toInt` not supported, got=%s", args[0].Type())
+				}
 			},
 		},
 	},

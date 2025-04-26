@@ -20,4 +20,5 @@ var builtins = map[string]*object.Builtin{
 	"addToDict":       object.GetBuiltinByName("addToDict"),
 	"deleteFromDict":  object.GetBuiltinByName("deleteFromDict"),
 	"toString":        object.GetBuiltinByName("toString"),
+	"toInt":           object.GetBuiltinByName("toInt"),
 }

@@ -593,18 +593,29 @@ func TestTypeConverter(t *testing.T) {
 		{`toString(1)`, "1"},
 		{`toString(true)`, "true"},
 		{`toString(333)`, "333"},
+		{`toString(2.2)`, "2.2"},
+		{`toInt("333")`, 333},
+		{`toInt(true)`, 1},
+		{`toInt(false)`, 0},
+		{`toInt(10.2)`, 10},
 	}
 
 	for _, tt := range tests {
 		evaluated := testEval(tt.input)
-		str, ok := evaluated.(*object.String)
 
-		if !ok {
-			t.Fatalf("object is not *object.String. got=%T (%+v)", evaluated, evaluated)
-		}
+		switch expected := tt.expected.(type) {
+		case int:
+			testIntegerObject(t, evaluated, int64(expected))
+		case string:
+			str, ok := evaluated.(*object.String)
 
-		if str.Value != tt.expected {
-			t.Errorf("String has wrong value. got=%q", str.Value)
+			if !ok {
+				t.Fatalf("object is not *object.String. got=%T (%+v)", evaluated, evaluated)
+			}
+
+			if str.Value != tt.expected {
+				t.Errorf("String has wrong value. got=%q", str.Value)
+			}
 		}
 
 	}
