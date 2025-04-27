@@ -121,7 +121,25 @@ var Builtins = []struct {
 		},
 	},
 	{
-		"addToArray",
+		"addToArrayStart",
+		&Builtin{
+			Fn: func(args ...Object) Object {
+				if len(args) != 2 {
+					return NewError("wrong number of arguments. got=%d, want=2", len(args))
+				}
+				if args[0].Type() != ARRAY_OBJ {
+					return NewError("argument to `addToArray` must be ARRAY, got %s", args[0].Type())
+				}
+
+				arr := args[0].(*Array)
+
+				arr.Elements = append([]Object{args[1]}, arr.Elements...)
+				return arr
+			},
+		},
+	},
+	{
+		"addToArrayEnd",
 		&Builtin{
 			Fn: func(args ...Object) Object {
 				if len(args) != 2 {
