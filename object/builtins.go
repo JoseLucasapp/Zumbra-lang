@@ -404,8 +404,33 @@ var Builtins = []struct {
 			},
 		},
 	},
+	{
+		"toBool", &Builtin{
+			Fn: func(args ...Object) Object {
+				if len(args) != 1 {
+					return NewError("wrong number of arguments. got=%d, want=1", len(args))
+				}
+
+				switch obj := args[0].(type) {
+				case *String:
+					return NewBoolean(obj.Value != "")
+				case *Float:
+					return NewBoolean(obj.Value != 0)
+				case *Boolean:
+					return obj
+				case *Integer:
+					return NewBoolean(obj.Value != 0)
+				default:
+					return NewError("argument to `toBool` not supported, got=%s", args[0].Type())
+				}
+			},
+		},
+	},
 }
 
+func NewBoolean(value bool) *Boolean {
+	return &Boolean{Value: value}
+}
 func NewFloat(value float64) *Float {
 	return &Float{Value: value}
 }
