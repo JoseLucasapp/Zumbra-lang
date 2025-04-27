@@ -1,0 +1,3 @@
+var twoTimes << fct(x){
+    return x * 2;
+};

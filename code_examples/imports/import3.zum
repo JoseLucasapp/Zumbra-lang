@@ -1,0 +1,5 @@
+import "import2.zum"
+
+show(sum(1));
+// output: 16
+// output: 3

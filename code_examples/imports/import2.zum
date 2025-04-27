@@ -1,0 +1,7 @@
+import "import1.zum"
+
+show(twoTimes(8));//output: 16
+
+var sum << fct(x){
+    return x + twoTimes(x);
+};
