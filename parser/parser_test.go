@@ -996,3 +996,29 @@ func TestWhileStatement(t *testing.T) {
 
 	testInfixExpression(t, assignStmt.Value, "x", "+", 1)
 }
+
+func TestImportStatement(t *testing.T) {
+	input := `import "utils.zum"`
+
+	l := lexer.New(input)
+	p := New(l)
+	program := p.ParseProgram()
+	checkParserErrors(t, p)
+
+	if len(program.Statements) != 1 {
+		t.Fatalf("program.Statements does not contain 1 statement. got=%d\n", len(program.Statements))
+	}
+
+	stmt, ok := program.Statements[0].(*ast.ImportStatement)
+	if !ok {
+		t.Fatalf("program.Statements[0] is not ast.ImportStatement. got=%T", program.Statements[0])
+	}
+
+	if stmt.Path.Value != "utils.zum" {
+		t.Errorf("Path.Value not 'utils.zum'. got=%q", stmt.Path.Value)
+	}
+
+	if stmt.Path.TokenLiteral() != "utils.zum" {
+		t.Errorf("Path.TokenLiteral() not 'utils.zum'. got=%q", stmt.Path.TokenLiteral())
+	}
+}
