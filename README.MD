@@ -11,6 +11,10 @@
 
 <a href="https://zumbra-web.vercel.app/">Zumbra web</a>
 
+# Official docs
+
+<a href="">Zumbra docs</a>
+
 ## ✨ What is ZUMBRA?
 
 ZUMBRA is a custom programming language built with its own parser, compiler, and virtual machine. It supports function definitions, scoped variables, custom operators, and more — all with a easy syntax and a playful soul.
@@ -24,14 +28,15 @@ Not your typical cup of J..., try a shot of ZUMBRA.
 - 🖥️ **Add info with the terminal** with `input`
 - 🔧 **Custom assignment operator:** `<<`
 - 📦 **Global and local variables** with `var`
+- 📦 **Imports support** with `import "file"`
 - 🧮 Arithmetic and logical operations: `+ - * / % = <= >=`
 - 🔁 Conditional logic: `if`, `else`, `return`
 - 🔁 Create loops with `while`
 - 📚 Built-in functions:
   - `sizeOf`
-  - `addToArray`, `removeFromArray`, `first`, `last`, `allButFirst`, `min`, `max`, `indexOf`
+  - `addToArrayStart`, `addToArrayEnd`, `removeFromArray`, `first`, `last`, `allButFirst`, `min`, `max`, `indexOf`
   - `addToDict`, `removeFromDict`
-  - `toInt`, `toString`, `toFloat`
+  - `toInt`, `toString`, `toFloat`, `toBool`
 - 🧠 **Don't forget the ";"**
 
 ## 🛠 Code_examples
