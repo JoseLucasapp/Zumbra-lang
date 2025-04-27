@@ -23,4 +23,5 @@ var builtins = map[string]*object.Builtin{
 	"toString":        object.GetBuiltinByName("toString"),
 	"toInt":           object.GetBuiltinByName("toInt"),
 	"toFloat":         object.GetBuiltinByName("toFloat"),
+	"toBool":          object.GetBuiltinByName("toBool"),
 }
