@@ -1,6 +1,8 @@
 package evaluator
 
 import (
+	"fmt"
+	"os"
 	"testing"
 	"zumbra/lexer"
 	"zumbra/object"
@@ -626,5 +628,56 @@ func TestTypeConverter(t *testing.T) {
 			}
 		}
 
+	}
+}
+
+func TestImportEvaluator(t *testing.T) {
+	// Primeiro, cria o conteúdo do arquivo a ser importado
+	importedFileContent := `
+    var soma << fct(a, b) {
+        return a + b;
+    };
+
+    var multi << fct(a, b) {
+        return a * b;
+    };
+    `
+
+	tmpFile, err := os.CreateTemp("", "import_test_*.zum")
+	if err != nil {
+		t.Fatalf("could not create temp file: %v", err)
+	}
+	defer os.Remove(tmpFile.Name())
+
+	if _, err := tmpFile.WriteString(importedFileContent); err != nil {
+		t.Fatalf("could not write to temp file: %v", err)
+	}
+	tmpFile.Close()
+
+	// Agora definimos os testes de entrada e saída esperada
+	tests := []struct {
+		input    string
+		expected int64
+	}{
+		{
+			input: fmt.Sprintf(`
+                import "%s";
+                soma(2, 3);
+            `, tmpFile.Name()),
+			expected: 5,
+		},
+		{
+			input: fmt.Sprintf(`
+                import "%s";
+                multi(4, 5);
+            `, tmpFile.Name()),
+			expected: 20,
+		},
+	}
+
+	for _, tt := range tests {
+		evaluated := testEval(tt.input)
+
+		testIntegerObject(t, evaluated, tt.expected)
 	}
 }

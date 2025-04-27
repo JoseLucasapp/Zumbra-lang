@@ -2,8 +2,11 @@ package evaluator
 
 import (
 	"fmt"
+	"os"
 	"zumbra/ast"
+	"zumbra/lexer"
 	"zumbra/object"
+	"zumbra/parser"
 )
 
 var (
@@ -136,6 +139,9 @@ func Eval(node ast.Node, env *object.Environment) object.Object {
 
 	case *ast.WhileStatement:
 		return evalWhileStatement(node, env)
+
+	case *ast.ImportStatement:
+		return evalImportStatement(node, env)
 	}
 
 	return nil
@@ -545,4 +551,29 @@ func evalWhileStatement(ws *ast.WhileStatement, env *object.Environment) object.
 	}
 
 	return result
+}
+
+func evalImportStatement(node *ast.ImportStatement, env *object.Environment) object.Object {
+	path := node.Path.Value
+
+	if env.IsImported(path) {
+		return nil
+	}
+
+	env.MarkImported(path)
+
+	content, err := os.ReadFile(path)
+	if err != nil {
+		return newError("Could not read imported file: %s", path)
+	}
+
+	l := lexer.New(string(content))
+	p := parser.New(l)
+	program := p.ParseProgram()
+
+	if len(p.Errors()) != 0 {
+		return newError("Could not parse imported file: %s", path)
+	}
+
+	return Eval(program, env)
 }
