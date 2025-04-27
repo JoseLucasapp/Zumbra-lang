@@ -594,10 +594,10 @@ func TestBuiltinFunctions(t *testing.T) {
 		},
 		{`allButFirst([1, 2, 3])`, []int{2, 3}},
 		{`allButFirst([])`, Null},
-		{`addToArray([], 1)`, []int{1}},
-		{`addToArray(1, 1)`,
+		{`addToArrayStart([], 1)`, []int{1}},
+		{`addToArrayStart(1, 1)`,
 			&object.Error{
-				Message: "argument to `addToArray` must be ARRAY, got INTEGER",
+				Message: "argument to `addToArrayStart` must be ARRAY, got INTEGER",
 			},
 		},
 	}

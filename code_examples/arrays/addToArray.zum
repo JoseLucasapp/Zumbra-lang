@@ -1,5 +1,4 @@
-var array << ["lucasapp", "Hello", "Jose"];
-
-show(array[2] + array[0]); // Joselucasapp
-addToArray(array, "World"); 
-show(array[1] + " " + array[3]); // Hello World
+var arr << [1, 2, 3];
+addToArrayStart(arr, 0);
+addToArrayEnd(arr, 5);
+show(arr); //output: [0,1,2,3,5] 
