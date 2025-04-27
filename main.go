@@ -5,6 +5,7 @@ import (
 	"io/ioutil"
 	"os"
 	"os/user"
+	"path/filepath"
 
 	"zumbra/compiler"
 	"zumbra/lexer"
@@ -58,7 +59,15 @@ func runFile(filename string) {
 		return
 	}
 
-	comp := compiler.NewWithState(symbolTable, constants)
+	// Novo trecho:
+	absPath, err := filepath.Abs(filename)
+	if err != nil {
+		fmt.Printf("Erro ao resolver caminho absoluto: %s\n", err)
+		return
+	}
+	dir := filepath.Dir(absPath)
+
+	comp := compiler.NewWithStateAndDir(symbolTable, constants, dir) // AQUI
 	err = comp.Compile(program)
 	if err != nil {
 		fmt.Printf("Erro na compilação: %s\n", err)

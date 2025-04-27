@@ -2,10 +2,14 @@ package compiler
 
 import (
 	"fmt"
+	"os"
+	"path/filepath"
 	"sort"
 	"zumbra/ast"
 	"zumbra/code"
+	"zumbra/lexer"
 	"zumbra/object"
+	"zumbra/parser"
 )
 
 type CompilationScope struct {
@@ -20,6 +24,8 @@ type Compiler struct {
 	symbolTable         *SymbolTable
 	scopes              []CompilationScope
 	scopeIndex          int
+	importedFiles       map[string]bool
+	currentDir          string
 }
 
 func New() *Compiler {
@@ -35,11 +41,31 @@ func New() *Compiler {
 		symbolTable.DefineBuiltin(i, v.Name)
 	}
 
+	cwd, _ := os.Getwd()
 	return &Compiler{
-		constants:   []object.Object{},
-		symbolTable: symbolTable,
-		scopes:      []CompilationScope{mainScope},
-		scopeIndex:  0,
+		constants:     []object.Object{},
+		symbolTable:   symbolTable,
+		scopes:        []CompilationScope{mainScope},
+		scopeIndex:    0,
+		importedFiles: map[string]bool{},
+		currentDir:    cwd,
+	}
+}
+
+func NewWithStateAndDir(s *SymbolTable, constants []object.Object, baseDir string) *Compiler {
+	mainScope := CompilationScope{
+		instructions:        code.Instructions{},
+		lastInstruction:     EmittedInstruction{},
+		previousInstruction: EmittedInstruction{},
+	}
+
+	return &Compiler{
+		constants:     constants,
+		symbolTable:   s,
+		scopes:        []CompilationScope{mainScope},
+		scopeIndex:    0,
+		importedFiles: map[string]bool{},
+		currentDir:    baseDir, // <-- Agora passa o caminho correto aqui
 	}
 }
 
@@ -326,6 +352,9 @@ func (c *Compiler) Compile(node ast.Node) error {
 		if err != nil {
 			return err
 		}
+
+	case *ast.ImportStatement:
+		return c.compileImport(node)
 	}
 
 	return nil
@@ -505,4 +534,42 @@ func (c *Compiler) compileAssign(stmt *ast.AssignStatement) error {
 	}
 
 	return nil
+}
+
+func (c *Compiler) compileImport(stmt *ast.ImportStatement) error {
+	path := stmt.Path.Value
+
+	if c.importedFiles == nil {
+		c.importedFiles = make(map[string]bool)
+	}
+
+	importFullPath := filepath.Join(c.currentDir, path)
+	importFullPath = filepath.Clean(importFullPath)
+
+	if c.importedFiles[importFullPath] {
+		return nil
+	}
+
+	c.importedFiles[importFullPath] = true
+
+	content, err := os.ReadFile(importFullPath)
+	if err != nil {
+		return fmt.Errorf("could not read imported file: %s", path)
+	}
+
+	l := lexer.New(string(content))
+	p := parser.New(l)
+	program := p.ParseProgram()
+
+	if len(p.Errors()) != 0 {
+		return fmt.Errorf("could not parse imported file: %s", path)
+	}
+
+	oldDir := c.currentDir
+	c.currentDir = filepath.Dir(importFullPath)
+
+	err = c.Compile(program)
+	c.currentDir = oldDir
+
+	return err
 }
