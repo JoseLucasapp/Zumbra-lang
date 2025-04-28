@@ -1022,3 +1022,66 @@ func TestImportStatement(t *testing.T) {
 		t.Errorf("Path.TokenLiteral() not 'utils.zum'. got=%q", stmt.Path.TokenLiteral())
 	}
 }
+
+func TestLogicalExpressions(t *testing.T) {
+	input := `
+	var a << true and false;
+	var b << true or false;
+	`
+
+	l := lexer.New(input)
+	p := New(l)
+	program := p.ParseProgram()
+	checkParserErrors(t, p)
+
+	if len(program.Statements) != 2 {
+		t.Fatalf("program.Statements does not contain 2 statements. got=%d", len(program.Statements))
+	}
+
+	tests := []struct {
+		expectedIdentifier string
+		expectedLeft       string
+		expectedOperator   string
+		expectedRight      string
+	}{
+		{"a", "true", "and", "false"},
+		{"b", "true", "or", "false"},
+	}
+
+	for i, tt := range tests {
+		stmt := program.Statements[i]
+		varStmt, ok := stmt.(*ast.VarStatement)
+		if !ok {
+			t.Fatalf("stmt not *ast.VarStatement. got=%T", stmt)
+		}
+
+		if varStmt.Name.Value != tt.expectedIdentifier {
+			t.Errorf("varStmt.Name.Value not '%s'. got=%s", tt.expectedIdentifier, varStmt.Name.Value)
+		}
+
+		infixExp, ok := varStmt.Value.(*ast.InfixExpression)
+		if !ok {
+			t.Fatalf("varStmt.Value not *ast.InfixExpression. got=%T", varStmt.Value)
+		}
+
+		if infixExp.Operator != tt.expectedOperator {
+			t.Errorf("operator is not '%s'. got=%s", tt.expectedOperator, infixExp.Operator)
+		}
+
+		left, ok := infixExp.Left.(*ast.Boolean)
+		if !ok {
+			t.Fatalf("left expression is not *ast.Boolean. got=%T", infixExp.Left)
+		}
+		if left.Value != (tt.expectedLeft == "true") {
+			t.Errorf("left value not %s. got=%t", tt.expectedLeft, left.Value)
+		}
+
+		right, ok := infixExp.Right.(*ast.Boolean)
+		if !ok {
+			t.Fatalf("right expression is not *ast.Boolean. got=%T", infixExp.Right)
+		}
+		if right.Value != (tt.expectedRight == "true") {
+			t.Errorf("right value not %s. got=%t", tt.expectedRight, right.Value)
+		}
+	}
+}
