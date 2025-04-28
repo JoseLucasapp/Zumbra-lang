@@ -681,3 +681,54 @@ func TestImportEvaluator(t *testing.T) {
 		testIntegerObject(t, evaluated, tt.expected)
 	}
 }
+
+func TestLogicalOperatorsShortCircuit(t *testing.T) {
+	tests := []struct {
+		input    string
+		expected bool
+	}{
+		// AND
+		{"false and true", false},
+		{"true and true", true},
+		{"true and false", false},
+		// OR
+		{"true or true", true},
+		{"true or false", true},
+		{"false or true", true},
+		{"false or false", false},
+	}
+
+	for _, tt := range tests {
+		evaluated := testEval(tt.input)
+		boolean, ok := evaluated.(*object.Boolean)
+		if !ok {
+			t.Fatalf("object is not Boolean. got=%T (%+v)", evaluated, evaluated)
+		}
+		if boolean.Value != tt.expected {
+			t.Errorf("input: %q - expected %t, got %t", tt.input, tt.expected, boolean.Value)
+		}
+	}
+}
+
+func TestStringComparison(t *testing.T) {
+	tests := []struct {
+		input    string
+		expected bool
+	}{
+		{`"Lucas" == "Lucas"`, true},
+		{`"Lucas" == "lucas"`, false},
+		{`"abc" != "def"`, true},
+		{`"abc" != "abc"`, false},
+	}
+
+	for _, tt := range tests {
+		evaluated := testEval(tt.input)
+		boolean, ok := evaluated.(*object.Boolean)
+		if !ok {
+			t.Fatalf("object is not Boolean. got=%T (%+v)", evaluated, evaluated)
+		}
+		if boolean.Value != tt.expected {
+			t.Errorf("input: %q - expected %t, got %t", tt.input, tt.expected, boolean.Value)
+		}
+	}
+}

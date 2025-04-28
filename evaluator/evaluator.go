@@ -224,6 +224,8 @@ func evalMinusPrefixOperatorExpression(right object.Object) object.Object {
 
 func evalInfixExpression(operator string, left, right object.Object) object.Object {
 	switch {
+	case operator == "and" || operator == "or":
+		return evalLogicalInfixExpression(operator, left, right)
 	case left.Type() == object.INTEGER_OBJ && right.Type() == object.INTEGER_OBJ:
 		return evalIntegerInfixExpression(operator, left, right)
 	case left.Type() == object.STRING_OBJ && right.Type() == object.STRING_OBJ:
@@ -235,13 +237,43 @@ func evalInfixExpression(operator string, left, right object.Object) object.Obje
 	case left.Type() == object.FLOAT_OBJ && right.Type() == object.INTEGER_OBJ:
 		return evalIntRightFloatLeft(operator, left, right)
 	case operator == "==":
-		return nativeBoolToBooleanObject(left == right)
+		return nativeBoolToBooleanObject(objectEquals(left, right))
 	case operator == "!=":
-		return nativeBoolToBooleanObject(left != right)
+		return nativeBoolToBooleanObject(!objectEquals(left, right))
 	case left.Type() != right.Type():
 		return newError("type mismatch: %s %s %s", left.Type(), operator, right.Type())
 	default:
 		return newError("unknown operator: %s %s %s", left.Type(), operator, right.Type())
+	}
+}
+
+func objectEquals(left, right object.Object) bool {
+	if left.Type() != right.Type() {
+		return false
+	}
+
+	switch left := left.(type) {
+	case *object.Integer:
+		return left.Value == right.(*object.Integer).Value
+	case *object.Float:
+		return left.Value == right.(*object.Float).Value
+	case *object.Boolean:
+		return left.Value == right.(*object.Boolean).Value
+	case *object.String:
+		return left.Value == right.(*object.String).Value
+	default:
+		return left == right // fallback, por exemplo para NULL
+	}
+}
+
+func evalLogicalInfixExpression(operator string, left, right object.Object) object.Object {
+	switch operator {
+	case "and":
+		return nativeBoolToBooleanObject(isTruthy(left) && isTruthy(right))
+	case "or":
+		return nativeBoolToBooleanObject(isTruthy(left) || isTruthy(right))
+	default:
+		return newError("unknown logical operator: %s", operator)
 	}
 }
 
@@ -270,6 +302,10 @@ func evalIntegerInfixExpression(operator string, left, right object.Object) obje
 		return nativeBoolToBooleanObject(leftVal <= rightVal)
 	case ">=":
 		return nativeBoolToBooleanObject(leftVal >= rightVal)
+	case "and":
+		return nativeBoolToBooleanObject(leftVal != 0 && rightVal != 0)
+	case "or":
+		return nativeBoolToBooleanObject(leftVal != 0 || rightVal != 0)
 	default:
 		return newError("unknown operator: %s %s %s", left.Type(), operator, right.Type())
 	}
@@ -461,13 +497,19 @@ func unwrapReturnValue(obj object.Object) object.Object {
 }
 
 func evalStringInfixExpression(operator string, left, right object.Object) object.Object {
-	if operator != "+" {
-		return newError("unknown operator: %s %s %s", left.Type(), operator, right.Type())
-	}
-
 	leftVal := left.(*object.String).Value
 	rightVal := right.(*object.String).Value
-	return &object.String{Value: leftVal + rightVal}
+
+	switch operator {
+	case "+":
+		return &object.String{Value: leftVal + rightVal}
+	case "==":
+		return nativeBoolToBooleanObject(leftVal == rightVal)
+	case "!=":
+		return nativeBoolToBooleanObject(leftVal != rightVal)
+	default:
+		return newError("unknown operator: %s %s %s", left.Type(), operator, right.Type())
+	}
 }
 
 func evalArrayIndexExpression(left, index object.Object) object.Object {
