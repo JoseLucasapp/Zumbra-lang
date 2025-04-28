@@ -31,6 +31,10 @@ const (
 	PLUSPLUS   = "++"
 	MINUSMINUS = "--"
 
+	// Logical
+	OR  = "or"
+	AND = "and"
+
 	// Delimiters
 	COMMA     = ","
 	COLON     = ":"
@@ -69,6 +73,8 @@ var keywords = map[string]TokenType{
 	"return": RETURN,
 	"while":  WHILE,
 	"import": IMPORT,
+	"and":    AND,
+	"or":     OR,
 }
 
 func LookupIdent(ident string) TokenType {
