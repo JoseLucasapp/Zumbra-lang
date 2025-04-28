@@ -1,7 +1,6 @@
 package lexer
 
 import (
-	"fmt"
 	"strings"
 	"zumbra/token"
 )
@@ -141,7 +140,7 @@ func (l *Lexer) NextToken() token.Token {
 			return tok
 		} else if isDigit(l.ch) {
 			tok.Literal = l.readNumber()
-			if strings.Contains(tok.Literal, ".") == true {
+			if strings.Contains(tok.Literal, ".") {
 				tok.Type = token.FLOAT
 			} else {
 				tok.Type = token.INT
@@ -220,27 +219,18 @@ func (l *Lexer) readFloat(start string) string {
 }
 
 func (l *Lexer) readNumber() string {
-	first_position := l.position
-	var number string
-	var middle int
-	var isFloat bool
+	position := l.position
+	isFloat := false
 
-	for isDigit(l.ch) {
+	for isDigit(l.ch) || l.ch == '.' {
 		if l.ch == '.' {
-			number = l.input[first_position:l.position]
-			number = fmt.Sprintf("%s", number)
-			middle = l.position
+			if isFloat {
+				break
+			}
 			isFloat = true
 		}
 		l.readChar()
 	}
 
-	floatin := fmt.Sprintf("%s%s", number, l.input[middle:l.position])
-
-	if isFloat {
-		return floatin
-	} else {
-		return l.input[first_position:l.position]
-	}
-
+	return l.input[position:l.position]
 }
