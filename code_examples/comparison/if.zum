@@ -1,0 +1,5 @@
+var x << 10;
+
+if (x == 10){
+    show("X is equal to 10");
+};

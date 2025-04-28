@@ -1,0 +1,29 @@
+if (10 > 5){
+    show("10 > 5")
+}else{
+    show("10 not > 5")
+}
+
+if (10 == 10){
+    show("10 == 10")
+}else{
+    show("10 not == 10")
+}
+
+if (10 < 5){
+    show("10 < 5")
+}else{
+    show("10 not < 5")
+}
+
+if (10 >= 5){
+    show("10 >= 5")
+}else{
+    show("10 not >= 5")
+}
+
+if (10 <= 5){
+    show("10 <= 5")
+}else{
+    show("10 not <= 5")
+}

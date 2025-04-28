@@ -1,0 +1,7 @@
+var x << 10;
+
+if (x == 3){
+    show("X is equal to 3");
+}else{
+    show("X is not equal to 3");
+}

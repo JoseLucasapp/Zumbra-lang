@@ -1,0 +1,10 @@
+var x << 10;
+var y << 4;
+
+if (x == 10 and y == 4){
+    show("AND case: Its all true")
+}
+
+if (x == 10 or y == 10){
+    show("OR case: Something is true")
+}
