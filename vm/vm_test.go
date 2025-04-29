@@ -793,7 +793,20 @@ func TestWhileLoops(t *testing.T) {
 				}
 				result
 			`,
-			expected: 6, // 1 * 2 * 3
+			expected: 6,
+		},
+	}
+	runVmTests(t, tests)
+}
+
+func TestAttributeAccess(t *testing.T) {
+	tests := []vmTestCase{
+		{
+			input: `
+				var a << date();
+				a.hour;
+			`,
+			expected: 11,
 		},
 	}
 	runVmTests(t, tests)

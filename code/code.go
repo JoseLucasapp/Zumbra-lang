@@ -48,6 +48,7 @@ const (
 	OpWhile
 	OpAnd = iota
 	OpOr
+	OpGetAttr
 )
 
 type Definition struct {
@@ -93,6 +94,7 @@ var definitions = map[Opcode]*Definition{
 	OpWhile:              {"OpWhile", []int{2, 2}},
 	OpAnd:                {"OpAnd", []int{}},
 	OpOr:                 {"OpOr", []int{}},
+	OpGetAttr:            {"OpGetAttr", []int{}},
 }
 
 func Lookup(op byte) (*Definition, error) {

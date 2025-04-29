@@ -1053,3 +1053,28 @@ func TestRecursiveFunctions(t *testing.T) {
 	}
 	runCompilerTests(t, tests)
 }
+
+func TestCompileAttributeAccess(t *testing.T) {
+	tests := []compilerTestCase{
+		{
+			input: `
+				var a << date();
+				a.hour;
+			`,
+			expectedConstants: []interface{}{
+				"hour",
+			},
+			expectedInstructions: []code.Instructions{
+				code.Make(code.OpGetBuiltin, 18),
+				code.Make(code.OpCall, 0),
+				code.Make(code.OpSetGlobal, 0),
+				code.Make(code.OpGetGlobal, 0),
+				code.Make(code.OpConstant, 0),
+				code.Make(code.OpGetAttr),
+				code.Make(code.OpPop),
+			},
+		},
+	}
+
+	runCompilerTests(t, tests)
+}

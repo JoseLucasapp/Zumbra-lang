@@ -354,6 +354,15 @@ func (c *Compiler) Compile(node ast.Node) error {
 
 	case *ast.ImportStatement:
 		return c.compileImport(node)
+
+	case *ast.AttributeAccess:
+		if err := c.Compile(node.Object); err != nil {
+			return err
+		}
+		idx := c.addConstant(&object.String{Value: node.Property.Value})
+		c.emit(code.OpConstant, idx)
+		c.emit(code.OpGetAttr)
+
 	}
 
 	return nil

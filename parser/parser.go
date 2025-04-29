@@ -96,6 +96,7 @@ func New(l *lexer.Lexer) *Parser {
 	p.registerInfix(token.LBRACKET, p.parseIndexExpression)
 	p.registerInfix(token.OR, p.parseInfixExpression)
 	p.registerInfix(token.AND, p.parseInfixExpression)
+	p.registerInfix(token.DOT, p.parseAttributeAccess)
 
 	p.nextToken()
 	p.nextToken()
@@ -595,4 +596,18 @@ func (p *Parser) parseFloatLiteral() ast.Expression {
 
 	return float
 
+}
+
+func (p *Parser) parseAttributeAccess(left ast.Expression) ast.Expression {
+	p.nextToken()
+
+	property := &ast.Identifier{
+		Token: p.curToken,
+		Value: p.curToken.Literal,
+	}
+
+	return &ast.AttributeAccess{
+		Object:   left,
+		Property: property,
+	}
 }
