@@ -65,6 +65,8 @@ func (l *Lexer) NextToken() token.Token {
 		} else {
 			tok = newToken(token.PLUS, l.ch)
 		}
+	case '%':
+		tok = newToken(token.MODULE, l.ch)
 	case '{':
 		tok = newToken(token.LBRACE, l.ch)
 	case '}':
@@ -95,8 +97,6 @@ func (l *Lexer) NextToken() token.Token {
 		} else {
 			tok = newToken(token.GT, l.ch)
 		}
-	case '%':
-		tok = newToken(token.MODULE, l.ch)
 	case '=':
 		if l.peekChar() == '=' {
 			ch := l.ch

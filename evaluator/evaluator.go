@@ -2,6 +2,7 @@ package evaluator
 
 import (
 	"fmt"
+	"math"
 	"os"
 	"zumbra/ast"
 	"zumbra/lexer"
@@ -302,10 +303,8 @@ func evalIntegerInfixExpression(operator string, left, right object.Object) obje
 		return nativeBoolToBooleanObject(leftVal <= rightVal)
 	case ">=":
 		return nativeBoolToBooleanObject(leftVal >= rightVal)
-	case "and":
-		return nativeBoolToBooleanObject(leftVal != 0 && rightVal != 0)
-	case "or":
-		return nativeBoolToBooleanObject(leftVal != 0 || rightVal != 0)
+	case "%":
+		return &object.Integer{Value: int64(math.Mod(float64(leftVal), float64(rightVal)))}
 	default:
 		return newError("unknown operator: %s %s %s", left.Type(), operator, right.Type())
 	}
@@ -332,6 +331,8 @@ func evalFloatInfixExpression(operator string, left object.Object, right object.
 		return nativeBoolToBooleanObject(leftVal == rightVal)
 	case "!=":
 		return nativeBoolToBooleanObject(leftVal != rightVal)
+	case "%":
+		return &object.Float{Value: math.Mod(float64(leftVal), rightVal)}
 	default:
 		return newError("unknown operator: %s %s %s", left.Type(), operator, right.Type())
 	}
@@ -358,6 +359,8 @@ func evalIntLeftFloatRight(operator string, left object.Object, right object.Obj
 		return nativeBoolToBooleanObject(float64(leftVal) == rightVal)
 	case "!=":
 		return nativeBoolToBooleanObject(float64(leftVal) != rightVal)
+	case "%":
+		return &object.Float{Value: math.Mod(float64(leftVal), rightVal)}
 	default:
 		return newError("unknown operator: %s %s %s", left.Type(), operator, right.Type())
 	}
@@ -384,6 +387,8 @@ func evalIntRightFloatLeft(operator string, left object.Object, right object.Obj
 		return nativeBoolToBooleanObject(leftVal == float64(rightVal))
 	case "!=":
 		return nativeBoolToBooleanObject(leftVal != float64(rightVal))
+	case "%":
+		return &object.Float{Value: math.Mod(leftVal, float64(rightVal))}
 	default:
 		return newError("unknown operator: %s %s %s", left.Type(), operator, right.Type())
 	}
