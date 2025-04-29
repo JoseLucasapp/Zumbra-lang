@@ -85,6 +85,5 @@ func runFile(filename string) {
 		return
 	}
 
-	result := machine.LastPoppedStackElem()
-	fmt.Println(result.Inspect())
+	machine.LastPoppedStackElem()
 }
