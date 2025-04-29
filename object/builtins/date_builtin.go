@@ -11,7 +11,14 @@ func DateBuiltin() *object.Builtin {
 			if len(args) != 0 {
 				return NewError("date() does not take arguments, got=%d", len(args))
 			}
-			return &object.Date{Value: time.Now()}
+			return &object.Date{
+				FullDate: time.Now(),
+				Hour:     time.Now().Hour(),
+				Minute:   time.Now().Minute(),
+				Day:      time.Now().Day(),
+				Second:   time.Now().Second(),
+				Month:    time.Now().Month(),
+				Year:     time.Now().Year()}
 		},
 	}
 }

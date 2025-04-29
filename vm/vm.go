@@ -290,6 +290,39 @@ func (vm *VM) Run() error {
 
 			vm.currentFrame().ip = pos - 1
 
+		case code.OpGetAttr:
+			attrNameObj := vm.pop()
+			attrName, ok := attrNameObj.(*object.String)
+			if !ok {
+				return fmt.Errorf("attribute name must be a string, got %s", attrNameObj.Type())
+			}
+
+			obj := vm.pop()
+
+			switch d := obj.(type) {
+			case *object.Date:
+				switch attrName.Value {
+				case "hour":
+					vm.push(&object.Integer{Value: int64(d.Hour)})
+				case "minute":
+					vm.push(&object.Integer{Value: int64(d.Minute)})
+				case "day":
+					vm.push(&object.Integer{Value: int64(d.Day)})
+				case "second":
+					vm.push(&object.Integer{Value: int64(d.Second)})
+				case "month":
+					vm.push(&object.Integer{Value: int64(d.Month)})
+				case "year":
+					vm.push(&object.Integer{Value: int64(d.Year)})
+				case "fullDate":
+					vm.push(&object.String{Value: d.FullDate.String()})
+				default:
+					return fmt.Errorf("unknown attribute %s for Date", attrName.Value)
+				}
+			default:
+				return fmt.Errorf("object type %s has no attributes", obj.Type())
+			}
+
 		}
 
 	}

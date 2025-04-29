@@ -214,10 +214,16 @@ func (f *Float) Inspect() string {
 }
 
 type Date struct {
-	Value time.Time
+	FullDate time.Time
+	Hour     int
+	Minute   int
+	Day      int
+	Second   int
+	Month    time.Month
+	Year     int
 }
 
 func (d *Date) Type() ObjectType { return DATE_OBJ }
 func (d *Date) Inspect() string {
-	return d.Value.String()
+	return d.FullDate.String()
 }
