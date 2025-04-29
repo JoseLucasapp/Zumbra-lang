@@ -1,0 +1,8 @@
+var a << [2,3,9,1,13,5,5];
+
+show(a) // [2,3,9,1,13,5,5]
+show(organize(a, "asc")) // [1, 2, 3, 5, 5, 9, 13]
+show(organize([2,3,9,1,13,5,5], "desc")) // [13, 9, 5, 5, 3, 2, 1]
+show(organize(a)) // [1, 2, 3, 5, 5, 9, 13]
+
+//asc is the default

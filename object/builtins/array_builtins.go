@@ -2,6 +2,7 @@ package builtins
 
 import (
 	"math"
+	"sort"
 	"zumbra/object"
 )
 
@@ -227,6 +228,39 @@ func IndexOfBuiltin() *object.Builtin {
 
 			}
 			return NewInteger(-1)
+		},
+	}
+}
+
+func OrganizeBuiltins() *object.Builtin {
+	return &object.Builtin{
+		Fn: func(args ...object.Object) object.Object {
+
+			by := "asc"
+
+			if args[0].Type() != object.ARRAY_OBJ {
+				return NewError("first argument to `organize` must be ARRAY, got %s", args[0].Type())
+			}
+
+			if len(args) > 1 {
+				if args[1].Type() == object.STRING_OBJ {
+					by = args[1].(*object.String).Value
+				}
+			}
+
+			arr := args[0].(*object.Array)
+			switch by {
+			case "asc":
+				sort.Slice(arr.Elements, func(i, j int) bool {
+					return arr.Elements[i].(*object.Integer).Value < arr.Elements[j].(*object.Integer).Value
+				})
+			case "desc":
+				sort.Slice(arr.Elements, func(i, j int) bool {
+					return arr.Elements[i].(*object.Integer).Value > arr.Elements[j].(*object.Integer).Value
+				})
+			}
+
+			return arr
 		},
 	}
 }

@@ -13,7 +13,7 @@ func init() {
 		"addToArrayStart", "addToArrayEnd", "removeFromArray",
 		"show", "middleOf", "input", "max", "min",
 		"indexOf", "addToDict", "deleteFromDict",
-		"toString", "toInt", "toFloat", "toBool", "date",
+		"toString", "toInt", "toFloat", "toBool", "date", "organize",
 	}
 
 	for _, name := range names {

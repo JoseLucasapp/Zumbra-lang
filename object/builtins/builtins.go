@@ -10,13 +10,35 @@ var Builtins = []struct {
 	Builtin *object.Builtin
 }{
 	{
-		"sizeOf", SizeOfBuiltin(),
+		"toString", ToStringParserBuiltin(),
+	},
+	{
+		"toInt", ToIntParserBuiltin(),
+	},
+	{
+		"toFloat", ToFloatParserBuiltin(),
+	},
+	{
+		"toBool", ToBoolParserBuiltin(),
+	},
+	{
+		"date", DateBuiltin(),
 	},
 	{
 		"show", ShowBuiltin(),
 	},
 	{
 		"input", InputBuiltin(),
+	},
+
+	{
+		"addToDict", AddToDictBuiltin(),
+	},
+	{
+		"deleteFromDict", DeleteFromDictBuiltin(),
+	},
+	{
+		"sizeOf", SizeOfBuiltin(),
 	},
 	{
 		"first", ArrayFirstBuiltin(),
@@ -46,25 +68,7 @@ var Builtins = []struct {
 		"indexOf", IndexOfBuiltin(),
 	},
 	{
-		"addToDict", AddToDictBuiltin(),
-	},
-	{
-		"deleteFromDict", DeleteFromDictBuiltin(),
-	},
-	{
-		"toString", ToStringParserBuiltin(),
-	},
-	{
-		"toInt", ToIntParserBuiltin(),
-	},
-	{
-		"toFloat", ToFloatParserBuiltin(),
-	},
-	{
-		"toBool", ToBoolParserBuiltin(),
-	},
-	{
-		"date", DateBuiltin(),
+		"organize", OrganizeBuiltins(),
 	},
 }
 
