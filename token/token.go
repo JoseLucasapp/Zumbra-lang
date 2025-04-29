@@ -30,6 +30,7 @@ const (
 	POWER      = "**"
 	PLUSPLUS   = "++"
 	MINUSMINUS = "--"
+	DOT        = "."
 
 	// Logical
 	OR  = "or"

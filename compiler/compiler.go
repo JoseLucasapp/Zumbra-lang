@@ -9,6 +9,7 @@ import (
 	"zumbra/code"
 	"zumbra/lexer"
 	"zumbra/object"
+	"zumbra/object/builtins"
 	"zumbra/parser"
 )
 
@@ -37,7 +38,7 @@ func New() *Compiler {
 
 	symbolTable := NewSymbolTable()
 
-	for i, v := range object.Builtins {
+	for i, v := range builtins.Builtins {
 		symbolTable.DefineBuiltin(i, v.Name)
 	}
 

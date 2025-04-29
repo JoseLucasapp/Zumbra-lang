@@ -8,6 +8,7 @@ import (
 	"zumbra/compiler"
 	"zumbra/lexer"
 	"zumbra/object"
+	"zumbra/object/builtins"
 	"zumbra/parser"
 	"zumbra/vm"
 )
@@ -21,7 +22,7 @@ func Start(in io.Reader, out io.Writer) {
 	globals := make([]object.Object, vm.GlobalSize)
 	symbolTable := compiler.NewSymbolTable()
 
-	for i, v := range object.Builtins {
+	for i, v := range builtins.Builtins {
 		symbolTable.DefineBuiltin(i, v.Name)
 	}
 

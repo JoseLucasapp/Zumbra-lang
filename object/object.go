@@ -6,6 +6,7 @@ import (
 	"hash/fnv"
 	"strconv"
 	"strings"
+	"time"
 	"zumbra/ast"
 	"zumbra/code"
 )
@@ -26,6 +27,7 @@ const (
 	COMPILED_FUNCTION_OBJ = "COMPILED_FUNCTION_OBJ"
 	CLOSURE_OBJ           = "CLOSURE_OBJ"
 	FLOAT_OBJ             = "FLOAT"
+	DATE_OBJ              = "DATE"
 )
 
 type Object interface {
@@ -209,4 +211,13 @@ type Float struct {
 func (b *Float) Type() ObjectType { return FLOAT_OBJ }
 func (f *Float) Inspect() string {
 	return strconv.FormatFloat(f.Value, 'f', -1, 64)
+}
+
+type Date struct {
+	Value time.Time
+}
+
+func (d *Date) Type() ObjectType { return DATE_OBJ }
+func (d *Date) Inspect() string {
+	return d.Value.String()
 }

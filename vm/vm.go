@@ -5,6 +5,7 @@ import (
 	"zumbra/code"
 	"zumbra/compiler"
 	"zumbra/object"
+	"zumbra/object/builtins"
 )
 
 const StackSize = 2048
@@ -243,7 +244,7 @@ func (vm *VM) Run() error {
 			builtinIndex := code.ReadUint8(ins[ip+1:])
 			vm.currentFrame().ip += 1
 
-			definition := object.Builtins[builtinIndex]
+			definition := builtins.Builtins[builtinIndex]
 
 			err := vm.push(definition.Builtin)
 
@@ -288,6 +289,7 @@ func (vm *VM) Run() error {
 			}
 
 			vm.currentFrame().ip = pos - 1
+
 		}
 
 	}

@@ -2,26 +2,23 @@ package evaluator
 
 import (
 	"zumbra/object"
+	"zumbra/object/builtins"
 )
 
-var builtins = map[string]*object.Builtin{
-	"sizeOf":          object.GetBuiltinByName("sizeOf"),
-	"first":           object.GetBuiltinByName("first"),
-	"last":            object.GetBuiltinByName("last"),
-	"allButFirst ":    object.GetBuiltinByName("allButFirst"),
-	"addToArrayStart": object.GetBuiltinByName("addToArrayStart"),
-	"addToArrayEnd":   object.GetBuiltinByName("addToArrayEnd"),
-	"removeFromArray": object.GetBuiltinByName("removeFromArray"),
-	"show":            object.GetBuiltinByName("show"),
-	"middleOf":        object.GetBuiltinByName("middleOf"),
-	"input":           object.GetBuiltinByName("input"),
-	"max":             object.GetBuiltinByName("max"),
-	"min":             object.GetBuiltinByName("min"),
-	"indexOf":         object.GetBuiltinByName("indexOf"),
-	"addToDict":       object.GetBuiltinByName("addToDict"),
-	"deleteFromDict":  object.GetBuiltinByName("deleteFromDict"),
-	"toString":        object.GetBuiltinByName("toString"),
-	"toInt":           object.GetBuiltinByName("toInt"),
-	"toFloat":         object.GetBuiltinByName("toFloat"),
-	"toBool":          object.GetBuiltinByName("toBool"),
+var builtinsList = make(map[string]*object.Builtin)
+
+func init() {
+	names := []string{
+		"sizeOf", "first", "last", "allButFirst",
+		"addToArrayStart", "addToArrayEnd", "removeFromArray",
+		"show", "middleOf", "input", "max", "min",
+		"indexOf", "addToDict", "deleteFromDict",
+		"toString", "toInt", "toFloat", "toBool", "date",
+	}
+
+	for _, name := range names {
+		if builtin := builtins.GetBuiltinByName(name); builtin != nil {
+			builtinsList[name] = builtin
+		}
+	}
 }

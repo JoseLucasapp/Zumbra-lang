@@ -34,6 +34,8 @@ func (l *Lexer) NextToken() token.Token {
 	l.skipWhitespace()
 
 	switch l.ch {
+	case '.':
+		tok = newToken(token.DOT, l.ch)
 	case '<':
 		if l.peekChar() == '<' {
 			ch := l.ch

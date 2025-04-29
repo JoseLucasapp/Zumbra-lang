@@ -440,7 +440,7 @@ func evalIdentifier(
 		return val
 	}
 
-	if builtin, ok := builtins[node.Value]; ok {
+	if builtin, ok := builtinsList[node.Value]; ok {
 		return builtin
 	}
 
