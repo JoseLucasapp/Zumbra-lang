@@ -1,0 +1,9 @@
+var a << date();
+
+show(a);
+show(a.hour);
+show(a.minute);
+show(a.second);
+show(a.day);
+show(a.month);
+show(a.year);
