@@ -73,6 +73,9 @@ var Builtins = []struct {
 	{
 		"toUppercase", UppercaseBuiltin(),
 	},
+	{
+		"toLowercase", LowercaseBuiltin(),
+	},
 }
 
 func NewBoolean(value bool) *object.Boolean {
