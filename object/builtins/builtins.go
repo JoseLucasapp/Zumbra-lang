@@ -85,6 +85,9 @@ var Builtins = []struct {
 	{
 		"sum", SumBuiltin(),
 	},
+	{
+		"bhaskara", BhaskaraBuiltin(),
+	},
 }
 
 func NewBoolean(value bool) *object.Boolean {
