@@ -1,6 +1,7 @@
 package builtins
 
 import (
+	"fmt"
 	"strings"
 	"zumbra/object"
 )
@@ -53,6 +54,27 @@ func CapitalizeBuiltin() *object.Builtin {
 			}
 
 			val := strings.Title(args[0].(*object.String).Value)
+
+			return NewString(val)
+		},
+	}
+}
+
+func RemoveWhiteSpacesBuiltin() *object.Builtin {
+	return &object.Builtin{
+		Fn: func(args ...object.Object) object.Object {
+			if len(args) != 1 {
+				return NewError("wrong number of arguments. got=%d, want=1", len(args))
+			}
+
+			if args[0].Type() != object.STRING_OBJ {
+				return NewError("argument to `removeWhiteSpaces` must be STRING, got %s", args[0].Type())
+			}
+
+			fmt.Println(args[0].(*object.String).Value)
+			val := strings.ReplaceAll(args[0].(*object.String).Value, " ", "")
+
+			fmt.Println(val)
 
 			return NewString(val)
 		},

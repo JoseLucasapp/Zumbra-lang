@@ -79,6 +79,9 @@ var Builtins = []struct {
 	{
 		"capitalize", CapitalizeBuiltin(),
 	},
+	{
+		"removeWhiteSpaces", RemoveWhiteSpacesBuiltin(),
+	},
 }
 
 func NewBoolean(value bool) *object.Boolean {
