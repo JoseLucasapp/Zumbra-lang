@@ -88,6 +88,9 @@ var Builtins = []struct {
 	{
 		"bhaskara", BhaskaraBuiltin(),
 	},
+	{
+		"getFromDict", GetFromDictBuiltin(),
+	},
 }
 
 func NewBoolean(value bool) *object.Boolean {
