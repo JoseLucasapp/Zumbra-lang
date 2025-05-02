@@ -264,3 +264,41 @@ func OrganizeBuiltins() *object.Builtin {
 		},
 	}
 }
+
+func SumBuiltin() *object.Builtin {
+	return &object.Builtin{
+		Fn: func(args ...object.Object) object.Object {
+
+			if len(args) != 1 {
+				return NewError("wrong number of arguments. got=%d, want=1", len(args))
+			}
+
+			if args[0].Type() != object.ARRAY_OBJ {
+				return NewError("argument to `sum` must be ARRAY, got %s", args[0].Type())
+			}
+
+			var sum float64
+			var hasFloat bool = false
+
+			for _, el := range args[0].(*object.Array).Elements {
+				if el.Type() != object.INTEGER_OBJ && el.Type() != object.FLOAT_OBJ {
+					return NewError("argument to `sum` must be INTEGER or FLOAT, got %s", el.Type())
+				}
+
+				if el.Type() == object.FLOAT_OBJ {
+					sum += el.(*object.Float).Value
+					hasFloat = true
+				} else {
+					sum += float64(el.(*object.Integer).Value)
+				}
+
+			}
+
+			if hasFloat {
+				return NewFloat(float64(sum))
+			} else {
+				return NewInteger(int64(sum))
+			}
+		},
+	}
+}

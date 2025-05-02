@@ -82,6 +82,9 @@ var Builtins = []struct {
 	{
 		"removeWhiteSpaces", RemoveWhiteSpacesBuiltin(),
 	},
+	{
+		"sum", SumBuiltin(),
+	},
 }
 
 func NewBoolean(value bool) *object.Boolean {
