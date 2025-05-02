@@ -70,6 +70,9 @@ var Builtins = []struct {
 	{
 		"organize", OrganizeBuiltins(),
 	},
+	{
+		"toUppercase", UppercaseBuiltin(),
+	},
 }
 
 func NewBoolean(value bool) *object.Boolean {
