@@ -1,0 +1,7 @@
+ show(sendEmail({
+    "subject": "Zumbra",
+    "body":"Zumbra is amazing, you need to test!",
+    "sender":"your_email@gmail.com",
+    "to":" the_one_who_will_receive@gmail.com",
+    "app_password":"0000 0000 0000 0000" // You need to generate using ehe sender email on https://myaccount.google.com/apppasswords
+    }))
