@@ -100,6 +100,9 @@ var Builtins = []struct {
 	{
 		"randomFloat", GenerateRandomFloatBuiltin(),
 	},
+	{
+		"sendWhatsapp", SendWhatsappBuiltin(),
+	},
 }
 
 func NewBoolean(value bool) *object.Boolean {

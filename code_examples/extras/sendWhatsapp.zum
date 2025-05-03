@@ -1,0 +1,7 @@
+show(sendWhatsapp({
+    "sid": "*****************************", // Twilio sid
+    "auth": "***************************", // Twilio auth
+    "senderPhone": "11111111111",
+    "receiverPhone": "558399999999",
+    "message": "Hello from Zumbra!"
+    }))
