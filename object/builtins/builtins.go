@@ -91,6 +91,9 @@ var Builtins = []struct {
 	{
 		"getFromDict", GetFromDictBuiltin(),
 	},
+	{
+		"sendEmail", SendEmailBuiltin(),
+	},
 }
 
 func NewBoolean(value bool) *object.Boolean {
