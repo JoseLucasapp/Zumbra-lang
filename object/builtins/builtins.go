@@ -94,6 +94,12 @@ var Builtins = []struct {
 	{
 		"sendEmail", SendEmailBuiltin(),
 	},
+	{
+		"randomInteger", GenerateRandomIntegerBuiltin(),
+	},
+	{
+		"randomFloat", GenerateRandomFloatBuiltin(),
+	},
 }
 
 func NewBoolean(value bool) *object.Boolean {

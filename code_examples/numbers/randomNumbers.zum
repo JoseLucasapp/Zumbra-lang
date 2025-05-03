@@ -1,0 +1,6 @@
+show(randomInteger(2, 10)) // max: 10, min: 2.
+show(randomInteger(2)) // max: 2, min: 0.
+show(randomInteger()) // max: 10, min: 0.
+show(randomFloat(1, 3)) // max: 3, min: 1.
+show(randomFloat(1)) // max: 1, min: 0.
+show(randomFloat()) // max: 10, min 0.
