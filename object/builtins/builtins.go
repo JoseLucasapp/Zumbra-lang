@@ -103,6 +103,12 @@ var Builtins = []struct {
 	{
 		"sendWhatsapp", SendWhatsappBuiltin(),
 	},
+	{
+		"dictKeys", DictKeysBuiltin(),
+	},
+	{
+		"dictValues", DictValuesBuiltin(),
+	},
 }
 
 func NewBoolean(value bool) *object.Boolean {

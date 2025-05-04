@@ -1,0 +1,2 @@
+var a << {"Lucas":2, "João":39};
+show(dictValues(a));//[João, Lucas]

@@ -93,3 +93,59 @@ func GetFromDictBuiltin() *object.Builtin {
 		},
 	}
 }
+
+func DictKeysBuiltin() *object.Builtin {
+	return &object.Builtin{
+		Fn: func(args ...object.Object) object.Object {
+			if len(args) != 1 {
+				return NewError("wrong number of arguments. got=%d, want=1", len(args))
+			}
+
+			if args[0].Type() != object.DICT_OBJ {
+				return NewError("argument to `dictKeys` must be DICT, got %s", args[0].Type())
+			}
+
+			dict := args[0].(*object.Dict)
+
+			var keys []object.Object
+			for _, key := range dict.Pairs {
+				keys = append(keys, key.Key)
+			}
+
+			if len(keys) == 0 {
+				return &object.Array{Elements: []object.Object{}}
+			}
+
+			return &object.Array{Elements: keys}
+
+		},
+	}
+}
+
+func DictValuesBuiltin() *object.Builtin {
+	return &object.Builtin{
+		Fn: func(args ...object.Object) object.Object {
+			if len(args) != 1 {
+				return NewError("wrong number of arguments. got=%d, want=1", len(args))
+			}
+
+			if args[0].Type() != object.DICT_OBJ {
+				return NewError("argument to `dictValues` must be DICT, got %s", args[0].Type())
+			}
+
+			dict := args[0].(*object.Dict)
+
+			var values []object.Object
+			for _, value := range dict.Pairs {
+				values = append(values, value.Value)
+			}
+
+			if len(values) == 0 {
+				return &object.Array{Elements: []object.Object{}}
+			}
+
+			return &object.Array{Elements: values}
+
+		},
+	}
+}
