@@ -14,7 +14,8 @@ func init() {
 		"show", "middleOf", "input", "max", "min",
 		"indexOf", "addToDict", "deleteFromDict",
 		"toString", "toInt", "toFloat", "toBool", "date", "organize", "toUppercase", "toLowercase", "capitalize",
-		"removeWhiteSpaces", "sum", "bhaskara", "getFromDict", "sendEmail", "randomInteger", "randomFloat", "sendWhatsapp", "dictKeys", "dictValues",
+		"removeWhiteSpaces", "sum", "bhaskara", "getFromDict", "sendEmail", "randomInteger", "randomFloat", "sendWhatsapp",
+		"dictKeys", "dictValues", "replace",
 	}
 
 	for _, name := range names {

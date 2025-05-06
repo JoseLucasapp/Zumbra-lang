@@ -109,6 +109,9 @@ var Builtins = []struct {
 	{
 		"dictValues", DictValuesBuiltin(),
 	},
+	{
+		"replace", ReplaceBuiltin(),
+	},
 }
 
 func NewBoolean(value bool) *object.Boolean {
