@@ -35,7 +35,7 @@ func main() {
 func runFile(filename string) {
 	data, err := ioutil.ReadFile(filename)
 	if err != nil {
-		fmt.Printf("Erro ao ler o arquivo: %s\n", err)
+		fmt.Printf("Error when trying to read the file: %s\n", err)
 		os.Exit(1)
 	}
 
@@ -53,7 +53,7 @@ func runFile(filename string) {
 	program := p.ParseProgram()
 
 	if len(p.Errors()) != 0 {
-		fmt.Println("Erros de parsing:")
+		fmt.Println("Parsing errors:")
 		for _, msg := range p.Errors() {
 			fmt.Println("\t" + msg)
 		}
@@ -63,7 +63,7 @@ func runFile(filename string) {
 	// Novo trecho:
 	absPath, err := filepath.Abs(filename)
 	if err != nil {
-		fmt.Printf("Erro ao resolver caminho absoluto: %s\n", err)
+		fmt.Printf("Path error: %s\n", err)
 		return
 	}
 	dir := filepath.Dir(absPath)
@@ -71,7 +71,7 @@ func runFile(filename string) {
 	comp := compiler.NewWithStateAndDir(symbolTable, constants, dir) // AQUI
 	err = comp.Compile(program)
 	if err != nil {
-		fmt.Printf("Erro na compilação: %s\n", err)
+		fmt.Printf("Compilation error: %s\n", err)
 		return
 	}
 
@@ -81,7 +81,7 @@ func runFile(filename string) {
 	machine := vm.NewWithGlobalsStore(code, globals)
 	err = machine.Run()
 	if err != nil {
-		fmt.Printf("Erro na execução da VM: %s\n", err)
+		fmt.Printf("Error on VM execution: %s\n", err)
 		return
 	}
 
