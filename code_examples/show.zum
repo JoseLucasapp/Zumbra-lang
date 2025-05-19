@@ -1,0 +1,4 @@
+show("{} + {} = {}", 1,1, 1+1); //output: 1 + 1 = 2
+show("{}", 1); //output: 1
+show("{}"); //output: {}
+show("Zumbra"); //output: Zumbra
