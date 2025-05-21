@@ -115,6 +115,9 @@ var Builtins = []struct {
 	{
 		"server", CreateServerBuiltin(),
 	},
+	{
+		"get", GetBuiltin(),
+	},
 }
 
 func NewBoolean(value bool) *object.Boolean {

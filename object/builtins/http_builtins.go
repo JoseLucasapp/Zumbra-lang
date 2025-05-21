@@ -2,6 +2,7 @@ package builtins
 
 import (
 	"fmt"
+	"io"
 	"net/http"
 	"zumbra/object"
 )
@@ -47,6 +48,34 @@ func CreateServerBuiltin() *object.Builtin {
 			}
 
 			return nil
+		},
+	}
+}
+
+func GetBuiltin() *object.Builtin {
+	return &object.Builtin{
+		Fn: func(args ...object.Object) object.Object {
+
+			if len(args) != 1 {
+				return NewError("wrong number of arguments. got=%d, want=1", len(args))
+			}
+
+			if args[0].Type() != object.STRING_OBJ {
+				return NewError("argument to `get` must be STRING, got %s", args[0].Type())
+			}
+
+			resp, err := http.Get(args[0].(*object.String).Value)
+			if err != nil {
+				return NewError("Failed to get, get('%s'). got %s", args[0].(*object.String).Value, err)
+			}
+
+			defer resp.Body.Close()
+
+			body, err := io.ReadAll(resp.Body)
+			if err != nil {
+				return NewError("Failed to read body, get('%s'). got %s", args[0].(*object.String).Value, err)
+			}
+			return &object.String{Value: string(body)}
 		},
 	}
 }
