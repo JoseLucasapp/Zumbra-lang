@@ -1,0 +1,1 @@
+server(3333, "GET", "/", "<h1>Zumbra</h1>"); //open an output on 3333 port

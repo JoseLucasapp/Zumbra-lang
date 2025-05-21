@@ -112,6 +112,9 @@ var Builtins = []struct {
 	{
 		"replace", ReplaceBuiltin(),
 	},
+	{
+		"server", CreateServerBuiltin(),
+	},
 }
 
 func NewBoolean(value bool) *object.Boolean {
