@@ -1,6 +1,7 @@
 package builtins
 
 import (
+	"encoding/json"
 	"fmt"
 	"math"
 	"strconv"
@@ -118,5 +119,51 @@ func ToBoolParserBuiltin() *object.Builtin {
 				return NewError("argument to `toBool` not supported, got=%s", args[0].Type())
 			}
 		},
+	}
+}
+
+func JsonParse() *object.Builtin {
+	return &object.Builtin{
+		Fn: func(args ...object.Object) object.Object {
+			if len(args) != 1 {
+				return NewError("wrong number of arguments. got=%d, want=1", len(args))
+			}
+
+			strObj, ok := args[0].(*object.String)
+			if !ok {
+				return NewError("argument to `json_parse` must be STRING, got %s", args[0].Type())
+			}
+
+			var parsed map[string]interface{}
+			err := json.Unmarshal([]byte(strObj.Value), &parsed)
+			if err != nil {
+				return NewError("invalid JSON: %s", err.Error())
+			}
+
+			return convertToObject(parsed)
+		},
+	}
+}
+
+func convertToObject(data interface{}) object.Object {
+	switch val := data.(type) {
+	case map[string]interface{}:
+		pairs := make(map[object.DictKey]object.DictPair)
+		for k, v := range val {
+			keyObj := &object.String{Value: k}
+			valObj := convertToObject(v)
+			pairs[keyObj.DictKey()] = object.DictPair{Key: keyObj, Value: valObj}
+		}
+		return &object.Dict{Pairs: pairs}
+	case string:
+		return &object.String{Value: val}
+	case float64:
+		return &object.Integer{Value: int64(val)}
+	case bool:
+		return &object.Boolean{Value: val}
+	case nil:
+		return &object.Null{}
+	default:
+		return &object.Null{}
 	}
 }
