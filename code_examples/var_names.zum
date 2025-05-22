@@ -1,0 +1,10 @@
+var n2 << "n2";
+var value1 << 1;
+var name_of_developer << "Lucas";
+
+var a << fct(n1) {
+  return n1 * 2;
+};
+
+show(a(5));
+show("{}, {}, {}",n2, value1, name_of_developer);
