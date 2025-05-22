@@ -118,6 +118,9 @@ var Builtins = []struct {
 	{
 		"get", GetBuiltin(),
 	},
+	{
+		"json_parse", JsonParse(),
+	},
 }
 
 func NewBoolean(value bool) *object.Boolean {

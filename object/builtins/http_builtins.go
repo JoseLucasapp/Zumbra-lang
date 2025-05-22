@@ -75,7 +75,13 @@ func GetBuiltin() *object.Builtin {
 			if err != nil {
 				return NewError("Failed to read body, get('%s'). got %s", args[0].(*object.String).Value, err)
 			}
-			return &object.String{Value: string(body)}
+
+			return &object.Dict{Pairs: map[object.DictKey]object.DictPair{
+				(&object.String{Value: "body"}).DictKey(): {
+					Key:   &object.String{Value: "body"},
+					Value: &object.String{Value: string(body)},
+				},
+			}}
 		},
 	}
 }
