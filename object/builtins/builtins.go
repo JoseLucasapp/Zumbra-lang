@@ -119,10 +119,19 @@ var Builtins = []struct {
 		"get", GetBuiltin(),
 	},
 	{
-		"json_parse", JsonParse(),
+		"jsonParse", JsonParse(),
 	},
 	{
 		"registerRoute", RegisterRoutesBuiltin(),
+	},
+	{
+		"file", FileBuiltin(),
+	},
+	{
+		"html", HtmlHandlerBuiltin(),
+	},
+	{
+		"serveFile", ServeFileBuiltin(),
 	},
 }
 

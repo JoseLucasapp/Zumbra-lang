@@ -1,0 +1,2 @@
+registerRoute("GET", "/", serveFile("index.html"));
+server(3333);

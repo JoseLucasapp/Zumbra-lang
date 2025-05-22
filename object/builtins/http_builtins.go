@@ -4,10 +4,18 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"strings"
 	"zumbra/object"
 )
 
-var registerRoutes = map[string]string{}
+type Route struct {
+	Method      string
+	Path        string
+	HandlerBody object.Object
+	Middlewares []func(http.ResponseWriter, *http.Request) bool
+}
+
+var registerRoutes []Route
 
 func CreateServerBuiltin() *object.Builtin {
 	return &object.Builtin{
@@ -22,11 +30,33 @@ func CreateServerBuiltin() *object.Builtin {
 				return NewError("argument to `server` must be INTEGER, got %s", args[0].Type())
 			}
 
-			for path, response := range registerRoutes {
-				http.HandleFunc(path, func(w http.ResponseWriter, r *http.Request) {
-					w.Write([]byte(response))
-				})
-			}
+			http.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
+				route := matchRoute(r)
+				if route == nil {
+					http.NotFound(w, r)
+					return
+				}
+
+				for _, mw := range route.Middlewares {
+					if !mw(w, r) {
+						return
+					}
+				}
+
+				switch handler := route.HandlerBody.(type) {
+				case *object.String:
+					w.Write([]byte(handler.Value))
+				case *object.Builtin:
+					result := handler.Fn()
+					if str, ok := result.(*object.String); ok {
+						w.Write([]byte(str.Value))
+					} else {
+						w.Write([]byte("function did not return string"))
+					}
+				default:
+					w.Write([]byte("unsupported handler type"))
+				}
+			})
 
 			portStr := fmt.Sprintf("%d", portObj.Value)
 			if err := http.ListenAndServe(":"+portStr, nil); err != nil {
@@ -76,20 +106,110 @@ func RegisterRoutesBuiltin() *object.Builtin {
 	return &object.Builtin{
 		Fn: func(args ...object.Object) object.Object {
 
-			if len(args) != 2 {
+			if len(args) != 3 {
 				return NewError("wrong number of arguments. got=%d, want=2", len(args))
 			}
 
-			pathObj, ok1 := args[0].(*object.String)
-			respObj, ok2 := args[1].(*object.String)
+			method, ok1 := args[0].(*object.String)
+
+			path, ok2 := args[1].(*object.String)
+			handler := args[2]
 
 			if !ok1 || !ok2 {
-				return NewError("argument to `registerRoutes` must be STRING, got %s", args[0].Type())
+				return NewError("method and path must be STRING")
 			}
 
-			registerRoutes[pathObj.Value] = respObj.Value
+			registerRoutes = append(registerRoutes, Route{
+				Method:      strings.ToUpper(method.Value),
+				Path:        path.Value,
+				HandlerBody: handler,
+				Middlewares: nil,
+			})
 
 			return nil
 		},
 	}
+}
+
+func UseMiddlewaresBuiltin() *object.Builtin {
+	return &object.Builtin{
+		Fn: func(args ...object.Object) object.Object {
+			if len(args) != 2 {
+				return NewError("wrong number of arguments. got=%d, want=2", len(args))
+			}
+
+			path, ok1 := args[0].(*object.String)
+			middlewareName, ok2 := args[1].(*object.String)
+
+			if !ok1 || !ok2 {
+				return NewError("method and path must be STRING")
+			}
+
+			for i, route := range registerRoutes {
+				if route.Path == path.Value {
+					if middlewareName.Value == "logger" {
+						registerRoutes[i].Middlewares = append(registerRoutes[i].Middlewares, func(w http.ResponseWriter, r *http.Request) bool {
+							fmt.Println("Request: ", r.Method, r.URL.Path)
+							return true
+						})
+					}
+				}
+			}
+
+			return nil
+		},
+	}
+}
+
+func HtmlHandlerBuiltin() *object.Builtin {
+	return &object.Builtin{
+		Fn: func(args ...object.Object) object.Object {
+			if len(args) != 1 {
+				return NewError("html(content) expects 1 argument")
+			}
+
+			str, ok := args[0].(*object.String)
+			if !ok {
+				return NewError("html(content) expects a STRING")
+			}
+
+			return &object.Builtin{
+				Fn: func(args ...object.Object) object.Object {
+					return &object.String{Value: str.Value}
+				},
+			}
+		},
+	}
+}
+
+func matchRoute(r *http.Request) *Route {
+	for _, route := range registerRoutes {
+		if route.Method != r.Method {
+			continue
+		}
+
+		reqParts := strings.Split(r.URL.Path, "/")
+		routeParts := strings.Split(route.Path, "/")
+
+		if len(reqParts) != len(routeParts) {
+			continue
+		}
+
+		match := true
+		for i := 0; i < len(reqParts); i++ {
+			if strings.HasPrefix(routeParts[i], ":") {
+				continue
+			}
+
+			if reqParts[i] != routeParts[i] {
+				match = false
+				break
+			}
+		}
+
+		if match {
+			return &route
+		}
+	}
+	return nil
 }
