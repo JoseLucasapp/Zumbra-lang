@@ -121,6 +121,9 @@ var Builtins = []struct {
 	{
 		"json_parse", JsonParse(),
 	},
+	{
+		"registerRoute", RegisterRoutesBuiltin(),
+	},
 }
 
 func NewBoolean(value bool) *object.Boolean {

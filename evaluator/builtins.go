@@ -15,7 +15,7 @@ func init() {
 		"indexOf", "addToDict", "deleteFromDict",
 		"toString", "toInt", "toFloat", "toBool", "date", "organize", "toUppercase", "toLowercase", "capitalize",
 		"removeWhiteSpaces", "sum", "bhaskara", "getFromDict", "sendEmail", "randomInteger", "randomFloat", "sendWhatsapp",
-		"dictKeys", "dictValues", "replace", "server", "get", "json_parse",
+		"dictKeys", "dictValues", "replace", "server", "get", "json_parse", "registerRoute",
 	}
 
 	for _, name := range names {

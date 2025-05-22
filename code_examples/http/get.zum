@@ -1,0 +1,3 @@
+var getIp << get("https://httpbin.org/ip");
+var json << json_parse(getIp["body"]);
+show(json["origin"]);

@@ -1,1 +1,5 @@
-server(3333, "GET", "/", "<h1>Zumbra</h1>"); //open an output on 3333 port
+registerRoute("/", "<h1>Home</h1>");
+registerRoute("/about", "<h1>Sobre</h1>");
+registerRoute("/contact", "<h1>Contato</h1>");
+
+server(3333);
