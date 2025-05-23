@@ -15,6 +15,13 @@ type Route struct {
 	Middlewares []func(http.ResponseWriter, *http.Request) bool
 }
 
+type StaticRoute struct {
+	RoutePrefix string
+	StaticDir   string
+}
+
+var staticRoutes []StaticRoute
+
 var registerRoutes []Route
 
 func CreateServerBuiltin() *object.Builtin {
@@ -30,8 +37,13 @@ func CreateServerBuiltin() *object.Builtin {
 				return NewError("argument to `server` must be INTEGER, got %s", args[0].Type())
 			}
 
+			for _, sr := range staticRoutes {
+				http.Handle(sr.RoutePrefix+"/", http.StripPrefix(sr.RoutePrefix, http.FileServer(http.Dir(sr.StaticDir))))
+			}
+
 			http.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
 				route := matchRoute(r)
+
 				if route == nil {
 					http.NotFound(w, r)
 					return
@@ -178,6 +190,30 @@ func HtmlHandlerBuiltin() *object.Builtin {
 					return &object.String{Value: str.Value}
 				},
 			}
+		},
+	}
+}
+
+func ServerStaticBuiltin() *object.Builtin {
+	return &object.Builtin{
+		Fn: func(args ...object.Object) object.Object {
+			if len(args) != 2 {
+				return NewError("wrong number of arguments. got=%d, want=2", len(args))
+			}
+
+			prefix, ok1 := args[0].(*object.String)
+			dir, ok2 := args[1].(*object.String)
+
+			if !ok1 || !ok2 {
+				return NewError("method and path must be STRING")
+			}
+
+			staticRoutes = append(staticRoutes, StaticRoute{
+				RoutePrefix: prefix.Value,
+				StaticDir:   dir.Value,
+			})
+
+			return nil
 		},
 	}
 }

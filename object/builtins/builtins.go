@@ -125,13 +125,13 @@ var Builtins = []struct {
 		"registerRoute", RegisterRoutesBuiltin(),
 	},
 	{
-		"file", FileBuiltin(),
-	},
-	{
 		"html", HtmlHandlerBuiltin(),
 	},
 	{
 		"serveFile", ServeFileBuiltin(),
+	},
+	{
+		"serveStatic", ServerStaticBuiltin(),
 	},
 }
 

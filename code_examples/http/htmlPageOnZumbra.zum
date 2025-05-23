@@ -1,2 +1,3 @@
-registerRoute("GET", "/", serveFile("index.html"));
+serveStatic("/static", "./code_examples/http/html/assets");
+registerRoute("GET", "/", serveFile("./code_examples/http/html/index.html", {"name": "Zumbra"}));
 server(3333);
