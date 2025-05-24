@@ -112,6 +112,27 @@ var Builtins = []struct {
 	{
 		"replace", ReplaceBuiltin(),
 	},
+	{
+		"server", CreateServerBuiltin(),
+	},
+	{
+		"get", GetBuiltin(),
+	},
+	{
+		"jsonParse", JsonParse(),
+	},
+	{
+		"registerRoute", RegisterRoutesBuiltin(),
+	},
+	{
+		"html", HtmlHandlerBuiltin(),
+	},
+	{
+		"serveFile", ServeFileBuiltin(),
+	},
+	{
+		"serveStatic", ServerStaticBuiltin(),
+	},
 }
 
 func NewBoolean(value bool) *object.Boolean {
