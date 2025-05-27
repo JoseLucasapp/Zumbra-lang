@@ -632,7 +632,6 @@ func TestTypeConverter(t *testing.T) {
 }
 
 func TestImportEvaluator(t *testing.T) {
-	// Primeiro, cria o conteúdo do arquivo a ser importado
 	importedFileContent := `
     var soma << fct(a, b) {
         return a + b;
@@ -653,8 +652,6 @@ func TestImportEvaluator(t *testing.T) {
 		t.Fatalf("could not write to temp file: %v", err)
 	}
 	tmpFile.Close()
-
-	// Agora definimos os testes de entrada e saída esperada
 	tests := []struct {
 		input    string
 		expected int64
@@ -687,11 +684,9 @@ func TestLogicalOperatorsShortCircuit(t *testing.T) {
 		input    string
 		expected bool
 	}{
-		// AND
 		{"false and true", false},
 		{"true and true", true},
 		{"true and false", false},
-		// OR
 		{"true or true", true},
 		{"true or false", true},
 		{"false or true", true},

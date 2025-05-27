@@ -263,7 +263,7 @@ func objectEquals(left, right object.Object) bool {
 	case *object.String:
 		return left.Value == right.(*object.String).Value
 	default:
-		return left == right // fallback, por exemplo para NULL
+		return left == right
 	}
 }
 

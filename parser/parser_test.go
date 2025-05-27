@@ -74,7 +74,6 @@ func TestVarStatements2(t *testing.T) {
 	`
 	l := lexer.New(input)
 
-	// Debug: veja se o "var" vira VAR mesmo
 	for tok := l.NextToken(); tok.Type != token.EOF; tok = l.NextToken() {
 		t.Logf("TOKEN: Type=%s, Literal=%s", tok.Type, tok.Literal)
 	}
@@ -940,13 +939,11 @@ func TestAssignStatement(t *testing.T) {
 		t.Fatalf("program.Statements does not contain 2 statements. got=%d\n", len(program.Statements))
 	}
 
-	// Testa a declaração com `var`
 	_, ok := program.Statements[1].(*ast.AssignStatement)
 	if !ok {
 		t.Fatalf("program.Statements[1] is not ast.AssignStatement. got=%T", program.Statements[1])
 	}
 
-	// Testa a atribuição pura `x << 5`
 	stmt, ok := program.Statements[1].(*ast.AssignStatement)
 	if !ok {
 		t.Fatalf("program.Statements[1] is not ast.AssignStatement. got=%T", program.Statements[1])

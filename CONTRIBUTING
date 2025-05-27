@@ -1,0 +1,67 @@
+# Contributing to Zumbra
+
+First off — thanks for considering contributing to **Zumbra**! 🎉  
+Zumbra is a lightweight, expressive, and fun programming language made for learning and creative exploration. We welcome all contributions, big or small.
+
+---
+
+## 🧩 What Can You Contribute?
+
+Zumbra is a growing language, and there's a lot of room for improvement. Here's how you can help:
+
+- 💬 Propose new features or syntax improvements
+- 🐞 Fix bugs in the compiler, VM, parser, etc.
+- 🧪 Improve performance or architecture
+- 🧾 Improve the documentation and tutorials
+- 🛠 Create tools, extensions, or playgrounds
+- 🧠 Report weird behavior or inconsistent design
+- 💡 Suggest standard library functions or enhancements
+
+---
+
+## 🛠 Project Structure (if you're contributing to the source)
+
+- `lexer/` – Token generation
+- `parser/` – Building the AST
+- `compiler/` – Bytecode generation
+- `vm/` – The Zumbra virtual machine
+- `evaluator/` – For interpreter-based execution
+- `repl/` – Interactive environment
+- `main.go` – Entry point
+
+> You don't need to understand the whole system to contribute — start small!
+
+---
+
+## ✅ How to Contribute
+
+1. **Fork this repository** and clone your fork:
+   ```bash
+   git clone https://github.com/joselucasapp/Zumbra-lang.git
+
+   cd Zumbra-lang
+   ```
+2. Create a new branch for your contribution:
+    ```bash
+   git checkout -b feature/your-feature-name
+   ```
+3. Make your changes and write tests if possible.
+4. Commit with a clear message:
+    ```bash
+   git commit -m "Add: repeat(n) support to ShowResult type"
+   ```
+5. Push to your fork and open a pull request.
+
+## 🎯 Guidelines
+- Test all enviroment to check if everything is fine.
+- Keep code readable and consistent with existing style.
+- Don't abuse on AI code.
+- Write helpful comments and commit messages.
+- Include test cases if you’re changing logic.
+- Keep pull requests focused on one topic.
+
+### ❤️ Thanks!
+
+Zumbra is a community-powered project. Your ideas, time, and effort help shape the language and make coding more joyful for everyone.
+
+We’re happy to have you here. Welcome to the Zumbra tribe!
