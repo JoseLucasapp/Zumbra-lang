@@ -72,11 +72,9 @@ You can execute `.zum` code using the compiled ZUMBRA binary on different platfo
 
 - > Includes keyword coloring, strings, and built-in function recognition.
 
-
 <br />
-<p style="font-size: 30px; font-weight: 600;">📄 License</p>
-
-- MIT License. See `LICENSE` for details.
+<p style="font-size: 30px; font-weight: 600;">🤝 Contributing</p>
+<p style="font-size: 16px;">We welcome contributions! Please read our <a href="./CONTRIBUTING">Contributing Guide</a> and <a href="./CODE_OF_CONDUCT">Code of Conduct</a> before submitting pull requests.</p>
 
 <br />
 <p style="font-size: 30px; font-weight: 600;">👨‍💻 Creator</p>
