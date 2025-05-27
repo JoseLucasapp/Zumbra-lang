@@ -66,7 +66,7 @@ func NewWithStateAndDir(s *SymbolTable, constants []object.Object, baseDir strin
 		scopes:        []CompilationScope{mainScope},
 		scopeIndex:    0,
 		importedFiles: map[string]bool{},
-		currentDir:    baseDir, // <-- Agora passa o caminho correto aqui
+		currentDir:    baseDir,
 	}
 }
 

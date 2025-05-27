@@ -60,7 +60,6 @@ func runFile(filename string) {
 		return
 	}
 
-	// Novo trecho:
 	absPath, err := filepath.Abs(filename)
 	if err != nil {
 		fmt.Printf("Path error: %s\n", err)
