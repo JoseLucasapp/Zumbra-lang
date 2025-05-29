@@ -33,7 +33,7 @@ func init() {
 	}
 
 	mysql := []string{
-		"mysqlConnection", "mysqlCreateTable", "mysqlShowTables",
+		"mysqlConnection", "mysqlCreateTable", "mysqlGetFromTable", "mysqlShowTables",
 	}
 
 	numbersUtils := []string{

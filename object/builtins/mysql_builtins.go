@@ -110,3 +110,50 @@ func mysqlShowTablesBuiltin() *object.Builtin {
 		},
 	}
 }
+
+func mysqlGetFromTableBuiltin() *object.Builtin {
+	return &object.Builtin{
+		Fn: func(args ...object.Object) object.Object {
+			if len(args) != 3 {
+				return NewError("wrong number of arguments, mysqlGetFromTable(tableName, fields, condition). got=%d, want=1", len(args))
+			}
+
+			if args[0].Type() != object.STRING_OBJ || args[1].Type() != object.STRING_OBJ || args[2].Type() != object.STRING_OBJ {
+				return NewError("All arguments to `mysqlGetFromTable` must be STRING, got %s", args[0].Type())
+			}
+
+			if db_connection == nil {
+				return NewError("Database is not connected. Use mysqlConnection(...) before creating tables.")
+			}
+
+			tableName := args[0].(*object.String).Value
+			fields := args[1].(*object.String).Value
+			condition := " WHERE " + args[2].(*object.String).Value + ";"
+
+			if args[2].(*object.String).Value == "" {
+				condition = ";"
+			}
+
+			rows, err := db_connection.Query("SELECT " + fields + " FROM " + tableName + condition)
+			if err != nil {
+				return NewError("Failed to get from table, mysqlGetFromTable('%s', '%s', '%s'). got %s", tableName, fields, condition, err)
+			}
+
+			var records []map[string]interface{}
+			for rows.Next() {
+				record := make(map[string]interface{})
+				err := rows.Scan(&record)
+				if err != nil {
+					return NewError("Failed to scan record, mysqlGetFromTable('%s', '%s', '%s'). got %s", tableName, fields, condition, err)
+				}
+				records = append(records, record)
+			}
+
+			elements := []object.Object{}
+			for _, record := range records {
+				elements = append(elements, &object.Record{Fields: record})
+			}
+
+			return &object.Array{Elements: elements}
+		}}
+}

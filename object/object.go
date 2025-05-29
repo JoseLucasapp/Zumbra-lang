@@ -28,6 +28,7 @@ const (
 	CLOSURE_OBJ           = "CLOSURE_OBJ"
 	FLOAT_OBJ             = "FLOAT"
 	DATE_OBJ              = "DATE"
+	RECORD_OBJ            = "RECORD"
 )
 
 type Object interface {
@@ -226,4 +227,13 @@ type Date struct {
 func (d *Date) Type() ObjectType { return DATE_OBJ }
 func (d *Date) Inspect() string {
 	return d.FullDate.String()
+}
+
+type Record struct {
+	Fields map[string]interface{}
+}
+
+func (r *Record) Type() ObjectType { return RECORD_OBJ }
+func (r *Record) Inspect() string {
+	return fmt.Sprintf("%v", r.Fields)
 }
