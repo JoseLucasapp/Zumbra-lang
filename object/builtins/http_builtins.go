@@ -3,6 +3,7 @@ package builtins
 import (
 	"fmt"
 	"io"
+	"net"
 	"net/http"
 	"strings"
 	"zumbra/object"
@@ -69,10 +70,21 @@ func CreateServerBuiltin() *object.Builtin {
 					w.Write([]byte("unsupported handler type"))
 				}
 			})
-
 			portStr := fmt.Sprintf("%d", portObj.Value)
-			if err := http.ListenAndServe(":"+portStr, nil); err != nil {
-				return NewError("Failed to start server on port %s. got %s", portStr, err)
+			srvr := &http.Server{Addr: ":" + portStr, Handler: nil}
+
+			ln, err := net.Listen("tcp", srvr.Addr)
+
+			if err != nil {
+				fmt.Printf("Failed to bind to port %s. got %s\n", portStr, err)
+				return NewError("Failed to bind to port %s. got %s", portStr, err)
+			}
+
+			fmt.Printf("Zumbra server started on port %s\n", portStr)
+
+			if err := srvr.Serve(ln); err != nil {
+				fmt.Printf("Server stopped unexpectedly. got %s\n", err)
+				return NewError("Server stopped unexpectedly. got %s", err)
 			}
 
 			return nil
