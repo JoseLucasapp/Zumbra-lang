@@ -3,6 +3,7 @@ package builtins
 import (
 	"database/sql"
 	"fmt"
+	"strings"
 	"zumbra/object"
 
 	_ "github.com/go-sql-driver/mysql"
@@ -139,21 +140,133 @@ func mysqlGetFromTableBuiltin() *object.Builtin {
 				return NewError("Failed to get from table, mysqlGetFromTable('%s', '%s', '%s'). got %s", tableName, fields, condition, err)
 			}
 
+			columns, err := rows.Columns()
+			if err != nil {
+				return NewError("Failed to get columns from result set: %s", err)
+			}
+
 			var records []map[string]interface{}
+
 			for rows.Next() {
-				record := make(map[string]interface{})
-				err := rows.Scan(&record)
-				if err != nil {
-					return NewError("Failed to scan record, mysqlGetFromTable('%s', '%s', '%s'). got %s", tableName, fields, condition, err)
+				values := make([]interface{}, len(columns))
+				valuePtrs := make([]interface{}, len(columns))
+				for i := range values {
+					valuePtrs[i] = &values[i]
 				}
+
+				if err := rows.Scan(valuePtrs...); err != nil {
+					return NewError("Failed to scan row: %s", err)
+				}
+
+				record := make(map[string]interface{})
+				for i, col := range columns {
+					var v interface{}
+					val := values[i]
+
+					b, ok := val.([]byte)
+					if ok {
+						v = string(b)
+					} else {
+						v = val
+					}
+
+					record[col] = v
+				}
+
 				records = append(records, record)
 			}
 
 			elements := []object.Object{}
 			for _, record := range records {
-				elements = append(elements, &object.Record{Fields: record})
+				pairs := map[object.DictKey]object.DictPair{}
+				for key, val := range record {
+					keyObj := &object.String{Value: key}
+					pairs[keyObj.DictKey()] = object.DictPair{
+						Key:   keyObj,
+						Value: objectFromGoValue(val),
+					}
+				}
+				elements = append(elements, &object.Dict{Pairs: pairs})
 			}
 
 			return &object.Array{Elements: elements}
-		}}
+		},
+	}
+}
+
+func mysqlInsertIntoTableBuiltin() *object.Builtin {
+	return &object.Builtin{
+		Fn: func(args ...object.Object) object.Object {
+			if len(args) != 2 {
+				return NewError("wrong number of arguments, mysqlInsertIntoTable(tableName, dict). got=%d, want=2", len(args))
+			}
+
+			if args[0].Type() != object.STRING_OBJ {
+				return NewError("First argument to `mysqlInsertIntoTable` must be STRING, got %s", args[0].Type())
+			}
+
+			if args[1].Type() != object.DICT_OBJ {
+				return NewError("Second argument to `mysqlInsertIntoTable` must be a DICT, got %s", args[1].Type())
+			}
+
+			if db_connection == nil {
+				return NewError("Database is not connected. Use mysqlConnection(...) before creating tables.")
+			}
+
+			tableName := args[0].(*object.String).Value
+			dict := args[1].(*object.Dict)
+
+			keys := []string{}
+			placeholders := []string{}
+			argsValues := []interface{}{}
+
+			for _, pair := range dict.Pairs {
+				keys = append(keys, pair.Key.Inspect())
+				placeholders = append(placeholders, "?")
+				argsValues = append(argsValues, goValueFromObject(pair.Value))
+			}
+
+			query := fmt.Sprintf("INSERT INTO %s (%s) VALUES (%s);", tableName, strings.Join(keys, ","), strings.Join(placeholders, ","))
+
+			_, err := db_connection.Exec(query, argsValues...)
+			if err != nil {
+				return NewError("Failed to insert into table, mysqlInsertIntoTable('%s', '%v'). got %s", tableName, dict.Inspect(), err)
+			}
+
+			fmt.Println("Record inserted successfully")
+			return nil
+		},
+	}
+}
+
+func goValueFromObject(obj object.Object) interface{} {
+	switch v := obj.(type) {
+	case *object.String:
+		return v.Value
+	case *object.Integer:
+		return v.Value
+	case *object.Boolean:
+		return v.Value
+	default:
+		return v.Inspect()
+	}
+}
+
+func objectFromGoValue(v interface{}) object.Object {
+	switch val := v.(type) {
+	case string:
+		return &object.String{Value: val}
+	case int64:
+		return &object.Integer{Value: val}
+	case int:
+		return &object.Integer{Value: int64(val)}
+	case float64:
+		return &object.Float{Value: val}
+	case bool:
+		return &object.Boolean{Value: val}
+	case nil:
+		return nil
+	default:
+		return &object.String{Value: fmt.Sprintf("%v", val)}
+	}
 }

@@ -78,6 +78,10 @@ var Builtins = []struct {
 	{
 		"mysqlGetFromTable", mysqlGetFromTableBuiltin(),
 	},
+
+	{
+		"mysqlInsertIntoTable", mysqlInsertIntoTableBuiltin(),
+	},
 	{
 		"mysqlShowTables", mysqlShowTablesBuiltin(),
 	},
