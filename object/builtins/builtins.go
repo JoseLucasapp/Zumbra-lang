@@ -133,6 +133,12 @@ var Builtins = []struct {
 	{
 		"serveStatic", ServerStaticBuiltin(),
 	},
+	{
+		"mysqlConnection", MySqlConnectionBuiltin(),
+	},
+	{
+		"mysqlCreateTable", mysqlCreateTableBuiltin(),
+	},
 }
 
 func NewBoolean(value bool) *object.Boolean {
