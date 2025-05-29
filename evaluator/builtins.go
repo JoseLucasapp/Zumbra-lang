@@ -16,20 +16,12 @@ func init() {
 		"addToDict", "deleteFromDict", "dictKeys", "dictValues", "getFromDict",
 	}
 
+	extras := []string{
+		"date",
+	}
+
 	http := []string{
 		"get", "html", "registerRoute", "server", "serveFile", "serveStatic",
-	}
-
-	parsers := []string{
-		"json_parse", "toBool", "toFloat", "toInt", "toString",
-	}
-
-	stringUtils := []string{
-		"capitalize", "removeWhiteSpaces", "replace", "toLowercase", "toUppercase",
-	}
-
-	numbersUtils := []string{
-		"bhaskara", "randomFloat", "randomInteger",
 	}
 
 	ioUtils := []string{
@@ -40,8 +32,16 @@ func init() {
 		"sendEmail", "sendWhatsapp",
 	}
 
-	extras := []string{
-		"date",
+	numbersUtils := []string{
+		"bhaskara", "randomFloat", "randomInteger",
+	}
+
+	parsers := []string{
+		"json_parse", "toBool", "toFloat", "toInt", "toString",
+	}
+
+	stringUtils := []string{
+		"capitalize", "removeWhiteSpaces", "replace", "toLowercase", "toUppercase",
 	}
 
 	mysql := []string{
