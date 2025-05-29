@@ -76,6 +76,9 @@ var Builtins = []struct {
 		"mysqlCreateTable", mysqlCreateTableBuiltin(),
 	},
 	{
+		"mysqlShowTables", mysqlShowTablesBuiltin(),
+	},
+	{
 		"organize", OrganizeBuiltins(),
 	},
 	{
