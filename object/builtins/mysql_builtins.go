@@ -74,3 +74,39 @@ func mysqlCreateTableBuiltin() *object.Builtin {
 		},
 	}
 }
+
+func mysqlShowTablesBuiltin() *object.Builtin {
+	return &object.Builtin{
+		Fn: func(args ...object.Object) object.Object {
+			if len(args) != 0 {
+				return NewError("wrong number of arguments, mysqlShowTables(). got=%d, want=0", len(args))
+			}
+
+			if db_connection == nil {
+				return NewError("Database is not connected. Use mysqlConnection(...) before creating tables.")
+			}
+
+			rows, err := db_connection.Query("SHOW TABLES")
+			if err != nil {
+				return NewError("Failed to show tables, mysqlShowTables(). got %s", err)
+			}
+
+			var tables []string
+			for rows.Next() {
+				var table string
+				err := rows.Scan(&table)
+				if err != nil {
+					return NewError("Failed to scan table, mysqlShowTables(). got %s", err)
+				}
+				tables = append(tables, table)
+			}
+
+			elements := []object.Object{}
+			for _, table := range tables {
+				elements = append(elements, &object.String{Value: table})
+			}
+
+			return &object.Array{Elements: elements}
+		},
+	}
+}
