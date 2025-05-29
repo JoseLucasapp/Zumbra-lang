@@ -70,6 +70,12 @@ var Builtins = []struct {
 		"min", MinBuiltin(),
 	},
 	{
+		"mysqlConnection", MySqlConnectionBuiltin(),
+	},
+	{
+		"mysqlCreateTable", mysqlCreateTableBuiltin(),
+	},
+	{
 		"organize", OrganizeBuiltins(),
 	},
 	{
@@ -132,12 +138,6 @@ var Builtins = []struct {
 	},
 	{
 		"toUppercase", UppercaseBuiltin(),
-	},
-	{
-		"mysqlConnection", MySqlConnectionBuiltin(),
-	},
-	{
-		"mysqlCreateTable", mysqlCreateTableBuiltin(),
 	},
 }
 
