@@ -9,13 +9,10 @@ var builtinsList = make(map[string]*object.Builtin)
 
 func init() {
 	names := []string{
-		"sizeOf", "first", "last", "allButFirst",
-		"addToArrayStart", "addToArrayEnd", "removeFromArray",
-		"show", "middleOf", "input", "max", "min",
-		"indexOf", "addToDict", "deleteFromDict",
-		"toString", "toInt", "toFloat", "toBool", "date", "organize", "toUppercase", "toLowercase", "capitalize",
-		"removeWhiteSpaces", "sum", "bhaskara", "getFromDict", "sendEmail", "randomInteger", "randomFloat", "sendWhatsapp",
-		"dictKeys", "dictValues", "replace", "server", "get", "json_parse", "registerRoute", "html", "serveFile", "serveStatic",
+		"addToArrayStart", "addToArrayEnd", "addToDict", "allButFirst", "bhaskara", "capitalize", "date", "deleteFromDict", "dictKeys", "dictValues",
+		"first", "get", "getFromDict", "html", "indexOf", "input", "json_parse", "last", "max", "min", "organize", "randomFloat", "randomInteger",
+		"registerRoute", "removeFromArray", "removeWhiteSpaces", "replace", "sendEmail", "sendWhatsapp", "server", "serveFile", "serveStatic",
+		"show", "sizeOf", "sum", "toBool", "toFloat", "toInt", "toLowercase", "toString", "toUppercase",
 	}
 
 	for _, name := range names {

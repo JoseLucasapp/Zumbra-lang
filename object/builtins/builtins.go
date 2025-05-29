@@ -10,98 +10,28 @@ var Builtins = []struct {
 	Builtin *object.Builtin
 }{
 	{
-		"toString", ToStringParserBuiltin(),
-	},
-	{
-		"toInt", ToIntParserBuiltin(),
-	},
-	{
-		"toFloat", ToFloatParserBuiltin(),
-	},
-	{
-		"toBool", ToBoolParserBuiltin(),
-	},
-	{
-		"date", DateBuiltin(),
-	},
-	{
-		"show", ShowBuiltin(),
-	},
-	{
-		"input", InputBuiltin(),
-	},
-
-	{
-		"addToDict", AddToDictBuiltin(),
-	},
-	{
-		"deleteFromDict", DeleteFromDictBuiltin(),
-	},
-	{
-		"sizeOf", SizeOfBuiltin(),
-	},
-	{
-		"first", ArrayFirstBuiltin(),
-	},
-	{
-		"last", ArrayLastBuiltin(),
-	},
-	{
-		"allButFirst", AllButFirstBuiltin(),
-	},
-	{
 		"addToArrayStart", AddToArrayStartBuiltin(),
 	},
 	{
 		"addToArrayEnd", AddToArrayEndBuiltin(),
 	},
 	{
-		"removeFromArray", RemoveFromArrayBuiltin(),
+		"addToDict", AddToDictBuiltin(),
 	},
 	{
-		"max", MaxBuiltin(),
-	},
-	{
-		"min", MinBuiltin(),
-	},
-	{
-		"indexOf", IndexOfBuiltin(),
-	},
-	{
-		"organize", OrganizeBuiltins(),
-	},
-	{
-		"toUppercase", UppercaseBuiltin(),
-	},
-	{
-		"toLowercase", LowercaseBuiltin(),
-	},
-	{
-		"capitalize", CapitalizeBuiltin(),
-	},
-	{
-		"removeWhiteSpaces", RemoveWhiteSpacesBuiltin(),
-	},
-	{
-		"sum", SumBuiltin(),
+		"allButFirst", AllButFirstBuiltin(),
 	},
 	{
 		"bhaskara", BhaskaraBuiltin(),
 	},
 	{
-		"getFromDict", GetFromDictBuiltin(),
+		"capitalize", CapitalizeBuiltin(),
 	},
 	{
-		"sendEmail", SendEmailBuiltin(),
+		"date", DateBuiltin(),
 	},
 	{
-		"randomInteger", GenerateRandomIntegerBuiltin(),
-	},
-	{
-		"randomFloat", GenerateRandomFloatBuiltin(),
-	},
-	{
-		"sendWhatsapp", SendWhatsappBuiltin(),
+		"deleteFromDict", DeleteFromDictBuiltin(),
 	},
 	{
 		"dictKeys", DictKeysBuiltin(),
@@ -110,28 +40,98 @@ var Builtins = []struct {
 		"dictValues", DictValuesBuiltin(),
 	},
 	{
-		"replace", ReplaceBuiltin(),
-	},
-	{
-		"server", CreateServerBuiltin(),
+		"first", ArrayFirstBuiltin(),
 	},
 	{
 		"get", GetBuiltin(),
 	},
 	{
+		"getFromDict", GetFromDictBuiltin(),
+	},
+	{
+		"html", HtmlHandlerBuiltin(),
+	},
+	{
+		"indexOf", IndexOfBuiltin(),
+	},
+	{
+		"input", InputBuiltin(),
+	},
+	{
 		"jsonParse", JsonParse(),
+	},
+	{
+		"last", ArrayLastBuiltin(),
+	},
+	{
+		"max", MaxBuiltin(),
+	},
+	{
+		"min", MinBuiltin(),
+	},
+	{
+		"organize", OrganizeBuiltins(),
+	},
+	{
+		"randomFloat", GenerateRandomFloatBuiltin(),
+	},
+	{
+		"randomInteger", GenerateRandomIntegerBuiltin(),
 	},
 	{
 		"registerRoute", RegisterRoutesBuiltin(),
 	},
 	{
-		"html", HtmlHandlerBuiltin(),
+		"removeFromArray", RemoveFromArrayBuiltin(),
+	},
+
+	{
+		"removeWhiteSpaces", RemoveWhiteSpacesBuiltin(),
+	},
+	{
+		"replace", ReplaceBuiltin(),
+	},
+	{
+		"sendEmail", SendEmailBuiltin(),
+	},
+	{
+		"sendWhatsapp", SendWhatsappBuiltin(),
+	},
+	{
+		"server", CreateServerBuiltin(),
 	},
 	{
 		"serveFile", ServeFileBuiltin(),
 	},
 	{
 		"serveStatic", ServerStaticBuiltin(),
+	},
+	{
+		"show", ShowBuiltin(),
+	},
+	{
+		"sizeOf", SizeOfBuiltin(),
+	},
+	{
+		"sum", SumBuiltin(),
+	},
+	{
+		"toBool", ToBoolParserBuiltin(),
+	},
+	{
+		"toFloat", ToFloatParserBuiltin(),
+	},
+	{
+		"toInt", ToIntParserBuiltin(),
+	},
+	{
+		"toLowercase", LowercaseBuiltin(),
+	},
+	{
+		"toString", ToStringParserBuiltin(),
+	},
+	{
+		"toUppercase", UppercaseBuiltin(),
 	},
 }
 
