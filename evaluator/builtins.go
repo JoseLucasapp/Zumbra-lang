@@ -32,6 +32,10 @@ func init() {
 		"sendEmail", "sendWhatsapp",
 	}
 
+	mysql := []string{
+		"mysqlConnection", "mysqlCreateTable",
+	}
+
 	numbersUtils := []string{
 		"bhaskara", "randomFloat", "randomInteger",
 	}
@@ -42,10 +46,6 @@ func init() {
 
 	stringUtils := []string{
 		"capitalize", "removeWhiteSpaces", "replace", "toLowercase", "toUppercase",
-	}
-
-	mysql := []string{
-		"mysqlConnection", "mysqlCreateTable",
 	}
 
 	allBuiltins := append(arrays, dicts...)
