@@ -288,6 +288,52 @@ func mysqlInsertIntoTableBuiltin() *object.Builtin {
 func mysqlUpdateIntoTableBuiltin() *object.Builtin {
 	return &object.Builtin{
 		Fn: func(args ...object.Object) object.Object {
+			if len(args) != 3 {
+				return NewError("wrong number of arguments, mysqlUpdateIntoTable(tableName, dict, condition). got=%d, want=3", len(args))
+			}
+
+			if args[0].Type() != object.STRING_OBJ {
+				return NewError("First argument to `mysqlUpdateIntoTable` must be STRING, got %s", args[0].Type())
+			}
+
+			if args[1].Type() != object.DICT_OBJ {
+				return NewError("Second argument to `mysqlUpdateIntoTable` must be DICT, got %s", args[1].Type())
+			}
+
+			if args[2].Type() != object.STRING_OBJ {
+				return NewError("Last argument to `mysqlUpdateIntoTable` must be STRING, got %s", args[2].Type())
+			}
+
+			if db_connection == nil {
+				return NewError("Database is not connected. Use mysqlConnection(...) before creating tables.")
+			}
+
+			tableName := args[0].(*object.String).Value
+			dict := args[1].(*object.Dict)
+
+			condition := " WHERE " + args[2].(*object.String).Value + ";"
+
+			if args[2].(*object.String).Value == "" {
+				condition = ";"
+			}
+
+			assignments := []string{}
+			argsValues := []interface{}{}
+
+			for _, pair := range dict.Pairs {
+				key := pair.Key.Inspect()
+				assignments = append(assignments, fmt.Sprintf("%s = ?", key))
+				argsValues = append(argsValues, goValueFromObject(pair.Value))
+			}
+
+			query := fmt.Sprintf("UPDATE %s SET %s %s", tableName, strings.Join(assignments, ", "), condition)
+
+			_, err := db_connection.Exec(query, argsValues...)
+			if err != nil {
+				return NewError("Failed to update into table, mysqlUpdateIntoTable('%s', '%v', '%s'). got %s", tableName, dict.Inspect(), condition, err)
+			}
+
+			fmt.Println("Record updated successfully")
 			return nil
 		},
 	}

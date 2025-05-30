@@ -89,6 +89,9 @@ var Builtins = []struct {
 		"mysqlShowTableColumns", mysqlShowTableColumnsBuiltin(),
 	},
 	{
+		"mysqlUpdateIntoTable", mysqlUpdateIntoTableBuiltin(),
+	},
+	{
 		"organize", OrganizeBuiltins(),
 	},
 	{
