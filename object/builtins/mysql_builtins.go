@@ -339,6 +339,45 @@ func mysqlUpdateIntoTableBuiltin() *object.Builtin {
 	}
 }
 
+func mysqlDeleteFromTableBuiltin() *object.Builtin {
+	return &object.Builtin{
+		Fn: func(args ...object.Object) object.Object {
+			if len(args) != 2 {
+				return NewError("wrong number of arguments, mysqlDeleteFromTable(tableName, condition). got=%d, want=2", len(args))
+			}
+
+			if args[0].Type() != object.STRING_OBJ {
+				return NewError("First argument to `mysqlDeleteFromTable` must be STRING, got %s", args[0].Type())
+			}
+
+			if args[1].Type() != object.STRING_OBJ {
+				return NewError("Last argument to `mysqlDeleteFromTable` must be STRING, got %s", args[1].Type())
+			}
+
+			if db_connection == nil {
+				return NewError("Database is not connected. Use mysqlConnection(...) before creating tables.")
+			}
+
+			tableName := args[0].(*object.String).Value
+			condition := " WHERE " + args[1].(*object.String).Value + ";"
+
+			if args[1].(*object.String).Value == "" {
+				condition = ";"
+			}
+
+			query := fmt.Sprintf("DELETE FROM %s %s", tableName, condition)
+
+			_, err := db_connection.Exec(query)
+			if err != nil {
+				return NewError("Failed to delete from table, mysqlDeleteFromTable('%s', '%s'). got %s", tableName, condition, err)
+			}
+
+			fmt.Println("Record deleted successfully")
+			return nil
+		},
+	}
+}
+
 func goValueFromObject(obj object.Object) interface{} {
 	switch v := obj.(type) {
 	case *object.String:
