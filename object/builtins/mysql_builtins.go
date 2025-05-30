@@ -15,7 +15,7 @@ func MySqlConnectionBuiltin() *object.Builtin {
 	return &object.Builtin{
 		Fn: func(args ...object.Object) object.Object {
 			if len(args) != 5 {
-				return NewError("wrong number of arguments, mysqlConnection(host, port, user, password, database). got=%d, want=0", len(args))
+				return NewError("wrong number of arguments, mysqlConnection(host, port, user, password, database). got=%d, want=5", len(args))
 			}
 
 			if args[0].Type() != object.STRING_OBJ || args[1].Type() != object.STRING_OBJ || args[2].Type() != object.STRING_OBJ || args[3].Type() != object.STRING_OBJ || args[4].Type() != object.STRING_OBJ {
@@ -158,11 +158,38 @@ func mysqlShowTableColumnsBuiltin() *object.Builtin {
 	}
 }
 
+func mysqlDeleteTableBuiltin() *object.Builtin {
+	return &object.Builtin{
+		Fn: func(args ...object.Object) object.Object {
+			if len(args) != 1 {
+				return NewError("wrong number of arguments, mysqlDeleteTable(tableName). got=%d, want=1", len(args))
+			}
+
+			if db_connection == nil {
+				return NewError("Database is not connected. Use mysqlConnection(...) before creating tables.")
+			}
+
+			tableName := args[0].(*object.String).Value
+
+			query := fmt.Sprintf("DROP TABLE %s", tableName)
+
+			_, err := db_connection.Exec(query)
+			if err != nil {
+				return NewError("Failed to drop table, mysqlDeleteTable('%s'). got %s", tableName, err)
+			}
+
+			text := fmt.Sprintf("Table '%s' deleted successfully", tableName)
+			fmt.Println(text)
+			return nil
+		},
+	}
+}
+
 func mysqlGetFromTableBuiltin() *object.Builtin {
 	return &object.Builtin{
 		Fn: func(args ...object.Object) object.Object {
 			if len(args) != 3 {
-				return NewError("wrong number of arguments, mysqlGetFromTable(tableName, fields, condition). got=%d, want=1", len(args))
+				return NewError("wrong number of arguments, mysqlGetFromTable(tableName, fields, condition). got=%d, want=3", len(args))
 			}
 
 			if args[0].Type() != object.STRING_OBJ || args[1].Type() != object.STRING_OBJ || args[2].Type() != object.STRING_OBJ {

@@ -79,6 +79,9 @@ var Builtins = []struct {
 		"mysqlDeleteFromTable", mysqlDeleteFromTableBuiltin(),
 	},
 	{
+		"mysqlDropTable", mysqlDeleteTableBuiltin(),
+	},
+	{
 		"mysqlGetFromTable", mysqlGetFromTableBuiltin(),
 	},
 	{
