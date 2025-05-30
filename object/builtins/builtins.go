@@ -70,6 +70,33 @@ var Builtins = []struct {
 		"min", MinBuiltin(),
 	},
 	{
+		"mysqlConnection", MySqlConnectionBuiltin(),
+	},
+	{
+		"mysqlCreateTable", mysqlCreateTableBuiltin(),
+	},
+	{
+		"mysqlDeleteFromTable", mysqlDeleteFromTableBuiltin(),
+	},
+	{
+		"mysqlDropTable", mysqlDeleteTableBuiltin(),
+	},
+	{
+		"mysqlGetFromTable", mysqlGetFromTableBuiltin(),
+	},
+	{
+		"mysqlInsertIntoTable", mysqlInsertIntoTableBuiltin(),
+	},
+	{
+		"mysqlShowTables", mysqlShowTablesBuiltin(),
+	},
+	{
+		"mysqlShowTableColumns", mysqlShowTableColumnsBuiltin(),
+	},
+	{
+		"mysqlUpdateIntoTable", mysqlUpdateIntoTableBuiltin(),
+	},
+	{
 		"organize", OrganizeBuiltins(),
 	},
 	{

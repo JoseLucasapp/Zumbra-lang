@@ -1,0 +1,4 @@
+mysqlConnection("0.0.0.0","3306","root","123456789","zumbra");//host, port, user, password, database
+
+mysqlGetFromTable("users", "*", "name = 'Lucas'");//output: [{id:0, name:Lucas}]
+mysqlGetFromTable("users", "name", "name = 'Lucas' and id = 0");//output: [{name:Lucas}]

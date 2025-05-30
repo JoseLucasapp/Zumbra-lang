@@ -32,6 +32,10 @@ func init() {
 		"sendEmail", "sendWhatsapp",
 	}
 
+	mysql := []string{
+		"mysqlConnection", "mysqlCreateTable", "mysqlDeleteFromTable", "mysqlDropTable", "mysqlGetFromTable", "mysqlInsertIntoTable", "mysqlShowTables", "mysqlShowTableColumns", "mysqlUpdateIntoTable",
+	}
+
 	numbersUtils := []string{
 		"bhaskara", "randomFloat", "randomInteger",
 	}
@@ -52,6 +56,7 @@ func init() {
 	allBuiltins = append(allBuiltins, ioUtils...)
 	allBuiltins = append(allBuiltins, messages...)
 	allBuiltins = append(allBuiltins, extras...)
+	allBuiltins = append(allBuiltins, mysql...)
 
 	for _, name := range allBuiltins {
 		if builtin := builtins.GetBuiltinByName(name); builtin != nil {
