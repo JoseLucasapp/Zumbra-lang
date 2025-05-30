@@ -1,2 +1,2 @@
 mysqlConnection("0.0.0.0","3306","root","123456789","zumbra");//host, port, user, password, database
-mysqlGetFromTable("users", "*", "name = 'Lucas'");
+mysqlInsertIntoTable("users", ({"id": 0,"name": "Lucas"}));

@@ -112,6 +112,52 @@ func mysqlShowTablesBuiltin() *object.Builtin {
 	}
 }
 
+func mysqlShowTableColumnsBuiltin() *object.Builtin {
+	return &object.Builtin{
+		Fn: func(args ...object.Object) object.Object {
+			if len(args) != 1 {
+				return NewError("wrong number of arguments, mysqlShowTableColumns(tableName). got=%d, want=1", len(args))
+			}
+
+			if args[0].Type() != object.STRING_OBJ {
+				return NewError("All arguments to `mysqlShowTableColumns` must be STRING, got %s", args[0].Type())
+			}
+
+			if db_connection == nil {
+				return NewError("Database is not connected. Use mysqlConnection(...) before creating tables.")
+			}
+
+			tableName := args[0].(*object.String).Value
+
+			rows, err := db_connection.Query("SHOW COLUMNS FROM " + tableName)
+			if err != nil {
+				return NewError("Failed to show table columns, mysqlShowTableColumns('%s'). got %s", tableName, err)
+			}
+
+			var columns []string
+			var (
+				field, columnType, null, key, extra string
+				defaultValue                        sql.NullString
+			)
+
+			for rows.Next() {
+				err := rows.Scan(&field, &columnType, &null, &key, &defaultValue, &extra)
+				if err != nil {
+					return NewError("Failed to scan column, mysqlShowTableColumns('%s'). got %s", tableName, err)
+				}
+				columns = append(columns, field)
+			}
+
+			elements := []object.Object{}
+			for _, column := range columns {
+				elements = append(elements, &object.String{Value: column})
+			}
+
+			return &object.Array{Elements: elements}
+		},
+	}
+}
+
 func mysqlGetFromTableBuiltin() *object.Builtin {
 	return &object.Builtin{
 		Fn: func(args ...object.Object) object.Object {
@@ -234,6 +280,14 @@ func mysqlInsertIntoTableBuiltin() *object.Builtin {
 			}
 
 			fmt.Println("Record inserted successfully")
+			return nil
+		},
+	}
+}
+
+func mysqlUpdateIntoTableBuiltin() *object.Builtin {
+	return &object.Builtin{
+		Fn: func(args ...object.Object) object.Object {
 			return nil
 		},
 	}
