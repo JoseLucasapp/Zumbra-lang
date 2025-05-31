@@ -49,6 +49,9 @@ var Builtins = []struct {
 		"getFromDict", GetFromDictBuiltin(),
 	},
 	{
+		"hashCode", HashCodeBuiltin(),
+	},
+	{
 		"html", HtmlHandlerBuiltin(),
 	},
 	{
