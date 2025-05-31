@@ -17,7 +17,7 @@ func init() {
 	}
 
 	extras := []string{
-		"date",
+		"date", "dotenvLoad", "dotenvGet",
 	}
 
 	http := []string{

@@ -29,6 +29,7 @@ const (
 	FLOAT_OBJ             = "FLOAT"
 	DATE_OBJ              = "DATE"
 	RECORD_OBJ            = "RECORD"
+	ENV_OBJ               = "ENV"
 )
 
 type Object interface {
