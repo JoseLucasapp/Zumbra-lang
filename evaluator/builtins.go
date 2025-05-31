@@ -17,7 +17,7 @@ func init() {
 	}
 
 	extras := []string{
-		"date", "dotenvLoad", "dotenvGet",
+		"date", "dotenvLoad", "dotenvGet", "hashCode",
 	}
 
 	http := []string{
@@ -26,6 +26,10 @@ func init() {
 
 	ioUtils := []string{
 		"input", "show",
+	}
+
+	jwt := []string{
+		"jwtCreateToken", "jwtVerifyToken",
 	}
 
 	messages := []string{
@@ -57,6 +61,7 @@ func init() {
 	allBuiltins = append(allBuiltins, messages...)
 	allBuiltins = append(allBuiltins, extras...)
 	allBuiltins = append(allBuiltins, mysql...)
+	allBuiltins = append(allBuiltins, jwt...)
 
 	for _, name := range allBuiltins {
 		if builtin := builtins.GetBuiltinByName(name); builtin != nil {

@@ -55,6 +55,9 @@ var Builtins = []struct {
 		"getFromDict", GetFromDictBuiltin(),
 	},
 	{
+		"hashCode", HashCodeBuiltin(),
+	},
+	{
 		"html", HtmlHandlerBuiltin(),
 	},
 	{
@@ -65,6 +68,12 @@ var Builtins = []struct {
 	},
 	{
 		"jsonParse", JsonParse(),
+	},
+	{
+		"jwtCreateToken", createTokenBuiltin(),
+	},
+	{
+		"jwtVerifyToken", verifyTokenBuiltin(),
 	},
 	{
 		"last", ArrayLastBuiltin(),
