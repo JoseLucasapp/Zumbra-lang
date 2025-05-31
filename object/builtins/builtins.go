@@ -40,6 +40,12 @@ var Builtins = []struct {
 		"dictValues", DictValuesBuiltin(),
 	},
 	{
+		"dotenvLoad", loadEnvBuiltin(),
+	},
+	{
+		"dotenvGet", getEnvBuiltin(),
+	},
+	{
 		"first", ArrayFirstBuiltin(),
 	},
 	{
