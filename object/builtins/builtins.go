@@ -61,6 +61,12 @@ var Builtins = []struct {
 		"jsonParse", JsonParse(),
 	},
 	{
+		"jwtCreateToken", createTokenBuiltin(),
+	},
+	{
+		"jwtVerifyToken", verifyTokenBuiltin(),
+	},
+	{
 		"last", ArrayLastBuiltin(),
 	},
 	{

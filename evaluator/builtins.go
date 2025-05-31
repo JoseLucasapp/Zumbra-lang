@@ -28,6 +28,10 @@ func init() {
 		"input", "show",
 	}
 
+	jwt := []string{
+		"jwtCreateToken", "jwtVerifyToken",
+	}
+
 	messages := []string{
 		"sendEmail", "sendWhatsapp",
 	}
@@ -57,6 +61,7 @@ func init() {
 	allBuiltins = append(allBuiltins, messages...)
 	allBuiltins = append(allBuiltins, extras...)
 	allBuiltins = append(allBuiltins, mysql...)
+	allBuiltins = append(allBuiltins, jwt...)
 
 	for _, name := range allBuiltins {
 		if builtin := builtins.GetBuiltinByName(name); builtin != nil {
