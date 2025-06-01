@@ -27,7 +27,10 @@ func main() {
 		return
 	}
 
-	fmt.Printf("Hello %s! This is the ZUMBRA programming language!\n", user.Username)
+	version := "0.0.9"
+
+	fmt.Printf("\nHello %s!\n", user.Username)
+	fmt.Printf("This is the ZUMBRA programming language, version: %s!\n", version)
 	fmt.Printf("Feel free to type in commands\n")
 	repl.Start(os.Stdin, os.Stdout)
 }
