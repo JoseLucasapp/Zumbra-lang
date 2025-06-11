@@ -39,6 +39,8 @@ show(sub(30, 10)); // 20
 
 ## Flow Control
 
+`if-else` in Zumbra programming language to make a decision in fulfillment is fulfilled (true) and run other code if it is not fulfilled or false.
+
 ### `if` and `else`
 
 ```zumbra
@@ -79,6 +81,8 @@ while (x < 3) {
 
 ## Operators
 
+In the Zumbra programming language, operators are special symbols or characters used to perform operations or actions on values ​​(data) or variables. Just like mathematics.
+
 Zumbra supports all common operators:
 
 * Arithmetic: `+`, `-`, `*`, `/`, `%`
@@ -88,6 +92,8 @@ Zumbra supports all common operators:
 ---
 
 ## Collections
+
+Data structures are used to store the values ​​of variables and process a set of data. Lets you store multiple values ​​in one variable, formatted in Zumbra language:
 
 ### Arrays
 
