@@ -140,16 +140,26 @@ func ZumbraTranspiler(zum string) (string, error) {
 	var goBody []string
 
 	for _, line := range lines {
+		if idx := strings.Index(line, "//"); idx != -1 {
+			line = line[:idx]
+		}
 		line = strings.TrimSpace(line)
-
+		line = strings.TrimSuffix(line, ";")
+		line = strings.TrimSpace(line)
 		if strings.HasPrefix(line, "show(") {
 			content := strings.TrimPrefix(line, "show(")
+
 			content = strings.TrimSuffix(content, ")")
 
 			args := splitArgs(content)
 
 			if len(args) == 0 {
 				goBody = append(goBody, `    fmt.Println()`)
+				continue
+			}
+
+			if len(args) == 1 && !strings.HasPrefix(args[0], `"`) {
+				goBody = append(goBody, fmt.Sprintf(`    fmt.Println(%s)`, args[0]))
 				continue
 			}
 
@@ -162,17 +172,21 @@ func ZumbraTranspiler(zum string) (string, error) {
 				continue
 			}
 
-			line := fmt.Sprintf(`    fmt.Printf(%q`, formatGo)
+			line := fmt.Sprintf(`    fmt.Println(fmt.Sprintf(%s`, formatGo)
+
 			if len(args) > 1 {
 				line += ", " + strings.Join(args[1:], ", ")
 			}
-			line += ")"
+			line += "))"
 			goBody = append(goBody, line)
-
 		}
 
 		if strings.HasPrefix(line, "var ") {
 			line = strings.ReplaceAll(line, "<<", "=")
+			goBody = append(goBody, "    "+line)
+		}
+
+		if strings.HasPrefix(line, "//") {
 			goBody = append(goBody, "    "+line)
 		}
 
@@ -195,7 +209,6 @@ func splitArgs(input string) []string {
 
 	for i := 0; i < len(input); i++ {
 		ch := input[i]
-
 		if ch == '"' {
 			inStr = !inStr
 		}
