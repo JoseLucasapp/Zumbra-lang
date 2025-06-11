@@ -140,6 +140,11 @@ func ZumbraTranspiler(zum string) (string, error) {
 	var goBody []string
 	var blockStack []string
 
+	var inFunction bool
+	var funcBuffer []string
+	var funcName string
+	var funcParams string
+
 	for _, line := range lines {
 		if idx := strings.Index(line, "//"); idx != -1 {
 			line = line[:idx]
@@ -147,6 +152,50 @@ func ZumbraTranspiler(zum string) (string, error) {
 		line = strings.TrimSpace(line)
 		line = strings.TrimSuffix(line, ";")
 		line = strings.TrimSpace(line)
+
+		if strings.HasPrefix(line, "var ") && strings.Contains(line, "fct") {
+			inFunction = true
+			line = strings.TrimPrefix(line, "var ")
+			parts := strings.Split(line, "<<")
+			funcName = strings.TrimSpace(parts[0])
+
+			functionPart := strings.TrimSpace(parts[1])
+			paramStart := strings.Index(functionPart, "(")
+			paramEnd := strings.Index(functionPart, "){")
+			funcParams = functionPart[paramStart+1 : paramEnd]
+			continue
+		}
+
+		if inFunction {
+			fmt.Println(line)
+			if line == "}" {
+				bodyLines := funcBuffer
+				lastIndex := len(bodyLines) - 1
+				lastLine := strings.TrimSpace(bodyLines[lastIndex])
+				lastLine = strings.TrimSuffix(lastLine, ";")
+
+				fmt.Println(lastLine)
+				if !strings.HasPrefix(lastLine, "return") {
+					bodyLines[lastIndex] = "return " + lastLine
+				} else {
+					bodyLines[lastIndex] = lastLine
+				}
+
+				body := strings.Join(bodyLines, " ")
+
+				goBody = append(goBody,
+					fmt.Sprintf("var %s = func(%s int, %s int) int { %s }",
+						funcName, strings.Split(funcParams, ",")[0], strings.Split(funcParams, ",")[1], body))
+				inFunction = false
+				funcBuffer = nil
+				funcName = ""
+				funcParams = ""
+				continue
+			} else {
+				funcBuffer = append(funcBuffer, strings.TrimSpace(line))
+			}
+			continue
+		}
 
 		if strings.HasPrefix(line, "if (") {
 			condition := strings.TrimPrefix(line, "if (")
@@ -187,9 +236,7 @@ func ZumbraTranspiler(zum string) (string, error) {
 
 		if strings.HasPrefix(line, "show(") {
 			content := strings.TrimPrefix(line, "show(")
-
 			content = strings.TrimSuffix(content, ")")
-
 			args := splitArgs(content)
 
 			if len(args) == 0 {
@@ -197,27 +244,41 @@ func ZumbraTranspiler(zum string) (string, error) {
 				continue
 			}
 
-			if len(args) == 1 && !strings.HasPrefix(args[0], `"`) {
-				goBody = append(goBody, fmt.Sprintf(`    fmt.Println(%s)`, args[0]))
+			if len(args) == 1 {
+				arg := strings.TrimSpace(args[0])
+
+				if strings.HasPrefix(arg, `"`) && strings.HasSuffix(arg, `"`) {
+					if strings.Contains(arg, "{}") {
+						goBody = append(goBody, fmt.Sprintf(`    fmt.Println(%s)`, arg))
+					} else {
+						goBody = append(goBody, fmt.Sprintf(`    fmt.Println(%s)`, arg))
+					}
+				} else {
+					goBody = append(goBody, fmt.Sprintf(`    fmt.Println(%s)`, arg))
+				}
 				continue
 			}
 
 			format := args[0]
+			if strings.HasPrefix(format, `"`) && strings.HasSuffix(format, `"`) {
+				format = format[1 : len(format)-1]
+			}
+
 			placeholders := strings.Count(format, "{}")
 			formatGo := strings.ReplaceAll(format, "{}", "%v")
 
 			if placeholders > 0 && len(args)-1 < placeholders {
-				goBody = append(goBody, fmt.Sprintf(`    fmt.Println(%q)`, format))
+				goBody = append(goBody, fmt.Sprintf(`    fmt.Println("%s")`, format))
 				continue
 			}
 
-			line := fmt.Sprintf(`    fmt.Println(fmt.Sprintf(%s`, formatGo)
-
+			line := fmt.Sprintf(`    fmt.Printf("%s\n"`, formatGo)
 			if len(args) > 1 {
 				line += ", " + strings.Join(args[1:], ", ")
 			}
-			line += "))"
+			line += ")"
 			goBody = append(goBody, line)
+			continue
 		}
 
 		if strings.HasPrefix(line, "var ") {
@@ -251,14 +312,25 @@ func splitArgs(input string) []string {
 	var args []string
 	var curr strings.Builder
 	inStr := false
+	parens := 0
 
 	for i := 0; i < len(input); i++ {
 		ch := input[i]
+
 		if ch == '"' {
 			inStr = !inStr
 		}
 
-		if ch == ',' && !inStr {
+		if !inStr {
+			if ch == '(' {
+				parens++
+			}
+			if ch == ')' {
+				parens--
+			}
+		}
+
+		if ch == ',' && !inStr && parens == 0 {
 			args = append(args, strings.TrimSpace(curr.String()))
 			curr.Reset()
 		} else {
