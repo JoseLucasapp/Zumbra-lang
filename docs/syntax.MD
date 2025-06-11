@@ -6,6 +6,10 @@ Zumbra is a functional programming language, compiled and executed on top of a v
 
 ## Variables
 
+Containers for storing data or values ​​that can be used or modified.
+
+Examples of variables in the Zumbra programming language:
+
 Zumbra uses `var` to declare variables. Assignment (and reassignment) is done with `<<`.
 
 ```zumbra
@@ -38,6 +42,8 @@ show(sub(30, 10)); // 20
 ---
 
 ## Flow Control
+
+`if-else` in Zumbra programming language to make a decision in fulfillment is fulfilled (true) and run other code if it is not fulfilled or false.
 
 ### `if` and `else`
 
@@ -79,6 +85,8 @@ while (x < 3) {
 
 ## Operators
 
+In the Zumbra programming language, operators are special symbols or characters used to perform operations or actions on values ​​(data) or variables. Just like mathematics.
+
 Zumbra supports all common operators:
 
 * Arithmetic: `+`, `-`, `*`, `/`, `%`
@@ -88,6 +96,8 @@ Zumbra supports all common operators:
 ---
 
 ## Collections
+
+Data structures are used to store the values ​​of variables and process a set of data. Lets you store multiple values ​​in one variable, formatted in Zumbra language:
 
 ### Arrays
 
@@ -105,6 +115,8 @@ var dict << {"a": "v", "b": "o"};
 
 ## Output / Debugging
 
+The results displayed by a program, usually after a process or calculation has been completed.
+
 Use `show(...)` to display output:
 
 ```zumbra
@@ -118,6 +130,8 @@ show("{}"); // {}
 
 ## Comments
 
+Comments in Zumbra programming language are to disable code, provide notes, or explain the purpose of the code. In other words, comments are parts of code that are not executed by the program.
+
 Use `//` to write single-line comments:
 
 ```zumbra
@@ -127,7 +141,7 @@ var x << 1; // Inline comment
 
 ---
 
-## Full Example
+## Full Example code of Zumbra programming language
 
 ```zumbra
 var x << 0;
