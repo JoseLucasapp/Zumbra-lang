@@ -138,6 +138,7 @@ func buildZumbra(filename string) error {
 func ZumbraTranspiler(zum string) (string, error) {
 	lines := strings.Split(zum, "\n")
 	var goBody []string
+	var blockStack []string
 
 	for _, line := range lines {
 		if idx := strings.Index(line, "//"); idx != -1 {
@@ -146,6 +147,44 @@ func ZumbraTranspiler(zum string) (string, error) {
 		line = strings.TrimSpace(line)
 		line = strings.TrimSuffix(line, ";")
 		line = strings.TrimSpace(line)
+
+		if strings.HasPrefix(line, "if (") {
+			condition := strings.TrimPrefix(line, "if (")
+			condition = strings.TrimSuffix(condition, "){")
+			condition = strings.TrimSpace(condition)
+
+			goBody = append(goBody, fmt.Sprintf("    if %s {", condition))
+			blockStack = append(blockStack, "if")
+			continue
+		}
+
+		if strings.Contains(line, "else") {
+			if len(blockStack) > 0 && blockStack[len(blockStack)-1] == "if" {
+				goBody = append(goBody, "    } else {")
+				blockStack[len(blockStack)-1] = "if-else"
+			}
+
+			continue
+		}
+
+		if strings.HasPrefix(line, "while (") {
+			condition := strings.TrimPrefix(line, "while (")
+			condition = strings.TrimSuffix(condition, ") {")
+			condition = strings.TrimSpace(condition)
+
+			goBody = append(goBody, fmt.Sprintf("for %s {", condition))
+			blockStack = append(blockStack, "while")
+			continue
+		}
+
+		if line == "}" {
+			goBody = append(goBody, "    }")
+			if len(blockStack) > 0 {
+				blockStack = blockStack[:len(blockStack)-1]
+			}
+			continue
+		}
+
 		if strings.HasPrefix(line, "show(") {
 			content := strings.TrimPrefix(line, "show(")
 
@@ -186,6 +225,12 @@ func ZumbraTranspiler(zum string) (string, error) {
 			goBody = append(goBody, "    "+line)
 		}
 
+		if strings.Contains(line, "<<") {
+			line = strings.ReplaceAll(line, "<<", "=")
+			goBody = append(goBody, line)
+			continue
+		}
+
 		if strings.HasPrefix(line, "//") {
 			goBody = append(goBody, "    "+line)
 		}
@@ -224,4 +269,8 @@ func splitArgs(input string) []string {
 		args = append(args, strings.TrimSpace(curr.String()))
 	}
 	return args
+}
+
+func indent(level int, code string) string {
+	return strings.Repeat("    ", level) + code
 }
