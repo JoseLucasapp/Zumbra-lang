@@ -1,7 +1,7 @@
-package main
-		import "fmt"
+package runtime
 
-		
+func Runtime() string {
+	return `
 	func addToArrayStart(arr []interface{}, elem interface{}) []interface{} {
 		return append([]interface{}{elem}, arr...)
 	}
@@ -9,12 +9,5 @@ package main
 	func addToArrayEnd(arr []interface{}, elem interface{}) []interface{} {
 		return append(arr, elem)
 	}
-
-
-		func main() {
-			    var arr = []interface{}{1, 2, 3}
-    arr = addToArrayStart(arr, 0)
-    arr = addToArrayEnd(arr, 5)
-    fmt.Println(arr)
-		}
-	
+`
+}

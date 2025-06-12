@@ -3,6 +3,7 @@ package transpiler
 import (
 	"fmt"
 	"strings"
+	"zumbra/runtime"
 )
 
 func ZumbraTranspiler(zum string) (string, error) {
@@ -153,7 +154,19 @@ func ZumbraTranspiler(zum string) (string, error) {
 
 		if strings.HasPrefix(line, "var ") {
 			line = strings.ReplaceAll(line, "<<", "=")
-			goBody = append(goBody, "    "+line)
+			if strings.Contains(line, "[") && strings.Contains(line, "]") {
+				parts := strings.SplitN(line, "=", 2)
+				varName := strings.TrimSpace(parts[0])
+				arrayPart := strings.TrimSpace(parts[1])
+				arrayPart = strings.TrimPrefix(arrayPart, "[")
+				arrayPart = strings.TrimSuffix(arrayPart, "]")
+				arrayElements := strings.TrimSpace(arrayPart)
+
+				goBody = append(goBody, fmt.Sprintf("    %s = []interface{}{%s}", varName, arrayElements))
+			} else {
+				goBody = append(goBody, "    "+line)
+			}
+			continue
 		}
 
 		if strings.Contains(line, "<<") {
@@ -166,16 +179,31 @@ func ZumbraTranspiler(zum string) (string, error) {
 			goBody = append(goBody, "    "+line)
 		}
 
+		if strings.Contains(line, "(") && strings.Contains(line, ")") {
+			if strings.HasPrefix(line, "addToArrayStart") || strings.HasPrefix(line, "addToArrayEnd") {
+				parts := strings.SplitN(line, "(", 2)
+				args := parts[1][:len(parts[1])-1]
+				funcName := parts[0]
+				targetVar := strings.Split(args, ",")[0]
+				goBody = append(goBody, fmt.Sprintf("    %s = %s(%s)", strings.TrimSpace(targetVar), funcName, args))
+			} else {
+				goBody = append(goBody, "    "+line)
+			}
+			continue
+		}
+
 	}
 
 	return fmt.Sprintf(
 		`package main
 		import "fmt"
 
+		%s
+
 		func main() {
 			%s
 		}
-	`, strings.Join(goBody, "\n")), nil
+	`, runtime.Runtime(), strings.Join(goBody, "\n")), nil
 }
 
 func splitArgs(input string) []string {
