@@ -1,5 +1,10 @@
 package main
-		import "fmt"
+
+		import (
+			"sort"
+			"fmt"
+			"time"
+		)
 
 		
 	func addToArrayStart(arr []interface{}, elem interface{}) []interface{} {
@@ -10,11 +15,142 @@ package main
 		return append(arr, elem)
 	}
 
+	func removeFromArray(arr []interface{}, index int) []interface{} {
+		if index < 0 || index >= len(arr) {
+			return arr
+		}
+		return append(arr[:index], arr[index+1:]...)
+	}
+
+	func max(arr []interface{}) interface{} {
+		if len(arr) == 0 {
+			return nil
+		}
+		maxVal := arr[0].(int)
+		for _, v := range arr[1:] {
+			val := v.(int)
+			if val > maxVal {
+				maxVal = val
+			}
+		}
+		return maxVal
+	}
+
+	func min(arr []interface{}) interface{} {
+		if len(arr) == 0 {
+			return nil
+		}
+		minVal := arr[0].(int)
+		for _, v := range arr[1:] {
+			val := v.(int)
+			if val < minVal {
+				minVal = val
+			}
+		}
+		return minVal
+	}
+
+
+	func first(arr []interface{}) interface{} {
+		if len(arr) == 0 {
+			return nil
+		}
+		return arr[0]
+	}
+
+	func last(arr []interface{}) interface{} {
+		if len(arr) == 0 {
+			return nil
+		}
+		return arr[len(arr)-1]
+	}
+
+
+	func allButFirst(arr []interface{}) []interface{} {
+		if len(arr) == 0 {
+			return arr
+		}
+		return arr[1:]
+	}
+
+
+	func indexOf(arr []interface{}, elem interface{}) int {
+		for i, v := range arr {
+			if v == elem {
+				return i
+			}
+		}
+		return -1
+	}
+
+	func organize(arr []interface{}, order string) []interface{} {
+		intArr := make([]int, len(arr))
+		for i, v := range arr {
+			intArr[i] = v.(int)
+		}
+		if order == "desc" {
+			sort.Sort(sort.Reverse(sort.IntSlice(intArr)))
+		} else {
+			sort.Ints(intArr)
+		}
+		result := make([]interface{}, len(intArr))
+		for i, v := range intArr {
+			result[i] = v
+		}
+		return result
+	}
+
+	func sum(arr []interface{}) interface{} {
+		total := 0.0
+		for _, v := range arr {
+			switch val := v.(type) {
+			case int:
+				total += float64(val)
+			case float64:
+				total += val
+			}
+		}
+		if float64(int(total)) == total {
+			return int(total)
+		}
+		return total
+	}
+
+	type ZumbraDate struct {
+		fullDate time.Time
+		hour     int
+		minute   int
+		second   int
+		day      int
+		month    int
+		year     int
+	}
+
+	func date() ZumbraDate {
+		now := time.Now()
+		return ZumbraDate{
+			fullDate: now,
+			hour:     now.Hour(),
+			minute:   now.Minute(),
+			second:   now.Second(),
+			day:      now.Day(),
+			month:    int(now.Month()),
+			year:     now.Year(),
+		}
+	}
+
+
+
+
 
 		func main() {
-			    var arr = []interface{}{1, 2, 3}
-    arr = addToArrayStart(arr, 0)
-    arr = addToArrayEnd(arr, 5)
-    fmt.Println(arr)
+			    var a = date()
+    fmt.Println(a)
+    fmt.Println(a.hour)
+    fmt.Println(a.minute)
+    fmt.Println(a.second)
+    fmt.Println(a.day)
+    fmt.Println(a.month)
+    fmt.Println(a.year)
 		}
 	

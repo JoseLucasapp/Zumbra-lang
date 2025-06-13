@@ -196,7 +196,12 @@ func ZumbraTranspiler(zum string) (string, error) {
 
 	return fmt.Sprintf(
 		`package main
-		import "fmt"
+
+		import (
+			"sort"
+			"fmt"
+			"time"
+		)
 
 		%s
 
