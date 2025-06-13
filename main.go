@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"io/ioutil"
 	"os"
+	"os/exec"
 	"os/user"
 	"path/filepath"
 
@@ -13,6 +14,7 @@ import (
 	"zumbra/object/builtins"
 	"zumbra/parser"
 	"zumbra/repl"
+	"zumbra/transpiler"
 	"zumbra/vm"
 )
 
@@ -20,6 +22,14 @@ func main() {
 	user, err := user.Current()
 	if err != nil {
 		panic(err)
+	}
+
+	if len(os.Args) > 2 && os.Args[1] == "build" {
+		err := buildZumbra(os.Args[2])
+		if err != nil {
+			fmt.Printf("Error when trying to build the file: %s\n", err)
+		}
+		return
 	}
 
 	if len(os.Args) > 1 {
@@ -88,4 +98,39 @@ func runFile(filename string) {
 	}
 
 	machine.LastPoppedStackElem()
+}
+
+func buildZumbra(filename string) error {
+	data, err := os.ReadFile(filename)
+	if err != nil {
+		return fmt.Errorf("Error when trying to read the file: %s\n", err)
+	}
+
+	source := string(data)
+	goCode, err := transpiler.ZumbraTranspiler(source)
+	if err != nil {
+		return fmt.Errorf("erro ao transpilar: %w", err)
+	}
+
+	if _, err := os.Stat("build"); err == nil {
+		err := os.RemoveAll("build")
+		if err != nil {
+			return fmt.Errorf("Error when trying to remove the file: %w", err)
+		}
+	}
+
+	err = os.MkdirAll("build", 0755)
+	if err != nil {
+		return fmt.Errorf("Error when trying to create the file: %w", err)
+	}
+
+	err = os.WriteFile("build/main.go", []byte(goCode), 0644)
+	if err != nil {
+		return fmt.Errorf("Error when trying to write the file: %w", err)
+	}
+
+	cmd := exec.Command("go", "build", "-o", "build/zumbra-app", "build/main.go")
+	cmd.Stdout = os.Stdout
+	cmd.Stderr = os.Stderr
+	return cmd.Run()
 }
