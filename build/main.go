@@ -139,18 +139,42 @@ package main
 		}
 	}
 
+	func addToDict(dict map[string]interface{}, key string, value interface{}) map[string]interface{} {
+		dict[key] = value
+		return dict
+	}
+
+	func deleteFromDict(dict map[string]interface{}, key string) map[string]interface{} {
+		delete(dict, key)
+		return dict
+	}
+
+	func getFromDict(dict map[string]interface{}, key string) interface{} {
+		return dict[key]
+	}
+
+	func dictKeys(dict map[string]interface{}) []string {
+		keys := make([]string, 0, len(dict))
+		for k := range dict {
+			keys = append(keys, k)
+		}
+		return keys
+	}
+
+	func dictValues(dict map[string]interface{}) []interface{} {
+		values := make([]interface{}, 0, len(dict))
+		for _, v := range dict {
+			values = append(values, v)
+		}
+		return values
+	}
+
 
 
 
 
 		func main() {
-			    var a = date()
-    fmt.Println(a)
-    fmt.Println(a.hour)
-    fmt.Println(a.minute)
-    fmt.Println(a.second)
-    fmt.Println(a.day)
-    fmt.Println(a.month)
-    fmt.Println(a.year)
+			    var a = map[string]interface{}{"a":"v","b":"o"}
+    fmt.Println(getFromDict(a, "a"))
 		}
 	

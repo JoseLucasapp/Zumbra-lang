@@ -163,6 +163,13 @@ func ZumbraTranspiler(zum string) (string, error) {
 				arrayElements := strings.TrimSpace(arrayPart)
 
 				goBody = append(goBody, fmt.Sprintf("    %s = []interface{}{%s}", varName, arrayElements))
+			} else if strings.Contains(line, "{") && strings.Contains(line, "}") {
+				parts := strings.SplitN(line, "=", 2)
+				varName := strings.TrimSpace(parts[0])
+				rightSide := strings.TrimSpace(parts[1])
+				rightSide = strings.ReplaceAll(rightSide, "{", "map[string]interface{}{")
+				line = varName + " = " + rightSide
+				goBody = append(goBody, "    "+line)
 			} else {
 				goBody = append(goBody, "    "+line)
 			}
