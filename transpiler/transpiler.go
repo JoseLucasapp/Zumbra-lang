@@ -220,8 +220,10 @@ func ZumbraTranspiler(zum string) (string, error) {
 			"encoding/json"
 			"strconv"
 			"errors"
+			"database/sql"
 
 			"github.com/golang-jwt/jwt/v5"
+			_ "github.com/go-sql-driver/mysql"
 		)
 
 		%s

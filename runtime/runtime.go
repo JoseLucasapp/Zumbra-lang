@@ -406,5 +406,182 @@ func Runtime() string {
 		return "", errors.New("invalid token")
 	}
 
+	var db_connection *sql.DB
+
+	func mysqlConnection(host, port, user, password, database string) error {
+		var err error
+		db_connection, err = sql.Open("mysql", user+":"+password+"@tcp("+host+":"+port+")/"+database)
+		if err != nil {
+			return fmt.Errorf("failed to connect: %v", err)
+		}
+
+		err = db_connection.Ping()
+		if err != nil {
+			return fmt.Errorf("failed to ping: %v", err)
+		}
+
+		fmt.Printf("Database '%s' connected successfully\n", database)
+		return nil
+	}
+
+	func mysqlCreateTable(tableName, fields string) error {
+		_, err := db_connection.Exec("CREATE TABLE " + tableName + " (" + fields + ");")
+		if err != nil {
+			return fmt.Errorf("failed to create table: %v", err)
+		}
+		fmt.Printf("Table '%s' created successfully\n", tableName)
+		return nil
+	}
+
+	func mysqlShowTables() ([]string, error) {
+		rows, err := db_connection.Query("SHOW TABLES")
+		if err != nil {
+			return nil, fmt.Errorf("failed to show tables: %v", err)
+		}
+		defer rows.Close()
+
+		var tables []string
+		for rows.Next() {
+			var table string
+			if err := rows.Scan(&table); err != nil {
+				return nil, err
+			}
+			tables = append(tables, table)
+		}
+		return tables, nil
+	}
+
+	func mysqlShowTableColumns(tableName string) ([]string, error) {
+		rows, err := db_connection.Query("SHOW COLUMNS FROM " + tableName)
+		if err != nil {
+			return nil, fmt.Errorf("failed to show columns: %v", err)
+		}
+		defer rows.Close()
+
+		var columns []string
+		for rows.Next() {
+			var field, colType, null, key, extra string
+			var defaultValue sql.NullString
+			if err := rows.Scan(&field, &colType, &null, &key, &defaultValue, &extra); err != nil {
+				return nil, err
+			}
+			columns = append(columns, field)
+		}
+		return columns, nil
+	}
+
+	func mysqlDeleteTable(tableName string) error {
+		query := fmt.Sprintf("DROP TABLE %s", tableName)
+		_, err := db_connection.Exec(query)
+		if err != nil {
+			return fmt.Errorf("failed to drop table: %v", err)
+		}
+		fmt.Printf("Table '%s' deleted successfully\n", tableName)
+		return nil
+	}
+
+	func mysqlInsertIntoTable(tableName string, data map[string]interface{}) error {
+		keys := []string{}
+		placeholders := []string{}
+		args := []interface{}{}
+
+		for key, value := range data {
+			keys = append(keys, key)
+			placeholders = append(placeholders, "?")
+			args = append(args, value)
+		}
+
+		query := fmt.Sprintf("INSERT INTO %s (%s) VALUES (%s)", tableName, strings.Join(keys, ","), strings.Join(placeholders, ","))
+		_, err := db_connection.Exec(query, args...)
+		if err != nil {
+			return fmt.Errorf("failed to insert: %v", err)
+		}
+
+		fmt.Println("Record inserted successfully")
+		return nil
+	}
+
+	func mysqlGetFromTable(tableName, fields, condition string) ([]map[string]interface{}, error) {
+		if db_connection == nil {
+			return nil, errors.New("not connected")
+		}
+
+		query := fmt.Sprintf("SELECT %s FROM %s", fields, tableName)
+		if condition != "" {
+			query += " WHERE " + condition
+		}
+
+		rows, err := db_connection.Query(query)
+		if err != nil {
+			return nil, fmt.Errorf("failed to query: %v", err)
+		}
+		defer rows.Close()
+
+		columns, _ := rows.Columns()
+		result := []map[string]interface{}{}
+
+		for rows.Next() {
+			values := make([]interface{}, len(columns))
+			valuePtrs := make([]interface{}, len(columns))
+
+			for i := range values {
+				valuePtrs[i] = &values[i]
+			}
+
+			if err := rows.Scan(valuePtrs...); err != nil {
+				return nil, err
+			}
+
+			rowMap := map[string]interface{}{}
+			for i, col := range columns {
+				val := values[i]
+				b, ok := val.([]byte)
+				if ok {
+					rowMap[col] = string(b)
+				} else {
+					rowMap[col] = val
+				}
+			}
+			result = append(result, rowMap)
+		}
+
+		return result, nil
+	}
+
+	func mysqlUpdateIntoTable(tableName string, data map[string]interface{}, condition string) error {
+		assignments := []string{}
+		args := []interface{}{}
+
+		for key, value := range data {
+			assignments = append(assignments, fmt.Sprintf("%s = ?", key))
+			args = append(args, value)
+		}
+
+		query := fmt.Sprintf("UPDATE %s SET %s", tableName, strings.Join(assignments, ", "))
+		if condition != "" {
+			query += " WHERE " + condition
+		}
+
+		_, err := db_connection.Exec(query, args...)
+		if err != nil {
+			return fmt.Errorf("failed to update: %v", err)
+		}
+		fmt.Println("Record updated successfully")
+		return nil
+	}
+
+	func mysqlDeleteFromTable(tableName, condition string) error {
+		query := fmt.Sprintf("DELETE FROM %s", tableName)
+		if condition != "" {
+			query += " WHERE " + condition
+		}
+		_, err := db_connection.Exec(query)
+		if err != nil {
+			return fmt.Errorf("failed to delete: %v", err)
+		}
+		fmt.Println("Record deleted successfully")
+		return nil
+	}
+
 `
 }
