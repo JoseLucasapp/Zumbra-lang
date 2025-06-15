@@ -204,5 +204,15 @@ func Runtime() string {
 		hashInBytes := hash.Sum(nil)
 		return fmt.Sprintf("%x", hashInBytes)
 	}
+
+	func input(prompt ...string) string {
+		if len(prompt) > 0 {
+			fmt.Print(prompt[0])
+		}
+		var value string
+		fmt.Scanln(&value)
+		return value
+	}
+
 `
 }
