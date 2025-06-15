@@ -197,5 +197,12 @@ func Runtime() string {
 	func dotenvGet(key string) string {
 		return EnvVars[key]
 	}
+
+	func hashCode(input string) string {
+		hash := sha256.New()
+		hash.Write([]byte(input))
+		hashInBytes := hash.Sum(nil)
+		return fmt.Sprintf("%x", hashInBytes)
+	}
 `
 }

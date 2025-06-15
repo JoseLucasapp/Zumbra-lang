@@ -211,6 +211,7 @@ func ZumbraTranspiler(zum string) (string, error) {
 			"bufio"
 			"os"
 			"strings"
+			"crypto/sha256"
 		)
 
 		%s
