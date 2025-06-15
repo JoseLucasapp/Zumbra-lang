@@ -214,5 +214,49 @@ func Runtime() string {
 		return value
 	}
 
+	func bhaskara(a, b, c float64) interface{} {
+		delta := (b * b) - (4 * a * c)
+		if delta < 0 {
+			return nil
+		}
+		if delta == 0 {
+			return -b / (2 * a)
+		}
+		sqrtDelta := math.Sqrt(delta)
+		x1 := (-b + sqrtDelta) / (2 * a)
+		x2 := (-b - sqrtDelta) / (2 * a)
+		return []interface{}{x1, x2}
+	}
+
+	func randomInteger(args ...int) int {
+		min := 0
+		max := 10
+		if len(args) == 1 {
+			max = args[0]
+		} else if len(args) == 2 {
+			min = args[0]
+			max = args[1]
+		}
+		if min > max {
+			min, max = max, min
+		}
+		return min + rand.Intn(max-min+1)
+	}
+
+	func randomFloat(args ...float64) float64 {
+		min := 0.0
+		max := 10.0
+		if len(args) == 1 {
+			max = args[0]
+		} else if len(args) == 2 {
+			min = args[0]
+			max = args[1]
+		}
+		if min > max {
+			min, max = max, min
+		}
+		return min + rand.Float64()*(max-min)
+	}
+
 `
 }

@@ -212,6 +212,8 @@ func ZumbraTranspiler(zum string) (string, error) {
 			"os"
 			"strings"
 			"crypto/sha256"
+			"math"
+			"math/rand"
 		)
 
 		%s
