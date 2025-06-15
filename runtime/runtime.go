@@ -164,7 +164,38 @@ func Runtime() string {
 		return values
 	}
 
+	var EnvVars = map[string]string{}
 
+	func dotenvLoad(filepath string) {
+		file, err := os.Open(filepath)
+		if err != nil {
+			fmt.Println("failed to open file:", err)
+			return
+		}
+		defer file.Close()
 
+		scanner := bufio.NewScanner(file)
+
+		for scanner.Scan() {
+			line := scanner.Text()
+			if strings.TrimSpace(line) == "" || strings.HasPrefix(line, "#") {
+				continue
+			}
+			parts := strings.SplitN(line, "=", 2)
+			if len(parts) == 2 {
+				key := strings.TrimSpace(parts[0])
+				value := strings.TrimSpace(parts[1])
+				EnvVars[key] = value
+			}
+		}
+
+		if err := scanner.Err(); err != nil {
+			fmt.Println("failed to read file:", err)
+		}
+	}
+
+	func dotenvGet(key string) string {
+		return EnvVars[key]
+	}
 `
 }

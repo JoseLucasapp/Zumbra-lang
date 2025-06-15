@@ -208,6 +208,9 @@ func ZumbraTranspiler(zum string) (string, error) {
 			"sort"
 			"fmt"
 			"time"
+			"bufio"
+			"os"
+			"strings"
 		)
 
 		%s
