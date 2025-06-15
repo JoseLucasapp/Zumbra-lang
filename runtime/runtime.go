@@ -2,6 +2,41 @@ package runtime
 
 func Runtime() string {
 	return `
+
+	func sizeOf(value interface{}) int {
+		switch v := value.(type) {
+		case []interface{}:
+			return len(v)
+		case string:
+			return len(v)
+		default:
+			return 0
+		}
+	}
+
+	func toUppercase(s string) string {
+		return strings.ToUpper(s)
+	}
+
+	func toLowercase(s string) string {
+		return strings.ToLower(s)
+	}
+
+	func capitalize(s string) string {
+		if len(s) == 0 {
+			return s
+		}
+		return strings.ToUpper(s[:1]) + s[1:]
+	}
+
+	func removeWhiteSpaces(s string) string {
+		return strings.ReplaceAll(s, " ", "")
+	}
+
+	func replace(s, old, new string) string {
+		return strings.ReplaceAll(s, old, new)
+	}
+
 	func addToArrayStart(arr []interface{}, elem interface{}) []interface{} {
 		return append([]interface{}{elem}, arr...)
 	}
