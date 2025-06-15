@@ -214,6 +214,8 @@ func ZumbraTranspiler(zum string) (string, error) {
 			"crypto/sha256"
 			"math"
 			"math/rand"
+			"encoding/json"
+			"strconv"
 		)
 
 		%s

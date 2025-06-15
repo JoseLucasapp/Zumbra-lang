@@ -258,5 +258,77 @@ func Runtime() string {
 		return min + rand.Float64()*(max-min)
 	}
 
+	func toString(value interface{}) string {
+		return fmt.Sprintf("%v", value)
+	}
+
+	func toInt(value interface{}) int {
+		switch v := value.(type) {
+		case string:
+			n, err := strconv.Atoi(v)
+			if err != nil {
+				return 0
+			}
+			return n
+		case float64:
+			return int(math.Floor(v))
+		case bool:
+			if v {
+				return 1
+			}
+			return 0
+		case int:
+			return v
+		default:
+			return 0
+		}
+	}
+
+	func toFloat(value interface{}) float64 {
+		switch v := value.(type) {
+		case string:
+			n, err := strconv.ParseFloat(v, 64)
+			if err != nil {
+				return 0
+			}
+			return n
+		case float64:
+			return v
+		case bool:
+			if v {
+				return 1.0
+			}
+			return 0.0
+		case int:
+			return float64(v)
+		default:
+			return 0.0
+		}
+	}
+
+	func toBool(value interface{}) bool {
+		switch v := value.(type) {
+		case string:
+			return v != ""
+		case float64:
+			return v != 0
+		case bool:
+			return v
+		case int:
+			return v != 0
+		default:
+			return false
+		}
+	}
+
+	func jsonParse(input string) map[string]interface{} {
+		var result map[string]interface{}
+		err := json.Unmarshal([]byte(input), &result)
+		if err != nil {
+			return map[string]interface{}{}
+		}
+		return result
+	}
+
 `
 }
