@@ -170,6 +170,9 @@ func ZumbraTranspiler(zum string) (string, error) {
 				rightSide = strings.ReplaceAll(rightSide, "{", "map[string]interface{}{")
 				line = varName + " = " + rightSide
 				goBody = append(goBody, "    "+line)
+			} else if strings.Contains(line, "jwtCreateToken(") {
+				line = strings.ReplaceAll(line, "=", ", _ =")
+				goBody = append(goBody, "    "+line)
 			} else {
 				goBody = append(goBody, "    "+line)
 			}
@@ -216,6 +219,9 @@ func ZumbraTranspiler(zum string) (string, error) {
 			"math/rand"
 			"encoding/json"
 			"strconv"
+			"errors"
+
+			"github.com/golang-jwt/jwt/v5"
 		)
 
 		%s

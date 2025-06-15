@@ -330,5 +330,46 @@ func Runtime() string {
 		return result
 	}
 
+	var secretKey string
+
+	func jwtCreateToken(username string, secret string, expirationHours int) (string, error) {
+		secretKey = secret
+
+		token := jwt.NewWithClaims(jwt.SigningMethodHS256, jwt.MapClaims{
+			"username": username,
+			"exp":      time.Now().Add(time.Hour * time.Duration(expirationHours)).Unix(),
+		})
+
+		tokenStr, err := token.SignedString([]byte(secretKey))
+		if err != nil {
+			return "", fmt.Errorf("failed to create token: %v", err)
+		}
+
+		return tokenStr, nil
+	}
+
+	func jwtVerifyToken(tokenStr string) (string, error) {
+		token, err := jwt.Parse(tokenStr, func(token *jwt.Token) (interface{}, error) {
+			if _, ok := token.Method.(*jwt.SigningMethodHMAC); !ok {
+				return nil, errors.New("unexpected signing method")
+			}
+			return []byte(secretKey), nil
+		})
+
+		if err != nil {
+			return "", fmt.Errorf("failed to parse token: %v", err)
+		}
+
+		if claims, ok := token.Claims.(jwt.MapClaims); ok && token.Valid {
+			username, ok := claims["username"].(string)
+			if !ok {
+				return "", errors.New("username not found in token")
+			}
+			return username, nil
+		}
+
+		return "", errors.New("invalid token")
+	}
+
 `
 }

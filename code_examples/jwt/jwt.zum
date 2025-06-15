@@ -1,2 +1,2 @@
 var a << jwtCreateToken("Lucas", "abc", 1); //output: eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJleHAiOjE3NDg2Njg4MTEsInVzZXJuYW1lIjoiTHVjYXMifQ.VoEyVkCjWVY5tDSu1mqArLkyognjy28wG4Vwy8vWkj8
-jwtVerifyToken(a); // output: Lucas
+show(jwtVerifyToken(a)); // output: Lucas
