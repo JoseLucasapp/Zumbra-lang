@@ -1,0 +1,5 @@
+
+show("Type your name:")
+var a << input();
+
+show(a);
