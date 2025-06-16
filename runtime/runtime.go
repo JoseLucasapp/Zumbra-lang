@@ -356,7 +356,7 @@ func Runtime() string {
 		}
 	}
 
-	func jsonParse(input string) map[string]interface{} {
+	func json_parse(input string) map[string]interface{} {
 		var result map[string]interface{}
 		err := json.Unmarshal([]byte(input), &result)
 		if err != nil {
@@ -582,6 +582,127 @@ func Runtime() string {
 		fmt.Println("Record deleted successfully")
 		return nil
 	}
+
+	type Route struct {
+		Method  string
+		Path    string
+		Handler func(http.ResponseWriter, *http.Request)
+	}
+
+	var routes []Route
+	var staticRoutes []StaticRoute
+
+	type StaticRoute struct {
+		Prefix string
+		Dir    string
+	}
+
+	func server(port int) {
+		for _, sr := range staticRoutes {
+			http.Handle(sr.Prefix+"/", http.StripPrefix(sr.Prefix, http.FileServer(http.Dir(sr.Dir))))
+		}
+
+		for _, r := range routes {
+			http.HandleFunc(r.Path, func(w http.ResponseWriter, req *http.Request) {
+				if req.Method != r.Method {
+					http.NotFound(w, req)
+					return
+				}
+				r.Handler(w, req)
+			})
+		}
+
+		addr := fmt.Sprintf(":%d", port)
+		ln, err := net.Listen("tcp", addr)
+		if err != nil {
+			fmt.Printf("Failed to bind to port %s. got %s\n", addr, err)
+			return
+		}
+
+		fmt.Printf("Zumbra server started on port %d\n", port)
+		http.Serve(ln, nil)
+	}
+
+	func registerRoute(path string, handler string) {
+		routes = append(routes, Route{
+			Method:  "GET",
+			Path:    path,
+			Handler: func(w http.ResponseWriter, req *http.Request) { w.Write([]byte(handler)) },
+		})
+	}
+
+	func html(content string) string {
+		return content
+	}
+
+	func serveStatic(prefix, dir string) {
+		staticRoutes = append(staticRoutes, StaticRoute{
+			Prefix: prefix,
+			Dir:    dir,
+		})
+	}
+
+	func get(url string) map[string]string {
+		resp, err := http.Get(url)
+		if err != nil {
+			return map[string]string{"error": err.Error()}
+		}
+		defer resp.Body.Close()
+
+		buf := new(bytes.Buffer)
+		_, err = buf.ReadFrom(resp.Body)
+		if err != nil {
+			return map[string]string{"error": err.Error()}
+		}
+
+		return map[string]string{"body": buf.String()}
+	}
+
+	func logger(next http.HandlerFunc) http.HandlerFunc {
+		return func(w http.ResponseWriter, r *http.Request) {
+			fmt.Println("Request:", r.Method, r.URL.Path)
+			next(w, r)
+		}
+	}
+
+	func serveFile(args ...interface{}) string {
+		if len(args) != 1 && len(args) != 2 {
+			return ""
+		}
+
+		path, ok := args[0].(string)
+		if !ok {
+			return ""
+		}
+
+		cleanPath := filepath.Clean(path)
+		content, err := os.ReadFile(cleanPath)
+		if err != nil {
+			return ""
+		}
+
+		html := string(content)
+
+		if len(args) == 1 {
+			return html
+		}
+
+		dict, ok := args[1].(map[string]interface{})
+		if !ok {
+			return html
+		}
+
+		for key, val := range dict {
+			strVal, ok := val.(string)
+			if ok {
+				placeholder := "{{" + key + "}}"
+				html = strings.ReplaceAll(html, placeholder, strVal)
+			}
+		}
+
+		return html
+	}
+
 
 `
 }
