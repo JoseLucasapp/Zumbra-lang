@@ -1,2 +1,2 @@
-registerRoute("GET", "/", html("<h1>Home</h1>"));
+registerRoute("/", html("<h1>Home</h1>"));
 server(3333);

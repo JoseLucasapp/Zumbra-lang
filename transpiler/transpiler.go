@@ -15,9 +15,10 @@ func ZumbraTranspiler(zum string) (string, error) {
 	var funcBuffer []string
 	var funcName string
 	var funcParams string
+	var tmpCounter int = 0
 
 	for _, line := range lines {
-		if idx := strings.Index(line, "//"); idx != -1 {
+		if idx := strings.Index(line, " //"); idx != -1 {
 			line = line[:idx]
 		}
 		line = strings.TrimSpace(line)
@@ -115,6 +116,11 @@ func ZumbraTranspiler(zum string) (string, error) {
 				continue
 			}
 
+			if len(args) == 1 && strings.Contains(args[0], "[") {
+				goBody = append(goBody, fmt.Sprintf("    fmt.Println(%s)", args[0]))
+				continue
+			}
+
 			if len(args) == 1 {
 				arg := strings.TrimSpace(args[0])
 
@@ -154,15 +160,12 @@ func ZumbraTranspiler(zum string) (string, error) {
 
 		if strings.HasPrefix(line, "var ") {
 			line = strings.ReplaceAll(line, "<<", "=")
-			if strings.Contains(line, "[") && strings.Contains(line, "]") {
+			if strings.Contains(line, "json_parse(") {
 				parts := strings.SplitN(line, "=", 2)
 				varName := strings.TrimSpace(parts[0])
-				arrayPart := strings.TrimSpace(parts[1])
-				arrayPart = strings.TrimPrefix(arrayPart, "[")
-				arrayPart = strings.TrimSuffix(arrayPart, "]")
-				arrayElements := strings.TrimSpace(arrayPart)
-
-				goBody = append(goBody, fmt.Sprintf("    %s = []interface{}{%s}", varName, arrayElements))
+				rightSide := strings.TrimSpace(parts[1])
+				goBody = append(goBody, fmt.Sprintf("     %s map[string]interface{} = %s", varName, rightSide))
+				continue
 			} else if strings.Contains(line, "{") && strings.Contains(line, "}") {
 				parts := strings.SplitN(line, "=", 2)
 				varName := strings.TrimSpace(parts[0])
@@ -173,6 +176,15 @@ func ZumbraTranspiler(zum string) (string, error) {
 			} else if strings.Contains(line, "jwtCreateToken(") {
 				line = strings.ReplaceAll(line, "=", ", _ =")
 				goBody = append(goBody, "    "+line)
+			} else if strings.Contains(line, "[") && strings.Contains(line, "]") {
+				parts := strings.SplitN(line, "=", 2)
+				varName := strings.TrimSpace(parts[0])
+				arrayPart := strings.TrimSpace(parts[1])
+				arrayPart = strings.TrimPrefix(arrayPart, "[")
+				arrayPart = strings.TrimSuffix(arrayPart, "]")
+				arrayElements := strings.TrimSpace(arrayPart)
+
+				goBody = append(goBody, fmt.Sprintf("    %s = []interface{}{%s}", varName, arrayElements))
 			} else {
 				goBody = append(goBody, "    "+line)
 			}
@@ -196,6 +208,36 @@ func ZumbraTranspiler(zum string) (string, error) {
 				funcName := parts[0]
 				targetVar := strings.Split(args, ",")[0]
 				goBody = append(goBody, fmt.Sprintf("    %s = %s(%s)", strings.TrimSpace(targetVar), funcName, args))
+
+			} else if strings.HasPrefix(line, "registerRoute(") {
+				openParen := strings.Index(line, "(")
+				closeParen := strings.LastIndex(line, ")")
+				argsStr := line[openParen+1 : closeParen]
+				args := splitArgs(argsStr)
+
+				if strings.HasPrefix(args[1], "serveFile(") {
+					innerOpen := strings.Index(args[1], "(")
+					innerClose := strings.LastIndex(args[1], ")")
+					innerArgsStr := args[1][innerOpen+1 : innerClose]
+					innerArgs := splitArgs(innerArgsStr)
+
+					if len(innerArgs) == 2 && strings.HasPrefix(innerArgs[1], "{") {
+						tmpCounter++
+						tmpVar := fmt.Sprintf("__tmp%d", tmpCounter)
+						mapContent := strings.ReplaceAll(innerArgs[1], "{", "map[string]interface{}{")
+						mapContent = strings.ReplaceAll(mapContent, "}", "}")
+						goBody = append(goBody, fmt.Sprintf("    var %s = %s", tmpVar, mapContent))
+						innerArgs[1] = tmpVar
+					}
+
+					serveFileCall := fmt.Sprintf("serveFile(%s, %s)", innerArgs[0], innerArgs[1])
+					line = fmt.Sprintf("registerRoute(%s, %s)", args[0], serveFileCall)
+				} else {
+					line = fmt.Sprintf("registerRoute(%s, %s)", args[0], args[1])
+				}
+				goBody = append(goBody, "    "+line)
+				continue
+
 			} else {
 				goBody = append(goBody, "    "+line)
 			}
@@ -218,10 +260,16 @@ func ZumbraTranspiler(zum string) (string, error) {
 			"math"
 			"math/rand"
 			"encoding/json"
+			"net"
+			"net/http"
 			"strconv"
 			"errors"
+			"database/sql"
+			"path/filepath"
+			"bytes"
 
 			"github.com/golang-jwt/jwt/v5"
+			_ "github.com/go-sql-driver/mysql"
 		)
 
 		%s
