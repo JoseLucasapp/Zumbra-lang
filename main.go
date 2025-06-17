@@ -37,7 +37,7 @@ func main() {
 		return
 	}
 
-	version := "0.0.9"
+	version := "0.1.0"
 
 	fmt.Printf("\nHello %s!\n", user.Username)
 	fmt.Printf("This is the ZUMBRA programming language, version: %s!\n", version)
@@ -115,21 +115,46 @@ func buildZumbra(filename string) error {
 	if _, err := os.Stat("build"); err == nil {
 		err := os.RemoveAll("build")
 		if err != nil {
-			return fmt.Errorf("Error when trying to remove the file: %w", err)
+			return fmt.Errorf("Error when trying to remove build: %w", err)
 		}
 	}
-
 	err = os.MkdirAll("build", 0755)
 	if err != nil {
-		return fmt.Errorf("Error when trying to create the file: %w", err)
+		return fmt.Errorf("Error when trying to create build dir: %w", err)
 	}
 
 	err = os.WriteFile("build/main.go", []byte(goCode), 0644)
 	if err != nil {
-		return fmt.Errorf("Error when trying to write the file: %w", err)
+		return fmt.Errorf("Error when trying to write main.go: %w", err)
 	}
 
-	cmd := exec.Command("go", "build", "-o", "build/zumbra-app", "build/main.go")
+	goModContent := `
+module zumbra-generated
+
+go 1.21
+
+require (
+	github.com/go-sql-driver/mysql v1.9.2
+	github.com/golang-jwt/jwt/v5 v5.2.2
+)
+
+`
+	err = os.WriteFile("build/go.mod", []byte(goModContent), 0644)
+	if err != nil {
+		return fmt.Errorf("Error when trying to write go.mod: %w", err)
+	}
+
+	cmd := exec.Command("go", "mod", "tidy")
+	cmd.Dir = "build"
+	cmd.Stdout = os.Stdout
+	cmd.Stderr = os.Stderr
+	err = cmd.Run()
+	if err != nil {
+		return fmt.Errorf("error running go mod tidy: %w", err)
+	}
+
+	cmd = exec.Command("go", "build", "-o", "zumbra-app", "main.go")
+	cmd.Dir = "build"
 	cmd.Stdout = os.Stdout
 	cmd.Stderr = os.Stderr
 	return cmd.Run()

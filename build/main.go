@@ -729,8 +729,13 @@ package main
 
 
 		func main() {
-			    var getIp = get("https://httpbin.org/ip")
-     var json map[string]interface{} = json_parse(getIp["body"])
-    fmt.Println(json["origin"])
+			    var a = date()
+    fmt.Println(a)
+    fmt.Println(a.hour)
+    fmt.Println(a.minute)
+    fmt.Println(a.second)
+    fmt.Println(a.day)
+    fmt.Println(a.month)
+    fmt.Println(a.year)
 		}
 	
