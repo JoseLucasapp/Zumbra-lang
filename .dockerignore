@@ -1,0 +1,8 @@
+.git
+node_modules
+dist
+build
+.out
+.next
+*.log
+*.tmp
