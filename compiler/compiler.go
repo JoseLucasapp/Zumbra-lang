@@ -11,6 +11,7 @@ import (
 	"zumbra/object"
 	"zumbra/object/builtins"
 	"zumbra/parser"
+	"zumbra/token"
 )
 
 type CompilationScope struct {
@@ -82,11 +83,21 @@ func (c *Compiler) Compile(node ast.Node) error {
 		}
 
 	case *ast.ExpressionStatement:
-		err := c.Compile(node.Expression)
-		if err != nil {
-			return err
+		switch node.Expression.(type) {
+		case *ast.ForEachArrayLoop,
+			*ast.ForEachDotRange,
+			*ast.ForEachMapLoop,
+			*ast.ForLoop,
+			*ast.ForEverLoop:
+			return c.Compile(node.Expression)
+
+		default:
+			err := c.Compile(node.Expression)
+			if err != nil {
+				return err
+			}
+			c.emit(code.OpPop)
 		}
-		c.emit(code.OpPop)
 
 	case *ast.InfixExpression:
 
@@ -345,6 +356,20 @@ func (c *Compiler) Compile(node ast.Node) error {
 		if err != nil {
 			return err
 		}
+	case *ast.ForEachArrayLoop:
+		return c.compileForEachArrayLoop(node)
+
+	case *ast.ForEachDotRange:
+		return c.compileForEachDotRange(node)
+
+	case *ast.ForEachMapLoop:
+		return c.compileForEachMapLoop(node)
+
+	case *ast.ForLoop:
+		return c.compileCStyleForLoop(node)
+
+	case *ast.ForEverLoop:
+		return c.compileForeverLoop(node)
 
 	case *ast.AssignStatement:
 		err := c.compileAssign(node)
@@ -580,4 +605,207 @@ func (c *Compiler) compileImport(stmt *ast.ImportStatement) error {
 	c.currentDir = oldDir
 
 	return err
+}
+
+// for i in array where cond { block }
+// =========================
+// Loops "for"
+// =========================
+
+// for i in array where cond { block }
+func (c *Compiler) compileForEachArrayLoop(node *ast.ForEachArrayLoop) error {
+	dummyTok := token.Token{}
+
+	arrName := "__z_for_arr_" + node.Var
+	idxName := "__z_for_idx_" + node.Var
+
+	arrVarStmt := &ast.VarStatement{
+		Token: dummyTok,
+		Name: &ast.Identifier{
+			Token: dummyTok,
+			Value: arrName,
+		},
+		Value: node.Value,
+	}
+
+	idxVarStmt := &ast.VarStatement{
+		Token: dummyTok,
+		Name: &ast.Identifier{
+			Token: dummyTok,
+			Value: idxName,
+		},
+		Value: &ast.IntegerLiteral{
+			Token: dummyTok,
+			Value: 0,
+		},
+	}
+
+	iterVarStmt := &ast.VarStatement{
+		Token: dummyTok,
+		Name: &ast.Identifier{
+			Token: dummyTok,
+			Value: node.Var,
+		},
+		Value: &ast.IntegerLiteral{
+			Token: dummyTok,
+			Value: 0,
+		},
+	}
+
+	cond := &ast.InfixExpression{
+		Token: dummyTok,
+		Left: &ast.Identifier{
+			Token: dummyTok,
+			Value: idxName,
+		},
+		Operator: "<",
+		Right: &ast.CallExpression{
+			Token: dummyTok,
+			Function: &ast.Identifier{
+				Token: dummyTok,
+				Value: "sizeOf",
+			},
+			Arguments: []ast.Expression{
+				&ast.Identifier{
+					Token: dummyTok,
+					Value: arrName,
+				},
+			},
+		},
+	}
+
+	assignIter := &ast.AssignStatement{
+		Token: dummyTok,
+		Name: &ast.Identifier{
+			Token: dummyTok,
+			Value: node.Var,
+		},
+		Value: &ast.IndexExpression{
+			Token: dummyTok,
+			Left: &ast.Identifier{
+				Token: dummyTok,
+				Value: arrName,
+			},
+			Index: &ast.Identifier{
+				Token: dummyTok,
+				Value: idxName,
+			},
+		},
+	}
+
+	inc := &ast.AssignStatement{
+		Token: dummyTok,
+		Name: &ast.Identifier{
+			Token: dummyTok,
+			Value: idxName,
+		},
+		Value: &ast.InfixExpression{
+			Token: dummyTok,
+			Left: &ast.Identifier{
+				Token: dummyTok,
+				Value: idxName,
+			},
+			Operator: "+",
+			Right: &ast.IntegerLiteral{
+				Token: dummyTok,
+				Value: 1,
+			},
+		},
+	}
+
+	var loopBodyStatements []ast.Statement
+	loopBodyStatements = append(loopBodyStatements, assignIter)
+
+	if node.Cond != nil {
+		ifExpr := &ast.IfExpression{
+			Token:       dummyTok,
+			Condition:   node.Cond,
+			Consequence: node.Block,
+			Alternative: nil,
+		}
+
+		loopBodyStatements = append(loopBodyStatements, &ast.ExpressionStatement{
+			Token:      dummyTok,
+			Expression: ifExpr,
+		})
+	} else {
+		loopBodyStatements = append(loopBodyStatements, node.Block.Statements...)
+	}
+
+	loopBodyStatements = append(loopBodyStatements, inc)
+
+	whileStmt := &ast.WhileStatement{
+		Token:     dummyTok,
+		Condition: cond,
+		Body: &ast.BlockStatement{
+			Token:      dummyTok,
+			Statements: loopBodyStatements,
+		},
+	}
+
+	if err := c.Compile(arrVarStmt); err != nil {
+		return err
+	}
+	if err := c.Compile(idxVarStmt); err != nil {
+		return err
+	}
+	if err := c.Compile(iterVarStmt); err != nil {
+		return err
+	}
+	if err := c.Compile(whileStmt); err != nil {
+		return err
+	}
+
+	return nil
+}
+
+func (c *Compiler) compileForEachDotRange(node *ast.ForEachDotRange) error {
+	if err := c.Compile(node.StartIdx); err != nil {
+		return err
+	}
+	if err := c.Compile(node.EndIdx); err != nil {
+		return err
+	}
+
+	c.emit(code.OpNull)
+	return nil
+}
+
+func (c *Compiler) compileForEachMapLoop(node *ast.ForEachMapLoop) error {
+	if err := c.Compile(node.X); err != nil {
+		return err
+	}
+
+	c.emit(code.OpNull)
+	return nil
+}
+
+func (c *Compiler) compileCStyleForLoop(node *ast.ForLoop) error {
+	if node.Init != nil {
+		if err := c.Compile(node.Init); err != nil {
+			return err
+		}
+	}
+	if node.Cond != nil {
+		if err := c.Compile(node.Cond); err != nil {
+			return err
+		}
+	}
+	if node.Update != nil {
+		if err := c.Compile(node.Update); err != nil {
+			return err
+		}
+	}
+
+	c.emit(code.OpNull)
+	return nil
+}
+
+func (c *Compiler) compileForeverLoop(node *ast.ForEverLoop) error {
+	if err := c.Compile(node.Block); err != nil {
+		return err
+	}
+
+	c.emit(code.OpNull)
+	return nil
 }

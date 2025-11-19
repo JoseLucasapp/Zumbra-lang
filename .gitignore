@@ -3,3 +3,5 @@ build.bat
 zumbra-linux
 zumbra-macos
 test.zum
+index.html
+.env

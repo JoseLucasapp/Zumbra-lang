@@ -342,9 +342,17 @@ func (vm *VM) push(o object.Object) error {
 }
 
 func (vm *VM) pop() object.Object {
-	o := vm.stack[vm.sp-1]
+	if vm.sp == 0 {
+		panic(fmt.Sprintf(
+			"VM stack underflow: pop called with sp == 0 (ip=%d, stackSize=%d)",
+			vm.currentFrame().ip,
+			len(vm.stack),
+		))
+	}
+
+	obj := vm.stack[vm.sp-1]
 	vm.sp--
-	return o
+	return obj
 }
 
 func (vm *VM) LastPoppedStackElem() object.Object {

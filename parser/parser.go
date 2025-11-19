@@ -33,10 +33,11 @@ const (
 	AND
 	EQUALS      // ==
 	LESSGREATER // > or <
-	SUM         // +
-	PRODUCT     // *
-	PREFIX      // -X or !X
-	CALL        // myFunction(X)
+	DOTDOT
+	SUM     // +
+	PRODUCT // *
+	PREFIX  // -X or !X
+	CALL    // myFunction(X)
 	INDEX
 )
 
@@ -77,6 +78,7 @@ func New(l *lexer.Lexer) *Parser {
 	p.registerPrefix(token.STRING, p.parseStringLiteral)
 	p.registerPrefix(token.LBRACKET, p.parseArrayLiteral)
 	p.registerPrefix(token.LBRACE, p.parseDictLiteral)
+	p.registerPrefix(token.FOR, p.parseForLoopExpression)
 
 	p.infixParseFcts = make(map[token.TokenType]infixParseFct)
 	p.registerInfix(token.PLUS, p.parseInfixExpression)
@@ -610,4 +612,206 @@ func (p *Parser) parseAttributeAccess(left ast.Expression) ast.Expression {
 		Object:   left,
 		Property: property,
 	}
+}
+
+func (p *Parser) parseForLoopExpression() ast.Expression {
+	curToken := p.curToken //save current token
+
+	if p.peekTokenIs(token.LBRACE) {
+		return p.parseForEverLoopExpression(curToken)
+	}
+
+	if p.peekTokenIs(token.LPAREN) {
+		return p.parseCForLoopExpression(curToken)
+	}
+
+	if !p.expectPeek(token.IDENT) {
+		return nil
+	}
+	variable := p.curToken.Literal //save current identifier
+
+	if p.peekTokenIs(token.COMMA) {
+		return p.parseForEachMapExpression(curToken, variable)
+	}
+
+	ret := p.parseForEachArrayOrRangeExpression(curToken, variable)
+	return ret
+}
+
+func (p *Parser) parseForEverLoopExpression(curToken token.Token) ast.Expression {
+	p.registerPrefix(token.BREAK, p.parseBreakExpression)
+	p.registerPrefix(token.CONTINUE, p.parseContinueExpression)
+
+	loop := &ast.ForEverLoop{Token: curToken}
+
+	p.expectPeek(token.LBRACE)
+	loop.Block = p.parseBlockStatement()
+
+	p.registerPrefix(token.BREAK, p.parseBreakWithoutLoopContext)
+	p.registerPrefix(token.CONTINUE, p.parseContinueWithoutLoopContext)
+
+	return loop
+}
+
+func (p *Parser) parseCForLoopExpression(curToken token.Token) ast.Expression {
+	var result ast.Expression
+	p.registerPrefix(token.BREAK, p.parseBreakExpression)
+	p.registerPrefix(token.CONTINUE, p.parseContinueExpression)
+
+	if !p.expectPeek(token.LPAREN) {
+		return nil
+	}
+
+	var init ast.Expression
+	var cond ast.Expression
+	var update ast.Expression
+
+	p.nextToken()
+	if !p.curTokenIs(token.SEMICOLON) {
+		init = p.parseExpression(LOWEST)
+		p.nextToken()
+	}
+
+	p.nextToken() //skip ';'
+	if !p.curTokenIs(token.SEMICOLON) {
+		cond = p.parseExpression(LOWEST)
+		p.nextToken()
+	}
+
+	p.nextToken()
+	if !p.curTokenIs(token.SEMICOLON) {
+		update = p.parseExpression(LOWEST)
+	}
+
+	if !p.expectPeek(token.RPAREN) {
+		return nil
+	}
+
+	if !p.expectPeek(token.LBRACE) {
+		return nil
+	}
+
+	if init == nil && cond == nil && update == nil {
+		loop := &ast.ForEverLoop{Token: curToken}
+		loop.Block = p.parseBlockStatement()
+		result = loop
+	} else {
+		loop := &ast.ForLoop{Token: curToken, Init: init, Cond: cond, Update: update}
+		loop.Block = p.parseBlockStatement()
+		result = loop
+	}
+
+	p.registerPrefix(token.BREAK, p.parseBreakWithoutLoopContext)
+	p.registerPrefix(token.CONTINUE, p.parseContinueWithoutLoopContext)
+
+	return result
+}
+
+func (p *Parser) parseForEachMapExpression(curToken token.Token, variable string) ast.Expression {
+	p.registerPrefix(token.BREAK, p.parseBreakExpression)
+	p.registerPrefix(token.CONTINUE, p.parseContinueExpression)
+
+	loop := &ast.ForEachMapLoop{Token: curToken}
+	loop.Key = variable
+
+	if !p.expectPeek(token.COMMA) {
+		return nil
+	}
+
+	if !p.expectPeek(token.IDENT) {
+		return nil
+	}
+	loop.Value = p.curToken.Literal
+
+	if !p.expectPeek(token.IN) {
+		return nil
+	}
+
+	p.nextToken()
+	loop.X = p.parseExpression(LOWEST)
+
+	if p.peekTokenIs(token.WHERE) {
+		p.nextToken()
+		p.nextToken()
+		loop.Cond = p.parseExpression(LOWEST)
+	}
+
+	if !p.expectPeek(token.LBRACE) {
+		return nil
+	}
+
+	loop.Block = p.parseBlockStatement()
+	p.registerPrefix(token.BREAK, p.parseBreakWithoutLoopContext)
+	p.registerPrefix(token.CONTINUE, p.parseContinueWithoutLoopContext)
+
+	return loop
+}
+
+func (p *Parser) parseForEachArrayOrRangeExpression(curToken token.Token, variable string) ast.Expression {
+	p.registerPrefix(token.BREAK, p.parseBreakExpression)
+	p.registerPrefix(token.CONTINUE, p.parseContinueExpression)
+
+	var isRange bool = false
+	//loop := &ast.ForEachArrayLoop{Token: curToken, Var:variable}
+
+	if !p.expectPeek(token.IN) {
+		return nil
+	}
+	p.nextToken()
+	aValue1 := p.parseExpression(LOWEST)
+
+	var aValue2 ast.Expression
+	if p.peekTokenIs(token.DOTDOT) {
+		isRange = true
+		p.nextToken()
+		p.nextToken()
+		aValue2 = p.parseExpression(DOTDOT)
+	}
+
+	var aCond ast.Expression
+	if p.peekTokenIs(token.WHERE) {
+		p.nextToken()
+		p.nextToken()
+		aCond = p.parseExpression(LOWEST)
+	}
+
+	if !p.expectPeek(token.LBRACE) {
+		return nil
+	}
+
+	aBlock := p.parseBlockStatement()
+
+	var result ast.Expression
+	if !isRange {
+		result = &ast.ForEachArrayLoop{Token: curToken, Var: variable, Value: aValue1, Cond: aCond, Block: aBlock}
+	} else {
+		result = &ast.ForEachDotRange{Token: curToken, Var: variable, StartIdx: aValue1, EndIdx: aValue2, Cond: aCond, Block: aBlock}
+	}
+
+	p.registerPrefix(token.BREAK, p.parseBreakWithoutLoopContext)
+	p.registerPrefix(token.CONTINUE, p.parseContinueWithoutLoopContext)
+
+	return result
+}
+
+func (p *Parser) parseBreakWithoutLoopContext() ast.Expression {
+	msg := fmt.Sprintf("Syntax Error:%v- 'break' outside of loop context", p.curToken.Pos)
+	p.errors = append(p.errors, msg)
+
+	return p.parseBreakExpression()
+}
+
+func (p *Parser) parseBreakExpression() ast.Expression {
+	return &ast.BreakExpression{Token: p.curToken}
+}
+
+func (p *Parser) parseContinueWithoutLoopContext() ast.Expression {
+	msg := fmt.Sprintf("Syntax Error:%v- 'continue' outside of loop context", p.curToken.Pos)
+	p.errors = append(p.errors, msg)
+
+	return p.parseContinueExpression()
+}
+
+func (p *Parser) parseContinueExpression() ast.Expression {
+	return &ast.ContinueExpression{Token: p.curToken}
 }

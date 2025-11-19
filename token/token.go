@@ -11,6 +11,7 @@ const (
 	INT    = "INT"
 	FLOAT  = "FLOAT"
 	STRING = "STRING"
+	FOR    = "FOR"
 
 	// Operators
 	ASSIGN = "<<"
@@ -33,8 +34,13 @@ const (
 	DOT        = "."
 
 	// Logical
-	OR  = "or"
-	AND = "and"
+	OR       = "or"
+	AND      = "and"
+	BREAK    = "BREAK"
+	CONTINUE = "CONTINUE"
+	WHERE    = "WHERE"
+	IN       = "IN"
+	DOTDOT   = "DOTDOT"
 
 	// Delimiters
 	COMMA     = ","
@@ -60,22 +66,28 @@ const (
 )
 
 type Token struct {
+	Pos     Position
 	Type    TokenType
 	Literal string
 }
 
 var keywords = map[string]TokenType{
-	"fct":    FUNCTION,
-	"var":    VAR,
-	"true":   TRUE,
-	"false":  FALSE,
-	"if":     IF,
-	"else":   ELSE,
-	"return": RETURN,
-	"while":  WHILE,
-	"import": IMPORT,
-	"and":    AND,
-	"or":     OR,
+	"fct":      FUNCTION,
+	"var":      VAR,
+	"true":     TRUE,
+	"false":    FALSE,
+	"if":       IF,
+	"else":     ELSE,
+	"return":   RETURN,
+	"while":    WHILE,
+	"import":   IMPORT,
+	"and":      AND,
+	"or":       OR,
+	"for":      FOR,
+	"in":       IN,
+	"where":    WHERE,
+	"break":    BREAK,
+	"continue": CONTINUE,
 }
 
 func LookupIdent(ident string) TokenType {
