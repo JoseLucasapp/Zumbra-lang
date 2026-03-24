@@ -60,6 +60,9 @@ func runFile(filename string) {
 	for i, v := range builtins.Builtins {
 		symbolTable.DefineBuiltin(i, v.Name)
 	}
+	builtins.SetRouteInvoker(func(handler object.Object, args ...object.Object) (object.Object, error) {
+		return vm.InvokeFunction(handler, args, constants, globals)
+	})
 
 	l := lexer.New(source)
 	p := parser.New(l)

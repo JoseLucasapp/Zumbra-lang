@@ -50,6 +50,27 @@ func (vm *VM) StackTop() object.Object {
 	return vm.stack[vm.sp-1]
 }
 
+func InvokeFunction(handler object.Object, args []object.Object, constants []object.Object, globals []object.Object) (object.Object, error) {
+	bytecode := &compiler.Bytecode{Constants: constants}
+	invoker := NewWithGlobalsStore(bytecode, globals)
+	invoker.constants = constants
+	if err := invoker.push(handler); err != nil {
+		return nil, err
+	}
+	for _, arg := range args {
+		if err := invoker.push(arg); err != nil {
+			return nil, err
+		}
+	}
+	if err := invoker.executeCall(len(args)); err != nil {
+		return nil, err
+	}
+	if err := invoker.Run(); err != nil {
+		return nil, err
+	}
+	return invoker.LastPoppedStackElem(), nil
+}
+
 func (vm *VM) Run() error {
 	var ip int
 	var ins code.Instructions
@@ -318,6 +339,22 @@ func (vm *VM) Run() error {
 					vm.push(&object.String{Value: d.FullDate.String()})
 				default:
 					return fmt.Errorf("unknown attribute %s for Date", attrName.Value)
+				}
+			case *object.HttpRequest:
+				val := builtins.RequestAttr(d, attrName.Value)
+				if val == nil {
+					return fmt.Errorf("unknown attribute %s for HttpRequest", attrName.Value)
+				}
+				if err := vm.push(val); err != nil {
+					return err
+				}
+			case *object.HttpResponse:
+				val := builtins.ResponseMethod(d, attrName.Value)
+				if val == nil {
+					return fmt.Errorf("unknown attribute %s for HttpResponse", attrName.Value)
+				}
+				if err := vm.push(val); err != nil {
+					return err
 				}
 			default:
 				return fmt.Errorf("object type %s has no attributes", obj.Type())

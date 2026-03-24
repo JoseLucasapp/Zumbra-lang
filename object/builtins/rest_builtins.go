@@ -9,6 +9,7 @@ func RestGetBuiltin() *object.Builtin    { return methodRouteBuiltin("GET") }
 func RestPostBuiltin() *object.Builtin   { return methodRouteBuiltin("POST") }
 func RestPutBuiltin() *object.Builtin    { return methodRouteBuiltin("PUT") }
 func RestDeleteBuiltin() *object.Builtin { return methodRouteBuiltin("DELETE") }
+func RestPatchBuiltin() *object.Builtin  { return methodRouteBuiltin("PATCH") }
 
 func methodRouteBuiltin(method string) *object.Builtin {
 	return &object.Builtin{Fn: func(args ...object.Object) object.Object {
