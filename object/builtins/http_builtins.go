@@ -129,24 +129,33 @@ func GetBuiltin() *object.Builtin {
 func RegisterRoutesBuiltin() *object.Builtin {
 	return &object.Builtin{
 		Fn: func(args ...object.Object) object.Object {
-
-			if len(args) != 3 {
-				return NewError("wrong number of arguments. got=%d, want=2", len(args))
+			if len(args) != 2 && len(args) != 3 {
+				return NewError("wrong number of arguments. got=%d, want=2 or 3", len(args))
 			}
 
-			method, ok1 := args[0].(*object.String)
+			methodValue := "GET"
+			pathIndex := 0
+			handlerIndex := 1
 
-			path, ok2 := args[1].(*object.String)
-			handler := args[2]
+			if len(args) == 3 {
+				method, ok := args[0].(*object.String)
+				if !ok {
+					return NewError("method must be STRING")
+				}
+				methodValue = strings.ToUpper(method.Value)
+				pathIndex = 1
+				handlerIndex = 2
+			}
 
-			if !ok1 || !ok2 {
-				return NewError("method and path must be STRING")
+			path, ok := args[pathIndex].(*object.String)
+			if !ok {
+				return NewError("path must be STRING")
 			}
 
 			registerRoutes = append(registerRoutes, Route{
-				Method:      strings.ToUpper(method.Value),
+				Method:      methodValue,
 				Path:        path.Value,
-				HandlerBody: handler,
+				HandlerBody: args[handlerIndex],
 				Middlewares: nil,
 			})
 

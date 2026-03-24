@@ -175,6 +175,36 @@ var Builtins = []struct {
 	{
 		"toUppercase", UppercaseBuiltin(),
 	},
+	{
+	"createCsv", CreateCsvBuiltin(),
+},
+{
+	"createDoc", CreateDocBuiltin(),
+},
+{
+	"createFile", CreateFileBuiltin(),
+},
+{
+	"createPdf", CreatePdfBuiltin(),
+},
+{
+	"createTxt", CreateTxtBuiltin(),
+},
+{
+	"restDelete", RestDeleteBuiltin(),
+},
+{
+	"restGet", RestGetBuiltin(),
+},
+{
+	"restPost", RestPostBuiltin(),
+},
+{
+	"restPut", RestPutBuiltin(),
+},
+{
+	"switchCase", SwitchCaseBuiltin(),
+},
 }
 
 func NewBoolean(value bool) *object.Boolean {
