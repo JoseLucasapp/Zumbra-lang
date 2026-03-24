@@ -1,0 +1,23 @@
+restGet("/health", fct(req, res) {
+    res.json({
+        "ok": true,
+        "method": req.method
+    });
+});
+
+restGet("/users/:id", fct(req, res) {
+    res.json({
+        "id": req.params["id"],
+        "query": req.query
+    });
+});
+
+restPost("/users", fct(req, res) {
+    res.status(201);
+    res.json({
+        "created": true,
+        "body": req.body
+    });
+});
+
+server(3333);

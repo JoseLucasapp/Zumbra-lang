@@ -14,6 +14,8 @@ import (
 type ObjectType string
 
 const (
+	HTTP_REQUEST_OBJ      = "HTTP_REQUEST"
+	HTTP_RESPONSE_OBJ     = "HTTP_RESPONSE"
 	INTEGER_OBJ           = "INTEGER"
 	BOOLEAN_OBJ           = "BOOLEAN"
 	NULL_OBJ              = "NULL"

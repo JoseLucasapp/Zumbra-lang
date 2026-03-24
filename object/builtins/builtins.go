@@ -126,7 +126,6 @@ var Builtins = []struct {
 	{
 		"removeFromArray", RemoveFromArrayBuiltin(),
 	},
-
 	{
 		"removeWhiteSpaces", RemoveWhiteSpacesBuiltin(),
 	},
@@ -175,14 +174,55 @@ var Builtins = []struct {
 	{
 		"toUppercase", UppercaseBuiltin(),
 	},
+
+	// files
+	{
+		"createCsv", CreateCsvBuiltin(),
+	},
+	{
+		"createDoc", CreateDocBuiltin(),
+	},
+	{
+		"createFile", CreateFileBuiltin(),
+	},
+	{
+		"createPdf", CreatePdfBuiltin(),
+	},
+	{
+		"createTxt", CreateTxtBuiltin(),
+	},
+
+	// rest
+	{
+		"restDelete", RestDeleteBuiltin(),
+	},
+	{
+		"restGet", RestGetBuiltin(),
+	},
+	{
+		"restPatch", RestPatchBuiltin(),
+	},
+	{
+		"restPost", RestPostBuiltin(),
+	},
+	{
+		"restPut", RestPutBuiltin(),
+	},
+
+	// utils
+	{
+		"switchCase", SwitchCaseBuiltin(),
+	},
 }
 
 func NewBoolean(value bool) *object.Boolean {
 	return &object.Boolean{Value: value}
 }
+
 func NewFloat(value float64) *object.Float {
 	return &object.Float{Value: value}
 }
+
 func NewString(value string) *object.String {
 	return &object.String{Value: value}
 }
@@ -190,6 +230,7 @@ func NewString(value string) *object.String {
 func NewInteger(value int64) *object.Integer {
 	return &object.Integer{Value: value}
 }
+
 func NewError(format string, a ...interface{}) *object.Error {
 	return &object.Error{Message: fmt.Sprintf(format, a...)}
 }
