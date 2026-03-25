@@ -1,5 +1,6 @@
 zumbra.exe
 build.bat
+build.sh
 zumbra-linux
 zumbra-macos
 test.zum
