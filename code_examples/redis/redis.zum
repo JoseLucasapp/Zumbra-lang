@@ -1,0 +1,15 @@
+dotenvLoad(".env");
+
+var redisHost << dotenvGet("REDIS_HOST") or "localhost:6379";
+var redisPassword << dotenvGet("REDIS_PASSWORD") or "";
+var redisDb << toInt(dotenvGet("REDIS_DB") or 0);
+
+redisConnection(redisHost, redisPassword, redisDb);
+
+redisSet("app:name", "Zumbra");
+redisSet("app:version", "0.1.0");
+
+var appName << redisGet("app:name");
+show(appName);
+
+redisDel("app:version");
