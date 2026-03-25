@@ -1,0 +1,12 @@
+dotenvLoad(".env");
+
+supabaseConnection(
+    dotenvGet("SUPABASE_URL"),
+    dotenvGet("SUPABASE_KEY")
+);
+
+var updated << supabaseUpdate("albums", "id=eq.1", {
+    "title": "Hybrid Theory (Remastered)"
+});
+
+show(updated);

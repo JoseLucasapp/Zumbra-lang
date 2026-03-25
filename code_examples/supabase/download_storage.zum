@@ -1,0 +1,9 @@
+dotenvLoad(".env");
+
+supabaseConnection(
+    dotenvGet("SUPABASE_URL"),
+    dotenvGet("SUPABASE_KEY")
+);
+
+var fileBase64 << supabaseStorageDownload("images", "covers/test.txt");
+show(fileBase64);

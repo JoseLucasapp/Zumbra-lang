@@ -1,0 +1,9 @@
+dotenvLoad(".env");
+
+supabaseConnection(
+    dotenvGet("SUPABASE_URL"),
+    dotenvGet("SUPABASE_KEY")
+);
+
+var auth << supabaseAuthSignIn("user@email.com", "12345678");
+show(auth);

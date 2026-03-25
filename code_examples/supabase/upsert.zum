@@ -1,0 +1,15 @@
+dotenvLoad(".env");
+
+supabaseConnection(
+    dotenvGet("SUPABASE_URL"),
+    dotenvGet("SUPABASE_KEY")
+);
+
+var result << supabaseUpsert("albums", {
+    "id": 1,
+    "title": "Hybrid Theory",
+    "artist": "Linkin Park",
+    "year": 2000
+});
+
+show(result);

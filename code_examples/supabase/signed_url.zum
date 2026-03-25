@@ -1,0 +1,9 @@
+dotenvLoad(".env");
+
+supabaseConnection(
+    dotenvGet("SUPABASE_URL"),
+    dotenvGet("SUPABASE_KEY")
+);
+
+var signed << supabaseStorageSignedUrl("images", "covers/test.txt", 3600);
+show(signed);

@@ -1,0 +1,9 @@
+dotenvLoad(".env");
+
+supabaseConnection(
+    dotenvGet("SUPABASE_URL"),
+    dotenvGet("SUPABASE_KEY")
+);
+
+var album << supabaseSingle("albums", "select=*&id=eq.1");
+show(album);

@@ -1,0 +1,9 @@
+dotenvLoad(".env");
+
+supabaseConnection(
+    dotenvGet("SUPABASE_URL"),
+    dotenvGet("SUPABASE_KEY")
+);
+
+var uploaded << supabaseStorageUpload("images", "covers/test.txt", "./test.txt");
+show(uploaded);
