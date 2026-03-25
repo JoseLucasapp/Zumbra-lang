@@ -73,8 +73,9 @@ func ZumbraTranspiler(zum string) (string, error) {
 			condition := strings.TrimPrefix(line, "if (")
 			condition = strings.TrimSuffix(condition, "){")
 			condition = strings.TrimSpace(condition)
+			condition = translateLogicalExpression(condition)
 
-			goBody = append(goBody, fmt.Sprintf("    if %s {", condition))
+			goBody = append(goBody, fmt.Sprintf("    if isTruthy(%s) {", condition))
 			blockStack = append(blockStack, "if")
 			continue
 		}
@@ -92,8 +93,9 @@ func ZumbraTranspiler(zum string) (string, error) {
 			condition := strings.TrimPrefix(line, "while (")
 			condition = strings.TrimSuffix(condition, ") {")
 			condition = strings.TrimSpace(condition)
+			condition = translateLogicalExpression(condition)
 
-			goBody = append(goBody, fmt.Sprintf("for %s {", condition))
+			goBody = append(goBody, fmt.Sprintf("for isTruthy(%s) {", condition))
 			blockStack = append(blockStack, "while")
 			continue
 		}
@@ -160,6 +162,8 @@ func ZumbraTranspiler(zum string) (string, error) {
 
 		if strings.HasPrefix(line, "var ") {
 			line = strings.ReplaceAll(line, "<<", "=")
+			line = translateLogicalExpression(line)
+
 			if strings.Contains(line, "json_parse(") {
 				parts := strings.SplitN(line, "=", 2)
 				varName := strings.TrimSpace(parts[0])
@@ -313,4 +317,20 @@ func splitArgs(input string) []string {
 		args = append(args, strings.TrimSpace(curr.String()))
 	}
 	return args
+}
+
+func translateLogicalExpression(expr string) string {
+	expr = strings.TrimSpace(expr)
+
+	if strings.Contains(expr, " or ") {
+		parts := strings.SplitN(expr, " or ", 2)
+		return fmt.Sprintf("zOr(%s, %s)", translateLogicalExpression(parts[0]), translateLogicalExpression(parts[1]))
+	}
+
+	if strings.Contains(expr, " and ") {
+		parts := strings.SplitN(expr, " and ", 2)
+		return fmt.Sprintf("zAnd(%s, %s)", translateLogicalExpression(parts[0]), translateLogicalExpression(parts[1]))
+	}
+
+	return expr
 }

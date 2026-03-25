@@ -101,14 +101,30 @@ func (vm *VM) Run() error {
 		case code.OpAnd:
 			right := vm.pop()
 			left := vm.pop()
-			result := isTruthy(left) && isTruthy(right)
-			vm.push(nativeBoolToBooleanObject(result))
+
+			if isTruthy(left) {
+				if err := vm.push(right); err != nil {
+					return err
+				}
+			} else {
+				if err := vm.push(left); err != nil {
+					return err
+				}
+			}
 
 		case code.OpOr:
 			right := vm.pop()
 			left := vm.pop()
-			result := isTruthy(left) || isTruthy(right)
-			vm.push(nativeBoolToBooleanObject(result))
+
+			if isTruthy(left) {
+				if err := vm.push(left); err != nil {
+					return err
+				}
+			} else {
+				if err := vm.push(right); err != nil {
+					return err
+				}
+			}
 
 		case code.OpEqual, code.OpNotEqual, code.OpGreaterThan, code.OpLessThan, code.OpLessThanOrEqual, code.OpGreaterThanOrEqual:
 			err := vm.executeComparison(op)
@@ -693,11 +709,25 @@ func (vm *VM) executeMinusOperator() error {
 }
 
 func isTruthy(obj object.Object) bool {
-	switch obj := obj.(type) {
+	if obj == nil {
+		return false
+	}
+
+	switch v := obj.(type) {
 	case *object.Boolean:
-		return obj.Value
+		return v.Value
 	case *object.Null:
 		return false
+	case *object.String:
+		return v.Value != ""
+	case *object.Integer:
+		return v.Value != 0
+	case *object.Float:
+		return v.Value != 0
+	case *object.Array:
+		return len(v.Elements) > 0
+	case *object.Dict:
+		return len(v.Pairs) > 0
 	default:
 		return true
 	}
