@@ -1,0 +1,29 @@
+var role << "admin";
+
+var message << switchCase(role, {
+    "admin": "full access",
+    "editor": "limited access",
+    "guest": "read only"
+}, "unknown role");
+
+show(message);
+
+var status << 404;
+
+var result << switchCase(status, {
+    200: "success",
+    400: "bad request",
+    404: "not found",
+    500: "internal server error"
+}, "unknown status");
+
+show(result);
+
+var isLogged << true;
+
+var message << switchCase(isLogged, {
+    true: "user authenticated",
+    false: "user not authenticated"
+}, "unknown");
+
+show(message);
