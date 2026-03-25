@@ -2,7 +2,6 @@ package main
 
 import (
 	"fmt"
-	"io/ioutil"
 	"os"
 	"os/exec"
 	"os/user"
@@ -19,15 +18,20 @@ import (
 )
 
 func main() {
-	user, err := user.Current()
+	currentUser, err := user.Current()
 	if err != nil {
 		panic(err)
 	}
 
-	if len(os.Args) > 2 && os.Args[1] == "build" {
-		err := buildZumbra(os.Args[2])
-		if err != nil {
+	if len(os.Args) > 1 && os.Args[1] == "build" {
+		if len(os.Args) < 3 {
+			fmt.Println("usage: zumbra build <file.zum>")
+			os.Exit(1)
+		}
+
+		if err := buildZumbra(os.Args[2]); err != nil {
 			fmt.Printf("Error when trying to build the file: %s\n", err)
+			os.Exit(1)
 		}
 		return
 	}
@@ -39,14 +43,14 @@ func main() {
 
 	version := "0.1.0"
 
-	fmt.Printf("\nHello %s!\n", user.Username)
+	fmt.Printf("\nHello %s!\n", currentUser.Username)
 	fmt.Printf("This is the ZUMBRA programming language, version: %s!\n", version)
 	fmt.Printf("Feel free to type in commands\n")
 	repl.Start(os.Stdin, os.Stdout)
 }
 
 func runFile(filename string) {
-	data, err := ioutil.ReadFile(filename)
+	data, err := os.ReadFile(filename)
 	if err != nil {
 		fmt.Printf("Error when trying to read the file: %s\n", err)
 		os.Exit(1)
@@ -60,6 +64,7 @@ func runFile(filename string) {
 	for i, v := range builtins.Builtins {
 		symbolTable.DefineBuiltin(i, v.Name)
 	}
+
 	builtins.SetRouteInvoker(func(handler object.Object, args ...object.Object) (object.Object, error) {
 		return vm.InvokeFunction(handler, args, constants, globals)
 	})
@@ -81,11 +86,11 @@ func runFile(filename string) {
 		fmt.Printf("Path error: %s\n", err)
 		return
 	}
+
 	dir := filepath.Dir(absPath)
 
-	comp := compiler.NewWithStateAndDir(symbolTable, constants, dir) // AQUI
-	err = comp.Compile(program)
-	if err != nil {
+	comp := compiler.NewWithStateAndDir(symbolTable, constants, dir)
+	if err := comp.Compile(program); err != nil {
 		fmt.Printf("Compilation error: %s\n", err)
 		return
 	}
@@ -94,41 +99,36 @@ func runFile(filename string) {
 	constants = code.Constants
 
 	machine := vm.NewWithGlobalsStore(code, globals)
-	err = machine.Run()
-	if err != nil {
+	if err := machine.Run(); err != nil {
 		fmt.Printf("Error on VM execution: %s\n", err)
 		return
 	}
-
-	machine.LastPoppedStackElem()
 }
 
 func buildZumbra(filename string) error {
 	data, err := os.ReadFile(filename)
 	if err != nil {
-		return fmt.Errorf("Error when trying to read the file: %s\n", err)
+		return fmt.Errorf("error when trying to read the file: %w", err)
 	}
 
 	source := string(data)
 	goCode, err := transpiler.ZumbraTranspiler(source)
 	if err != nil {
-		return fmt.Errorf("erro ao transpilar: %w", err)
+		return fmt.Errorf("error when transpiling: %w", err)
 	}
 
 	if _, err := os.Stat("build"); err == nil {
-		err := os.RemoveAll("build")
-		if err != nil {
-			return fmt.Errorf("Error when trying to remove build: %w", err)
+		if err := os.RemoveAll("build"); err != nil {
+			return fmt.Errorf("error when trying to remove build: %w", err)
 		}
 	}
-	err = os.MkdirAll("build", 0755)
-	if err != nil {
-		return fmt.Errorf("Error when trying to create build dir: %w", err)
+
+	if err := os.MkdirAll("build", 0755); err != nil {
+		return fmt.Errorf("error when trying to create build dir: %w", err)
 	}
 
-	err = os.WriteFile("build/main.go", []byte(goCode), 0644)
-	if err != nil {
-		return fmt.Errorf("Error when trying to write main.go: %w", err)
+	if err := os.WriteFile("build/main.go", []byte(goCode), 0644); err != nil {
+		return fmt.Errorf("error when trying to write main.go: %w", err)
 	}
 
 	goModContent := `
@@ -142,19 +142,16 @@ require (
 	github.com/lib/pq v1.10.9
 	github.com/redis/go-redis/v9 v9.6.1
 )
-
 `
-	err = os.WriteFile("build/go.mod", []byte(goModContent), 0644)
-	if err != nil {
-		return fmt.Errorf("Error when trying to write go.mod: %w", err)
+	if err := os.WriteFile("build/go.mod", []byte(goModContent), 0644); err != nil {
+		return fmt.Errorf("error when trying to write go.mod: %w", err)
 	}
 
 	cmd := exec.Command("go", "mod", "tidy")
 	cmd.Dir = "build"
 	cmd.Stdout = os.Stdout
 	cmd.Stderr = os.Stderr
-	err = cmd.Run()
-	if err != nil {
+	if err := cmd.Run(); err != nil {
 		return fmt.Errorf("error running go mod tidy: %w", err)
 	}
 
@@ -162,5 +159,9 @@ require (
 	cmd.Dir = "build"
 	cmd.Stdout = os.Stdout
 	cmd.Stderr = os.Stderr
-	return cmd.Run()
+	if err := cmd.Run(); err != nil {
+		return fmt.Errorf("error running go build: %w", err)
+	}
+
+	return nil
 }

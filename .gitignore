@@ -6,3 +6,5 @@ zumbra-macos
 test.zum
 index.html
 .env
+/build/
+/dist/
