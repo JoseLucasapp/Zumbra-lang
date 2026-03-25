@@ -4,4 +4,6 @@ var pgUrl << dotenvGet("POSTGRES_URL") or "postgres://postgres:postgres@localhos
 postgresConnection(pgUrl);
 
 var rows << postgresQuery("SELECT NOW() as now;");
+var rows2 << postgresQuery("SELECT * from users;");
 show(rows);
+show(rows2);
