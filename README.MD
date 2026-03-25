@@ -1,9 +1,7 @@
 
 <p align="center">
-<img src="./assets/zumbra.png" width="200"/>
+<img src="./assets/zumbra.png" width="100%"/>
 </p>
-
-<p style="font-size: 40px; font-weight: 600; ">ZUMBRA Programming Language</p>
 
 > ⚙️ *ZUMBRA is a simple, fun, and expressive programming language made for learning, experimenting, and enjoying the beauty of code.*
 
