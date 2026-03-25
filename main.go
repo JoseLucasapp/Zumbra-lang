@@ -139,6 +139,8 @@ go 1.21
 require (
 	github.com/go-sql-driver/mysql v1.9.2
 	github.com/golang-jwt/jwt/v5 v5.2.2
+	github.com/lib/pq v1.10.9
+	github.com/redis/go-redis/v9 v9.6.1
 )
 
 `
