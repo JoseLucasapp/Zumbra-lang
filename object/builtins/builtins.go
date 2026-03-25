@@ -213,6 +213,37 @@ var Builtins = []struct {
 	{
 		"switchCase", SwitchCaseBuiltin(),
 	},
+
+	{
+		"postgresConnection", PostgresConnectionBuiltin(),
+	},
+	{
+		"postgresExec", PostgresExecBuiltin(),
+	},
+	{
+		"postgresQuery", PostgresQueryBuiltin(),
+	},
+	{
+		"redisConnection", RedisConnectionBuiltin(),
+	},
+	{
+		"redisSet", RedisSetBuiltin(),
+	},
+	{
+		"redisGet", RedisGetBuiltin(),
+	},
+	{
+		"redisDel", RedisDelBuiltin(),
+	},
+	{
+		"supabaseConnection", SupabaseConnectionBuiltin(),
+	},
+	{
+		"supabaseSelect", SupabaseSelectBuiltin(),
+	},
+	{
+		"supabaseInsert", SupabaseInsertBuiltin(),
+	},
 }
 
 func NewBoolean(value bool) *object.Boolean {

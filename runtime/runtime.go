@@ -229,9 +229,13 @@ func Runtime() string {
 		}
 	}
 
-	func dotenvGet(key string) string {
-		return EnvVars[key]
+	func dotenvGet(key string) interface{} {
+	if value, ok := EnvVars[key]; ok {
+		return value
 	}
+	return nil
+}
+
 
 	func hashCode(input string) string {
 		hash := sha256.New()
@@ -342,21 +346,57 @@ func Runtime() string {
 	}
 
 	func toBool(value interface{}) bool {
+		return isTruthy(value)
+	}
+
+	func isTruthy(value interface{}) bool {
+		if value == nil {
+			return false
+		}
+
 		switch v := value.(type) {
 		case string:
 			return v != ""
-		case float64:
-			return v != 0
 		case bool:
 			return v
 		case int:
 			return v != 0
+		case int8:
+			return v != 0
+		case int16:
+			return v != 0
+		case int32:
+			return v != 0
+		case int64:
+			return v != 0
+		case float32:
+			return v != 0
+		case float64:
+			return v != 0
+		case []interface{}:
+			return len(v) > 0
+		case map[string]interface{}:
+			return len(v) > 0
 		default:
-			return false
+			return true
 		}
 	}
 
-	func json_parse(input string) map[string]interface{} {
+	func zOr(left interface{}, right interface{}) interface{} {
+		if isTruthy(left) {
+			return left
+		}
+		return right
+	}
+
+	func zAnd(left interface{}, right interface{}) interface{} {
+		if isTruthy(left) {
+			return right
+		}
+		return left
+	}
+
+	func jsonParse(input string) map[string]interface{} {
 		var result map[string]interface{}
 		err := json.Unmarshal([]byte(input), &result)
 		if err != nil {

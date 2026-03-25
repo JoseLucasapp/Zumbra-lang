@@ -1,0 +1,9 @@
+dotenvLoad(".env");
+
+supabaseConnection(
+    dotenvGet("SUPABASE_URL"),
+    dotenvGet("SUPABASE_KEY")
+);
+
+var result << supabaseSelect("albums", "id,title,artist");
+show(result);

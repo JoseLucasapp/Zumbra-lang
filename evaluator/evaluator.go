@@ -270,9 +270,15 @@ func objectEquals(left, right object.Object) bool {
 func evalLogicalInfixExpression(operator string, left, right object.Object) object.Object {
 	switch operator {
 	case "and":
-		return nativeBoolToBooleanObject(isTruthy(left) && isTruthy(right))
+		if isTruthy(left) {
+			return right
+		}
+		return left
 	case "or":
-		return nativeBoolToBooleanObject(isTruthy(left) || isTruthy(right))
+		if isTruthy(left) {
+			return left
+		}
+		return right
 	default:
 		return newError("unknown logical operator: %s", operator)
 	}
@@ -409,13 +415,25 @@ func evalIfExpression(ie *ast.IfExpression, env *object.Environment) object.Obje
 }
 
 func isTruthy(obj object.Object) bool {
-	switch obj {
-	case NULL:
+	if obj == nil {
 		return false
-	case TRUE:
-		return true
-	case FALSE:
+	}
+
+	switch v := obj.(type) {
+	case *object.Null:
 		return false
+	case *object.Boolean:
+		return v.Value
+	case *object.String:
+		return v.Value != ""
+	case *object.Integer:
+		return v.Value != 0
+	case *object.Float:
+		return v.Value != 0
+	case *object.Array:
+		return len(v.Elements) > 0
+	case *object.Dict:
+		return len(v.Pairs) > 0
 	default:
 		return true
 	}
