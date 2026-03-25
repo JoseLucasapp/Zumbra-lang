@@ -1,0 +1,17 @@
+dotenvLoad(".env");
+
+redisConnection(
+    dotenvGet("REDIS_HOST") or "localhost:6379",
+    dotenvGet("REDIS_PASSWORD") or "",
+    toInt(dotenvGet("REDIS_DB") or 0)
+);
+
+var cachedAlbums << redisGet("albums:list");
+
+if (cachedAlbums) {
+    show("cache hit");
+    show(cachedAlbums);
+} else {
+    show("cache miss");
+    redisSet("albums:list", "[1,2,3]");
+}
