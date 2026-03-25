@@ -164,7 +164,7 @@ func ZumbraTranspiler(zum string) (string, error) {
 			line = strings.ReplaceAll(line, "<<", "=")
 			line = translateLogicalExpression(line)
 
-			if strings.Contains(line, "json_parse(") {
+			if strings.Contains(line, "jsonParse(") {
 				parts := strings.SplitN(line, "=", 2)
 				varName := strings.TrimSpace(parts[0])
 				rightSide := strings.TrimSpace(parts[1])
@@ -249,39 +249,44 @@ func ZumbraTranspiler(zum string) (string, error) {
 		}
 
 	}
-
 	return fmt.Sprintf(
 		`package main
 
-		import (
-			"sort"
-			"fmt"
-			"time"
-			"bufio"
-			"os"
-			"strings"
-			"crypto/sha256"
-			"math"
-			"math/rand"
-			"encoding/json"
-			"net"
-			"net/http"
-			"strconv"
-			"errors"
-			"database/sql"
-			"path/filepath"
-			"bytes"
+import (
+	"bufio"
+	"bytes"
+	"context"
+	"crypto/sha256"
+	"database/sql"
+	"encoding/base64"
+	"encoding/json"
+	"errors"
+	"fmt"
+	"io"
+	"math"
+	"math/rand"
+	"net"
+	"net/http"
+	neturl "net/url"
+	"os"
+	"path/filepath"
+	"sort"
+	"strconv"
+	"strings"
+	"time"
 
-			"github.com/golang-jwt/jwt/v5"
-			_ "github.com/go-sql-driver/mysql"
-		)
+	"github.com/golang-jwt/jwt/v5"
+	_ "github.com/go-sql-driver/mysql"
+	_ "github.com/lib/pq"
+	"github.com/redis/go-redis/v9"
+)
 
-		%s
+%s
 
-		func main() {
-			%s
-		}
-	`, runtime.Runtime(), strings.Join(goBody, "\n")), nil
+func main() {
+%s
+}
+`, runtime.Runtime(), strings.Join(goBody, "\n")), nil
 }
 
 func splitArgs(input string) []string {

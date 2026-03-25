@@ -743,6 +743,438 @@ func Runtime() string {
 		return html
 	}
 
+	var postgresConnection *sql.DB
+var redisClient *redis.Client
+var supabaseURL string
+var supabaseKey string
+
+			func objectToPlainString(value interface{}) string {
+	return fmt.Sprintf("%v", value)
+}
+
+func toStringSlice(value interface{}) []string {
+	switch v := value.(type) {
+	case []string:
+		return v
+	case []interface{}:
+		out := make([]string, 0, len(v))
+		for _, item := range v {
+			out = append(out, fmt.Sprintf("%v", item))
+		}
+		return out
+	default:
+		return []string{}
+	}
+}
+
+func decodeJSONBody(body []byte) interface{} {
+	if len(body) == 0 {
+		return nil
+	}
+
+	var decoded interface{}
+	if err := json.Unmarshal(body, &decoded); err != nil {
+		return string(body)
+	}
+	return decoded
+}
+
+func postgresConnectionFn(connectionString string) error {
+	var err error
+	postgresConnection, err = sql.Open("postgres", connectionString)
+	if err != nil {
+		return fmt.Errorf("failed to open postgres connection: %v", err)
+	}
+
+	if err := postgresConnection.Ping(); err != nil {
+		return fmt.Errorf("failed to ping postgres: %v", err)
+	}
+
+	return nil
+}
+
+func postgresExec(query string) error {
+	if postgresConnection == nil {
+		return errors.New("postgres is not connected")
+	}
+
+	_, err := postgresConnection.Exec(query)
+	if err != nil {
+		return fmt.Errorf("failed to exec postgres query: %v", err)
+	}
+
+	return nil
+}
+
+func postgresQuery(query string) ([]map[string]interface{}, error) {
+	if postgresConnection == nil {
+		return nil, errors.New("postgres is not connected")
+	}
+
+	rows, err := postgresConnection.Query(query)
+	if err != nil {
+		return nil, fmt.Errorf("failed to query postgres: %v", err)
+	}
+	defer rows.Close()
+
+	cols, err := rows.Columns()
+	if err != nil {
+		return nil, fmt.Errorf("failed to get postgres columns: %v", err)
+	}
+
+	result := []map[string]interface{}{}
+
+	for rows.Next() {
+		values := make([]interface{}, len(cols))
+		ptrs := make([]interface{}, len(cols))
+		for i := range values {
+			ptrs[i] = &values[i]
+		}
+
+		if err := rows.Scan(ptrs...); err != nil {
+			return nil, fmt.Errorf("failed to scan postgres row: %v", err)
+		}
+
+		rowMap := map[string]interface{}{}
+		for i, col := range cols {
+			val := values[i]
+			if b, ok := val.([]byte); ok {
+				rowMap[col] = string(b)
+			} else {
+				rowMap[col] = val
+			}
+		}
+
+		result = append(result, rowMap)
+	}
+
+	return result, nil
+}
+
+func redisConnection(addr, password string, db int) error {
+	redisClient = redis.NewClient(&redis.Options{
+		Addr:     addr,
+		Password: password,
+		DB:       db,
+	})
+
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+
+	if err := redisClient.Ping(ctx).Err(); err != nil {
+		return fmt.Errorf("failed to connect to redis: %v", err)
+	}
+
+	return nil
+}
+
+func redisSet(key string, value interface{}) error {
+	if redisClient == nil {
+		return errors.New("redis is not connected")
+	}
+
+	ctx := context.Background()
+	if err := redisClient.Set(ctx, key, objectToPlainString(value), 0).Err(); err != nil {
+		return fmt.Errorf("failed to set redis key: %v", err)
+	}
+
+	return nil
+}
+
+func redisGet(key string) interface{} {
+	if redisClient == nil {
+		return nil
+	}
+
+	ctx := context.Background()
+	value, err := redisClient.Get(ctx, key).Result()
+	if err == redis.Nil {
+		return nil
+	}
+	if err != nil {
+		return nil
+	}
+
+	return value
+}
+
+func redisDel(key string) error {
+	if redisClient == nil {
+		return errors.New("redis is not connected")
+	}
+
+	ctx := context.Background()
+	if err := redisClient.Del(ctx, key).Err(); err != nil {
+		return fmt.Errorf("failed to delete redis key: %v", err)
+	}
+
+	return nil
+}
+
+func supabaseConnection(url, key string) {
+	supabaseURL = strings.TrimRight(url, "/")
+	supabaseKey = key
+}
+
+func supabaseRequest(method, path string, payload interface{}, prefer string, extraHeaders map[string]string) interface{} {
+	var bodyReader io.Reader
+
+	if payload != nil {
+		payloadBytes, err := json.Marshal(payload)
+		if err != nil {
+			return nil
+		}
+		bodyReader = bytes.NewBuffer(payloadBytes)
+	}
+
+	req, err := http.NewRequest(method, supabaseURL+path, bodyReader)
+	if err != nil {
+		return nil
+	}
+
+	req.Header.Set("apikey", supabaseKey)
+	req.Header.Set("Authorization", "Bearer "+supabaseKey)
+	req.Header.Set("Content-Type", "application/json")
+
+	if prefer != "" {
+		req.Header.Set("Prefer", prefer)
+	}
+
+	for k, v := range extraHeaders {
+		req.Header.Set(k, v)
+	}
+
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		return nil
+	}
+	defer resp.Body.Close()
+
+	body, _ := io.ReadAll(resp.Body)
+	if resp.StatusCode >= 400 {
+		return map[string]interface{}{
+			"error":  true,
+			"status": resp.StatusCode,
+			"body":   string(body),
+		}
+	}
+
+	return decodeJSONBody(body)
+}
+
+func supabaseSelect(table, selectQuery string) interface{} {
+	query := "select=" + neturl.QueryEscape(selectQuery)
+	return supabaseRequest("GET", "/rest/v1/"+table+"?"+query, nil, "", nil)
+}
+
+func supabaseQuery(table, queryString string) interface{} {
+	qs := strings.TrimPrefix(queryString, "?")
+	return supabaseRequest("GET", "/rest/v1/"+table+"?"+qs, nil, "", nil)
+}
+
+func supabaseSingle(table, queryString string) interface{} {
+	qs := strings.TrimPrefix(queryString, "?")
+	return supabaseRequest("GET", "/rest/v1/"+table+"?"+qs, nil, "", map[string]string{
+		"Accept": "application/vnd.pgrst.object+json",
+	})
+}
+
+func supabaseCount(table, filterQuery string) int {
+	qs := strings.TrimPrefix(filterQuery, "?")
+	if qs != "" {
+		qs += "&"
+	}
+	qs += "select=*"
+
+	req, err := http.NewRequest("GET", supabaseURL+"/rest/v1/"+table+"?"+qs, nil)
+	if err != nil {
+		return 0
+	}
+
+	req.Header.Set("apikey", supabaseKey)
+	req.Header.Set("Authorization", "Bearer "+supabaseKey)
+	req.Header.Set("Prefer", "count=exact")
+	req.Header.Set("Range", "0-0")
+
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		return 0
+	}
+	defer resp.Body.Close()
+
+	rangeHeader := resp.Header.Get("Content-Range")
+	if rangeHeader == "" {
+		return 0
+	}
+
+	parts := strings.Split(rangeHeader, "/")
+	if len(parts) != 2 {
+		return 0
+	}
+
+	total, err := strconv.Atoi(parts[1])
+	if err != nil {
+		return 0
+	}
+
+	return total
+}
+
+func supabaseInsert(table string, payload interface{}) interface{} {
+	return supabaseRequest("POST", "/rest/v1/"+table, payload, "return=representation", nil)
+}
+
+func supabaseUpdate(table, filterQuery string, payload interface{}) interface{} {
+	qs := strings.TrimPrefix(filterQuery, "?")
+	path := "/rest/v1/" + table
+	if qs != "" {
+		path += "?" + qs
+	}
+	return supabaseRequest("PATCH", path, payload, "return=representation", nil)
+}
+
+func supabaseDelete(table, filterQuery string) interface{} {
+	qs := strings.TrimPrefix(filterQuery, "?")
+	path := "/rest/v1/" + table
+	if qs != "" {
+		path += "?" + qs
+	}
+	return supabaseRequest("DELETE", path, nil, "return=representation", nil)
+}
+
+func supabaseUpsert(table string, payload interface{}) interface{} {
+	return supabaseRequest("POST", "/rest/v1/"+table, payload, "resolution=merge-duplicates,return=representation", nil)
+}
+
+func supabaseRpc(functionName string, payload interface{}) interface{} {
+	return supabaseRequest("POST", "/rest/v1/rpc/"+functionName, payload, "", nil)
+}
+
+func supabaseStorageUpload(bucket, remotePath, localFilePath string) interface{} {
+	fileBytes, err := os.ReadFile(localFilePath)
+	if err != nil {
+		return nil
+	}
+
+	url := fmt.Sprintf("%s/storage/v1/object/%s/%s", supabaseURL, bucket, strings.TrimPrefix(remotePath, "/"))
+	req, err := http.NewRequest("POST", url, bytes.NewBuffer(fileBytes))
+	if err != nil {
+		return nil
+	}
+
+	req.Header.Set("apikey", supabaseKey)
+	req.Header.Set("Authorization", "Bearer "+supabaseKey)
+	req.Header.Set("Content-Type", "application/octet-stream")
+	req.Header.Set("x-upsert", "true")
+
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		return nil
+	}
+	defer resp.Body.Close()
+
+	body, _ := io.ReadAll(resp.Body)
+	return decodeJSONBody(body)
+}
+
+func supabaseStorageDelete(bucket string, paths interface{}) interface{} {
+	payload := map[string]interface{}{
+		"prefixes": toStringSlice(paths),
+	}
+
+	url := fmt.Sprintf("%s/storage/v1/object/%s", supabaseURL, bucket)
+	reqBody, _ := json.Marshal(payload)
+
+	req, err := http.NewRequest("DELETE", url, bytes.NewBuffer(reqBody))
+	if err != nil {
+		return nil
+	}
+
+	req.Header.Set("apikey", supabaseKey)
+	req.Header.Set("Authorization", "Bearer "+supabaseKey)
+	req.Header.Set("Content-Type", "application/json")
+
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		return nil
+	}
+	defer resp.Body.Close()
+
+	body, _ := io.ReadAll(resp.Body)
+	return decodeJSONBody(body)
+}
+
+func supabaseStoragePublicUrl(bucket, path string) string {
+	return fmt.Sprintf("%s/storage/v1/object/public/%s/%s", supabaseURL, bucket, strings.TrimPrefix(path, "/"))
+}
+
+func supabaseStorageSignedUrl(bucket, path string, expiresIn int) interface{} {
+	payload := map[string]interface{}{
+		"expiresIn": expiresIn,
+	}
+
+	url := fmt.Sprintf("%s/storage/v1/object/sign/%s/%s", supabaseURL, bucket, strings.TrimPrefix(path, "/"))
+	reqBody, _ := json.Marshal(payload)
+
+	req, err := http.NewRequest("POST", url, bytes.NewBuffer(reqBody))
+	if err != nil {
+		return nil
+	}
+
+	req.Header.Set("apikey", supabaseKey)
+	req.Header.Set("Authorization", "Bearer "+supabaseKey)
+	req.Header.Set("Content-Type", "application/json")
+
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		return nil
+	}
+	defer resp.Body.Close()
+
+	body, _ := io.ReadAll(resp.Body)
+	return decodeJSONBody(body)
+}
+
+func supabaseStorageDownload(bucket, path string) string {
+	url := fmt.Sprintf("%s/storage/v1/object/%s/%s", supabaseURL, bucket, strings.TrimPrefix(path, "/"))
+
+	req, err := http.NewRequest("GET", url, nil)
+	if err != nil {
+		return ""
+	}
+
+	req.Header.Set("apikey", supabaseKey)
+	req.Header.Set("Authorization", "Bearer "+supabaseKey)
+
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		return ""
+	}
+	defer resp.Body.Close()
+
+	body, _ := io.ReadAll(resp.Body)
+	if resp.StatusCode >= 400 {
+		return ""
+	}
+
+	return base64.StdEncoding.EncodeToString(body)
+}
+
+func supabaseAuthSignUp(email, password string) interface{} {
+	payload := map[string]interface{}{
+		"email":    email,
+		"password": password,
+	}
+	return supabaseRequest("POST", "/auth/v1/signup", payload, "", nil)
+}
+
+func supabaseAuthSignIn(email, password string) interface{} {
+	payload := map[string]interface{}{
+		"email":    email,
+		"password": password,
+	}
+	return supabaseRequest("POST", "/auth/v1/token?grant_type=password", payload, "", nil)
+}
 
 `
 }

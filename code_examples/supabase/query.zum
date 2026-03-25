@@ -1,0 +1,9 @@
+dotenvLoad(".env");
+
+supabaseConnection(
+    dotenvGet("SUPABASE_URL"),
+    dotenvGet("SUPABASE_KEY")
+);
+
+var result << supabaseQuery("albums", "select=id,title,artist&artist=eq.Linkin Park&order=id.desc");
+show(result);

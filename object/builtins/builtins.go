@@ -244,6 +244,48 @@ var Builtins = []struct {
 	{
 		"supabaseInsert", SupabaseInsertBuiltin(),
 	},
+	{
+		"supabaseQuery", SupabaseQueryBuiltin(),
+	},
+	{
+		"supabaseUpdate", SupabaseUpdateBuiltin(),
+	},
+	{
+		"supabaseDelete", SupabaseDeleteBuiltin(),
+	},
+	{
+		"supabaseUpsert", SupabaseUpsertBuiltin(),
+	},
+	{
+		"supabaseRpc", SupabaseRpcBuiltin(),
+	},
+	{
+		"supabaseCount", SupabaseCountBuiltin(),
+	},
+	{
+		"supabaseSingle", SupabaseSingleBuiltin(),
+	},
+	{
+		"supabaseStorageUpload", SupabaseStorageUploadBuiltin(),
+	},
+	{
+		"supabaseStorageDelete", SupabaseStorageDeleteBuiltin(),
+	},
+	{
+		"supabaseStoragePublicUrl", SupabaseStoragePublicUrlBuiltin(),
+	},
+	{
+		"supabaseStorageSignedUrl", SupabaseStorageSignedUrlBuiltin(),
+	},
+	{
+		"supabaseStorageDownload", SupabaseStorageDownloadBuiltin(),
+	},
+	{
+		"supabaseAuthSignUp", SupabaseAuthSignUpBuiltin(),
+	},
+	{
+		"supabaseAuthSignIn", SupabaseAuthSignInBuiltin(),
+	},
 }
 
 func NewBoolean(value bool) *object.Boolean {
