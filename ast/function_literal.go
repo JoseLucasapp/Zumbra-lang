@@ -11,6 +11,7 @@ type FunctionLiteral struct {
 	Parameters []*Identifier
 	Body       *BlockStatement
 	Name       string
+	Async      bool
 }
 
 func (fl *FunctionLiteral) expressionNode()      {}
@@ -23,6 +24,9 @@ func (fl *FunctionLiteral) String() string {
 		params = append(params, p.String())
 	}
 
+	if fl.Async {
+		out.WriteString("async ")
+	}
 	out.WriteString(fl.TokenLiteral())
 	if fl.Name != "" {
 		out.WriteString("<%s>" + fl.Name)

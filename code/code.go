@@ -49,6 +49,8 @@ const (
 	OpAnd = iota
 	OpOr
 	OpGetAttr
+	OpIsError
+	OpDup
 )
 
 type Definition struct {
@@ -95,6 +97,8 @@ var definitions = map[Opcode]*Definition{
 	OpAnd:                {"OpAnd", []int{}},
 	OpOr:                 {"OpOr", []int{}},
 	OpGetAttr:            {"OpGetAttr", []int{}},
+	OpIsError:            {"OpIsError", []int{}},
+	OpDup:                {"OpDup", []int{}},
 }
 
 func Lookup(op byte) (*Definition, error) {

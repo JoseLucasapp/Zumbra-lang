@@ -171,6 +171,7 @@ func translateProgramLines(lines []string, blockStack *[]string) []string {
 		line = translateDictLiteral(line)
 		line = translateRequestFields(line)
 		line = translateResponseCalls(line)
+		line = translateAsyncErrorSyntax(line)
 
 		if strings.HasSuffix(line, ".json({") || strings.HasSuffix(line, ".json(map[string]interface{}{") {
 			dot := strings.Index(line, ".")
@@ -366,20 +367,93 @@ func splitArgs(input string) []string {
 	return args
 }
 
+func translateAsyncErrorSyntax(line string) string {
+	line = strings.TrimSpace(line)
+
+	if line == "return" || line == "return;" {
+		return "return"
+	}
+
+	if strings.HasPrefix(line, "await ") {
+		line = strings.TrimPrefix(line, "await ")
+	}
+
+	if strings.HasPrefix(line, "try await ") {
+		line = strings.TrimPrefix(line, "try await ")
+	} else if strings.HasPrefix(line, "try ") {
+		line = strings.TrimPrefix(line, "try ")
+	}
+
+	line = strings.ReplaceAll(line, " await ", " ")
+	line = strings.ReplaceAll(line, " try ", " ")
+
+	return line
+}
+
 func translateLogicalExpression(expr string) string {
 	expr = strings.TrimSpace(expr)
 
-	if strings.Contains(expr, " or ") {
-		parts := strings.SplitN(expr, " or ", 2)
-		return fmt.Sprintf("zOr(%s, %s)", translateLogicalExpression(parts[0]), translateLogicalExpression(parts[1]))
+	if expr == "" {
+		return expr
 	}
 
-	if strings.Contains(expr, " and ") {
-		parts := strings.SplitN(expr, " and ", 2)
-		return fmt.Sprintf("zAnd(%s, %s)", translateLogicalExpression(parts[0]), translateLogicalExpression(parts[1]))
+	if strings.Contains(expr, " or {") {
+		return expr
+	}
+
+	if idx := findTopLevelLogical(expr, " or "); idx != -1 {
+		left := strings.TrimSpace(expr[:idx])
+		right := strings.TrimSpace(expr[idx+4:])
+		return fmt.Sprintf("zOr(%s, %s)", translateLogicalExpression(left), translateLogicalExpression(right))
+	}
+
+	if idx := findTopLevelLogical(expr, " and "); idx != -1 {
+		left := strings.TrimSpace(expr[:idx])
+		right := strings.TrimSpace(expr[idx+5:])
+		return fmt.Sprintf("zAnd(%s, %s)", translateLogicalExpression(left), translateLogicalExpression(right))
 	}
 
 	return expr
+}
+
+func findTopLevelLogical(input string, op string) int {
+	inStr := false
+	parens := 0
+	brackets := 0
+	braces := 0
+
+	for i := 0; i <= len(input)-len(op); i++ {
+		ch := input[i]
+
+		if ch == '"' {
+			inStr = !inStr
+		}
+
+		if !inStr {
+			switch ch {
+			case '(':
+				parens++
+			case ')':
+				parens--
+			case '[':
+				brackets++
+			case ']':
+				brackets--
+			case '{':
+				braces++
+			case '}':
+				braces--
+			}
+		}
+
+		if !inStr && parens == 0 && brackets == 0 && braces == 0 {
+			if strings.HasPrefix(input[i:], op) {
+				return i
+			}
+		}
+	}
+
+	return -1
 }
 
 func indentLines(input string, level int) string {
@@ -410,7 +484,15 @@ func parseRestStart(line string) (string, string, string, string, bool) {
 
 		beforeFct := strings.TrimSpace(line[len(start):fctIdx])
 		beforeFct = strings.TrimSuffix(beforeFct, ",")
-		pathArg := strings.TrimSpace(beforeFct)
+		beforeFct = strings.TrimSpace(beforeFct)
+
+		if strings.HasSuffix(beforeFct, "async") {
+			beforeFct = strings.TrimSpace(strings.TrimSuffix(beforeFct, "async"))
+			beforeFct = strings.TrimSuffix(beforeFct, ",")
+			beforeFct = strings.TrimSpace(beforeFct)
+		}
+
+		pathArg := beforeFct
 
 		afterFct := line[fctIdx+len("fct("):]
 		paramsEnd := strings.Index(afterFct, "){")

@@ -327,6 +327,25 @@ func (vm *VM) Run() error {
 
 			vm.currentFrame().ip = pos - 1
 
+		case code.OpDup:
+			value := vm.StackTop()
+			if err := vm.push(value); err != nil {
+				return err
+			}
+
+		case code.OpIsError:
+			value := vm.pop()
+			_, ok := value.(*object.Error)
+			if ok {
+				if err := vm.push(True); err != nil {
+					return err
+				}
+			} else {
+				if err := vm.push(False); err != nil {
+					return err
+				}
+			}
+
 		case code.OpGetAttr:
 			attrNameObj := vm.pop()
 			attrName, ok := attrNameObj.(*object.String)

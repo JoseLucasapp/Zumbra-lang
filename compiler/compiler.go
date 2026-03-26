@@ -329,12 +329,48 @@ func (c *Compiler) Compile(node ast.Node) error {
 		c.emit(code.OpClosure, fnIndex, len(freeSymbols))
 
 	case *ast.ReturnStatement:
+		if node.ReturnValue == nil {
+			c.emit(code.OpNull)
+			c.emit(code.OpReturnValue)
+			return nil
+		}
+
 		err := c.Compile(node.ReturnValue)
 		if err != nil {
 			return err
 		}
 
 		c.emit(code.OpReturnValue)
+
+	case *ast.AwaitExpression:
+		return c.Compile(node.Value)
+
+	case *ast.TryExpression:
+		return c.Compile(node.Value)
+
+	case *ast.ErrorHandlerExpression:
+		if err := c.Compile(node.Left); err != nil {
+			return err
+		}
+
+		c.emit(code.OpDup)
+		c.emit(code.OpIsError)
+
+		jumpNotError := c.emit(code.OpJumpNotTruthy, 9999)
+
+		c.emit(code.OpPop)
+
+		if err := c.Compile(node.Handler); err != nil {
+			return err
+		}
+
+		jumpEnd := c.emit(code.OpJump, 9999)
+
+		afterHandlerCheck := len(c.currentInstructions())
+		c.changeOperand(jumpNotError, afterHandlerCheck)
+
+		afterEnd := len(c.currentInstructions())
+		c.changeOperand(jumpEnd, afterEnd)
 
 	case *ast.CallExpression:
 		err := c.Compile(node.Function)

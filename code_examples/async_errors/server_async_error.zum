@@ -1,0 +1,44 @@
+restGet("/health", async fct(req, res) {
+    if (1 or 0) {
+        res.json({
+            "ok": true,
+            "method": req.method,
+            "logical_or": true
+        });
+        return;
+    }
+
+    res.status(500);
+    res.json({
+        "ok": false
+    });
+});
+
+restGet("/fail", async fct(req, res) {
+    result << error("boom") or {
+        res.status(400);
+        res.json({
+            "ok": false,
+            "handled": true,
+            "message": "error handler worked"
+        });
+        return;
+    };
+
+    res.json({
+        "ok": true,
+        "result": result
+    });
+});
+
+restPost("/echo", async fct(req, res) {
+    body << try await req.body;
+
+    res.status(201);
+    res.json({
+        "ok": true,
+        "body": body
+    });
+});
+
+server(3333);

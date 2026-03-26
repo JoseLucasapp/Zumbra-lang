@@ -63,6 +63,9 @@ const (
 	RETURN   = "RETURN"
 	WHILE    = "WHILE"
 	IMPORT   = "IMPORT"
+	ASYNC    = "ASYNC"
+	AWAIT    = "AWAIT"
+	TRY      = "TRY"
 )
 
 type Token struct {
@@ -81,6 +84,9 @@ var keywords = map[string]TokenType{
 	"return":   RETURN,
 	"while":    WHILE,
 	"import":   IMPORT,
+	"async":    ASYNC,
+	"await":    AWAIT,
+	"try":      TRY,
 	"and":      AND,
 	"or":       OR,
 	"for":      FOR,

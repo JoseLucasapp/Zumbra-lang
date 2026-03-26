@@ -345,6 +345,7 @@ func toBool(value interface{}) bool {
 	return isTruthy(value)
 }
 
+
 func isTruthy(value interface{}) bool {
 	if value == nil {
 		return false
@@ -1115,9 +1116,11 @@ type ZResponse struct {
 }
 
 type ZRoute struct {
-	Method  string
-	Path    string
-	Handler func(*ZRequest, *ZResponse)
+	Method       string
+	Path         string
+	Handler      func(*ZRequest, *ZResponse)
+	AsyncHandler ZAsyncHandler
+	IsAsync      bool
 }
 
 type StaticRoute struct {
@@ -1203,6 +1206,51 @@ func restPatch(path string, handler func(*ZRequest, *ZResponse)) {
 		Method:  "PATCH",
 		Path:    path,
 		Handler: handler,
+	})
+}
+
+func restGetAsync(path string, handler ZAsyncHandler) {
+	routes = append(routes, ZRoute{
+		Method:       "GET",
+		Path:         path,
+		AsyncHandler: handler,
+		IsAsync:      true,
+	})
+}
+
+func restPostAsync(path string, handler ZAsyncHandler) {
+	routes = append(routes, ZRoute{
+		Method:       "POST",
+		Path:         path,
+		AsyncHandler: handler,
+		IsAsync:      true,
+	})
+}
+
+func restPutAsync(path string, handler ZAsyncHandler) {
+	routes = append(routes, ZRoute{
+		Method:       "PUT",
+		Path:         path,
+		AsyncHandler: handler,
+		IsAsync:      true,
+	})
+}
+
+func restDeleteAsync(path string, handler ZAsyncHandler) {
+	routes = append(routes, ZRoute{
+		Method:       "DELETE",
+		Path:         path,
+		AsyncHandler: handler,
+		IsAsync:      true,
+	})
+}
+
+func restPatchAsync(path string, handler ZAsyncHandler) {
+	routes = append(routes, ZRoute{
+		Method:       "PATCH",
+		Path:         path,
+		AsyncHandler: handler,
+		IsAsync:      true,
 	})
 }
 
@@ -1392,8 +1440,28 @@ func server(port int) {
 		}
 
 		resObj := newResponse()
-		route.Handler(reqObj, resObj)
-		writeResponse(w, resObj)
+
+if route.IsAsync && route.AsyncHandler != nil {
+	result := route.AsyncHandler(reqObj, resObj)
+
+	if isErrorValue(result) {
+		if resObj.StatusCode == 200 {
+			resObj.StatusCode = 500
+		}
+
+		if resObj.Body == nil {
+			resObj.ContentType = "application/json"
+			resObj.Body = map[string]interface{}{
+				"error": true,
+				"body":  fmt.Sprintf("%v", result),
+			}
+		}
+	}
+} else if route.Handler != nil {
+	route.Handler(reqObj, resObj)
+}
+
+writeResponse(w, resObj)
 	})
 
 	addr := fmt.Sprintf(":%d", port)
@@ -1405,6 +1473,61 @@ func server(port int) {
 
 	fmt.Printf("Zumbra server started on port %d\n", port)
 	_ = http.Serve(ln, mux)
+}
+
+type ZAsyncHandler func(*ZRequest, *ZResponse) interface{}
+
+type ZTask struct {
+	Value interface{}
+	Err   interface{}
+	Done  bool
+}
+
+func isErrorValue(v interface{}) bool {
+	if v == nil {
+		return false
+	}
+
+	switch val := v.(type) {
+	case error:
+		return true
+	case map[string]interface{}:
+		if e, ok := val["error"].(bool); ok && e {
+			return true
+		}
+		return false
+	case *ZTask:
+		return val.Err != nil
+	default:
+		return false
+	}
+}
+
+func errorValue(message string) interface{} {
+	return map[string]interface{}{
+		"error":   true,
+		"message": message,
+	}
+}
+
+func panicValue(message string) interface{} {
+	panic(message)
+}
+
+func awaitValue(v interface{}) interface{} {
+	switch t := v.(type) {
+	case *ZTask:
+		if t.Err != nil {
+			return t.Err
+		}
+		return t.Value
+	default:
+		return v
+	}
+}
+
+func tryValue(v interface{}) interface{} {
+	return awaitValue(v)
 }
 
 `
