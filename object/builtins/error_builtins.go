@@ -15,9 +15,9 @@ var ErrorBuiltin = object.Builtin{
 var PanicBuiltin = object.Builtin{
 	Fn: func(args ...object.Object) object.Object {
 		if len(args) != 1 {
-			return &object.Error{Message: "panic() expects exactly 1 argument"}
+			panic("panic() expects exactly 1 argument")
 		}
 
-		return &object.Error{Message: "panic: " + args[0].Inspect()}
+		panic(args[0].Inspect())
 	},
 }

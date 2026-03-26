@@ -1,0 +1,11 @@
+var result << error("boom") or {
+    {
+        "ok": true,
+        "user": {
+            "name": "Lucas"
+        }
+    };
+};
+
+show(result.ok);
+show(result.user["name"]);

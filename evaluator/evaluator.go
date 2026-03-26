@@ -55,7 +55,13 @@ func Eval(node ast.Node, env *object.Environment) object.Object {
 	case *ast.ErrorHandlerExpression:
 		value := Eval(node.Left, env)
 		if isError(value) {
-			handlerResult := Eval(node.Handler, env)
+			handlerEnv := object.NewEnclosedEnvironment(env)
+
+			if node.ErrorIdent != nil {
+				handlerEnv.Set(node.ErrorIdent.Value, value)
+			}
+
+			handlerResult := Eval(node.Handler, handlerEnv)
 			if rv, ok := handlerResult.(*object.ReturnValue); ok {
 				return rv
 			}

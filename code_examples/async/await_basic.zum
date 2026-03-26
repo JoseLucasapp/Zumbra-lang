@@ -1,0 +1,6 @@
+var getValue << async fct() {
+    return 42;
+};
+
+var value << await getValue();
+show(value);

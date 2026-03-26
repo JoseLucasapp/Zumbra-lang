@@ -1,0 +1,6 @@
+var add << async fct(a, b) {
+    return a + b;
+};
+
+var result << await add(10, 20);
+show(result);

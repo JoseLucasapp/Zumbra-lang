@@ -1196,3 +1196,64 @@ func TestReturnWithoutValue(t *testing.T) {
 		t.Fatalf("return value should be nil for bare return")
 	}
 }
+
+func TestAttributeAccessExpression(t *testing.T) {
+	input := `req.method;`
+
+	l := lexer.New(input)
+	p := New(l)
+	program := p.ParseProgram()
+	checkParserErrors(t, p)
+
+	if len(program.Statements) != 1 {
+		t.Fatalf("program.Statements does not contain 1 statement. got=%d", len(program.Statements))
+	}
+
+	stmt, ok := program.Statements[0].(*ast.ExpressionStatement)
+	if !ok {
+		t.Fatalf("stmt is not *ast.ExpressionStatement. got=%T", program.Statements[0])
+	}
+
+	exp, ok := stmt.Expression.(*ast.AttributeAccess)
+	if !ok {
+		t.Fatalf("stmt.Expression is not *ast.AttributeAccess. got=%T", stmt.Expression)
+	}
+
+	left, ok := exp.Object.(*ast.Identifier)
+	if !ok {
+		t.Fatalf("exp.Object is not *ast.Identifier. got=%T", exp.Object)
+	}
+
+	if left.Value != "req" {
+		t.Fatalf("left.Value wrong. got=%q", left.Value)
+	}
+
+	if exp.Property.Value != "method" {
+		t.Fatalf("property wrong. got=%q", exp.Property.Value)
+	}
+}
+
+func TestAttributeAccessWithIndex(t *testing.T) {
+	input := `req.params["id"];`
+
+	l := lexer.New(input)
+	p := New(l)
+	program := p.ParseProgram()
+	checkParserErrors(t, p)
+
+	stmt := program.Statements[0].(*ast.ExpressionStatement)
+
+	indexExp, ok := stmt.Expression.(*ast.IndexExpression)
+	if !ok {
+		t.Fatalf("expression is not *ast.IndexExpression. got=%T", stmt.Expression)
+	}
+
+	attrExp, ok := indexExp.Left.(*ast.AttributeAccess)
+	if !ok {
+		t.Fatalf("index left is not *ast.AttributeAccess. got=%T", indexExp.Left)
+	}
+
+	if attrExp.Property.Value != "params" {
+		t.Fatalf("property wrong. got=%q", attrExp.Property.Value)
+	}
+}

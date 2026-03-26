@@ -15,7 +15,7 @@ restGet("/health", async fct(req, res) {
 });
 
 restGet("/fail", async fct(req, res) {
-    result << error("boom") or {
+    var result << error("boom") or {
         res.status(400);
         res.json({
             "ok": false,
@@ -32,7 +32,7 @@ restGet("/fail", async fct(req, res) {
 });
 
 restPost("/echo", async fct(req, res) {
-    body << try await req.body;
+    var body << await req.body;
 
     res.status(201);
     res.json({

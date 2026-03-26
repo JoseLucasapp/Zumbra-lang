@@ -1,0 +1,2 @@
+var result << error("something went wrong");
+show(result);

@@ -1,0 +1,6 @@
+var value << error("boom") or {
+    show("handler executed");
+    99;
+};
+
+show(value);

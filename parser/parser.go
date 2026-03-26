@@ -24,6 +24,7 @@ var precedences = map[token.TokenType]int{
 	token.POWER:     PRODUCT,
 	token.LPAREN:    CALL,
 	token.LBRACKET:  INDEX,
+	token.DOT:       INDEX,
 }
 
 const (
@@ -51,8 +52,9 @@ type Parser struct {
 
 	errors []string
 
-	curToken  token.Token
-	peekToken token.Token
+	curToken   token.Token
+	peekToken  token.Token
+	peekToken2 token.Token
 
 	prefixParseFcts map[token.TokenType]prefixParseFct
 	infixParseFcts  map[token.TokenType]infixParseFct
@@ -106,6 +108,7 @@ func New(l *lexer.Lexer) *Parser {
 
 	p.nextToken()
 	p.nextToken()
+	p.nextToken()
 
 	return p
 }
@@ -116,7 +119,8 @@ func (p *Parser) Errors() []string {
 
 func (p *Parser) nextToken() {
 	p.curToken = p.peekToken
-	p.peekToken = p.l.NextToken()
+	p.peekToken = p.peekToken2
+	p.peekToken2 = p.l.NextToken()
 }
 
 func (p *Parser) ParseProgram() *ast.Program {
@@ -322,6 +326,26 @@ func (p *Parser) parseOrExpression(left ast.Expression) ast.Expression {
 		return expr
 	}
 
+	if p.peekTokenIs(token.IDENT) && p.peekSecondTokenIs(token.LBRACE) {
+		expr := &ast.ErrorHandlerExpression{
+			Token: p.curToken,
+			Left:  left,
+		}
+
+		p.nextToken()
+		expr.ErrorIdent = &ast.Identifier{
+			Token: p.curToken,
+			Value: p.curToken.Literal,
+		}
+
+		if !p.expectPeek(token.LBRACE) {
+			return nil
+		}
+
+		expr.Handler = p.parseBlockStatement()
+		return expr
+	}
+
 	return p.parseInfixExpression(left)
 }
 
@@ -418,7 +442,7 @@ func (p *Parser) parseInfixExpression(left ast.Expression) ast.Expression {
 
 	precedence := p.curPrecedence()
 	p.nextToken()
-	expression.Right = p.parseExpression(precedence + 1)
+	expression.Right = p.parseExpression(precedence)
 	return expression
 }
 
@@ -872,4 +896,8 @@ func (p *Parser) parseContinueWithoutLoopContext() ast.Expression {
 
 func (p *Parser) parseContinueExpression() ast.Expression {
 	return &ast.ContinueExpression{Token: p.curToken}
+}
+
+func (p *Parser) peekSecondTokenIs(t token.TokenType) bool {
+	return p.peekToken2.Type == t
 }
