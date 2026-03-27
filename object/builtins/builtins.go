@@ -286,6 +286,8 @@ var Builtins = []struct {
 	{
 		"supabaseAuthSignIn", SupabaseAuthSignInBuiltin(),
 	},
+	{"error", &ErrorBuiltin},
+	{"panic", &PanicBuiltin},
 }
 
 func NewBoolean(value bool) *object.Boolean {

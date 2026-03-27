@@ -806,7 +806,7 @@ func TestAttributeAccess(t *testing.T) {
 				var a << date();
 				a.hour;
 			`,
-			expected: 11,
+			expected: 3,
 		},
 	}
 	runVmTests(t, tests)

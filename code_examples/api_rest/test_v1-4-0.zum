@@ -1,0 +1,72 @@
+dotenvLoad(".env");
+
+supabaseConnection(
+    dotenvGet("SUPABASE_URL"),
+    dotenvGet("SUPABASE_KEY")
+);
+
+restGet("/admins", async fct(req, res) {
+
+    var result << supabaseSelect("admins", "id,name,email");
+
+    res.json({
+        "ok": true,
+        "method": req.method,
+        "data": result
+    });
+    return;
+});
+
+restPost("/admins", fct(req, res) {
+    if (!req.body) {
+        res.status(400);
+        res.json({
+            "created": false,
+            "error": true,
+            "message": "body is required"
+        });
+        return;
+    }
+
+    if (!req.body.name) {
+        res.status(400);
+        res.json({
+            "created": false,
+            "error": true,
+            "message": "name is required"
+        });
+        return;
+    }
+
+    if (!req.body.email) {
+        res.status(400);
+        res.json({
+            "created": false,
+            "error": true,
+            "message": "email is required"
+        });
+        return;
+    }
+
+    var inserted << supabaseInsert("admins", {
+    "name": req.body.name,
+    "email": req.body.email
+}) or err {
+    res.status(500);
+    res.json({
+        "created": false,
+        "error": true,
+        "message": err.message,
+    });
+    return;
+};
+
+    res.status(201);
+    res.json({
+        "created": true,
+        "data": inserted
+    });
+});
+
+
+server(3333);

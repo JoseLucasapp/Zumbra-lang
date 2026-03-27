@@ -1,0 +1,9 @@
+var obj << {
+    "method": "GET",
+    "params": {
+        "id": "123"
+    }
+};
+
+show(obj.method);
+show(obj.params["id"]);

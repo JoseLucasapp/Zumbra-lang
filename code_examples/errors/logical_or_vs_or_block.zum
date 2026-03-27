@@ -1,0 +1,10 @@
+if (1 or 0) {
+    show("logical or works");
+}
+
+var value << error("boom") or {
+    show("error handler works");
+    99;
+};
+
+show(value);

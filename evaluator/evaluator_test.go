@@ -289,7 +289,7 @@ func TestFunctionObject(t *testing.T) {
 		t.Fatalf("parameter is not 'x'. got=%q", fct.Parameters[0])
 	}
 
-	expectedBody := "(x + 2)"
+	expectedBody := "(x + 2);"
 
 	if fct.Body.String() != expectedBody {
 		t.Fatalf("body is not %q. got=%q", expectedBody, fct.Body.String())

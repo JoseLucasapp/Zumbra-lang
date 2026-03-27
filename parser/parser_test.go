@@ -1082,3 +1082,178 @@ func TestLogicalExpressions(t *testing.T) {
 		}
 	}
 }
+
+func TestAsyncFunctionLiteral(t *testing.T) {
+	input := `async fct(x, y) { x + y; }`
+
+	l := lexer.New(input)
+	p := New(l)
+	program := p.ParseProgram()
+	checkParserErrors(t, p)
+
+	if len(program.Statements) != 1 {
+		t.Fatalf("program.Statements does not contain 1 statement. got=%d", len(program.Statements))
+	}
+
+	stmt, ok := program.Statements[0].(*ast.ExpressionStatement)
+	if !ok {
+		t.Fatalf("program.Statements[0] is not ast.ExpressionStatement. got=%T", program.Statements[0])
+	}
+
+	function, ok := stmt.Expression.(*ast.FunctionLiteral)
+	if !ok {
+		t.Fatalf("stmt.Expression is not ast.FunctionLiteral. got=%T", stmt.Expression)
+	}
+
+	if !function.Async {
+		t.Fatalf("function.Async should be true")
+	}
+
+	if len(function.Parameters) != 2 {
+		t.Fatalf("function literal parameters wrong. want 2, got=%d", len(function.Parameters))
+	}
+}
+
+func TestAwaitExpression(t *testing.T) {
+	input := `await fetchUser(id);`
+
+	l := lexer.New(input)
+	p := New(l)
+	program := p.ParseProgram()
+	checkParserErrors(t, p)
+
+	stmt := program.Statements[0].(*ast.ExpressionStatement)
+	exp, ok := stmt.Expression.(*ast.AwaitExpression)
+	if !ok {
+		t.Fatalf("stmt.Expression is not ast.AwaitExpression. got=%T", stmt.Expression)
+	}
+
+	if exp.Value == nil {
+		t.Fatalf("await value is nil")
+	}
+}
+
+func TestTryExpression(t *testing.T) {
+	input := `try callApi();`
+
+	l := lexer.New(input)
+	p := New(l)
+	program := p.ParseProgram()
+	checkParserErrors(t, p)
+
+	stmt := program.Statements[0].(*ast.ExpressionStatement)
+	exp, ok := stmt.Expression.(*ast.TryExpression)
+	if !ok {
+		t.Fatalf("stmt.Expression is not ast.TryExpression. got=%T", stmt.Expression)
+	}
+
+	if exp.Value == nil {
+		t.Fatalf("try value is nil")
+	}
+}
+
+func TestErrorHandlerExpression(t *testing.T) {
+	input := `
+result or {
+    return;
+}
+`
+
+	l := lexer.New(input)
+	p := New(l)
+	program := p.ParseProgram()
+	checkParserErrors(t, p)
+
+	stmt := program.Statements[0].(*ast.ExpressionStatement)
+	exp, ok := stmt.Expression.(*ast.ErrorHandlerExpression)
+	if !ok {
+		t.Fatalf("stmt.Expression is not ast.ErrorHandlerExpression. got=%T", stmt.Expression)
+	}
+
+	if exp.Left == nil {
+		t.Fatalf("left side is nil")
+	}
+
+	if exp.Handler == nil {
+		t.Fatalf("handler block is nil")
+	}
+}
+
+func TestReturnWithoutValue(t *testing.T) {
+	input := `return;`
+
+	l := lexer.New(input)
+	p := New(l)
+	program := p.ParseProgram()
+	checkParserErrors(t, p)
+
+	stmt, ok := program.Statements[0].(*ast.ReturnStatement)
+	if !ok {
+		t.Fatalf("statement is not *ast.ReturnStatement. got=%T", program.Statements[0])
+	}
+
+	if stmt.ReturnValue != nil {
+		t.Fatalf("return value should be nil for bare return")
+	}
+}
+
+func TestAttributeAccessExpression(t *testing.T) {
+	input := `req.method;`
+
+	l := lexer.New(input)
+	p := New(l)
+	program := p.ParseProgram()
+	checkParserErrors(t, p)
+
+	if len(program.Statements) != 1 {
+		t.Fatalf("program.Statements does not contain 1 statement. got=%d", len(program.Statements))
+	}
+
+	stmt, ok := program.Statements[0].(*ast.ExpressionStatement)
+	if !ok {
+		t.Fatalf("stmt is not *ast.ExpressionStatement. got=%T", program.Statements[0])
+	}
+
+	exp, ok := stmt.Expression.(*ast.AttributeAccess)
+	if !ok {
+		t.Fatalf("stmt.Expression is not *ast.AttributeAccess. got=%T", stmt.Expression)
+	}
+
+	left, ok := exp.Object.(*ast.Identifier)
+	if !ok {
+		t.Fatalf("exp.Object is not *ast.Identifier. got=%T", exp.Object)
+	}
+
+	if left.Value != "req" {
+		t.Fatalf("left.Value wrong. got=%q", left.Value)
+	}
+
+	if exp.Property.Value != "method" {
+		t.Fatalf("property wrong. got=%q", exp.Property.Value)
+	}
+}
+
+func TestAttributeAccessWithIndex(t *testing.T) {
+	input := `req.params["id"];`
+
+	l := lexer.New(input)
+	p := New(l)
+	program := p.ParseProgram()
+	checkParserErrors(t, p)
+
+	stmt := program.Statements[0].(*ast.ExpressionStatement)
+
+	indexExp, ok := stmt.Expression.(*ast.IndexExpression)
+	if !ok {
+		t.Fatalf("expression is not *ast.IndexExpression. got=%T", stmt.Expression)
+	}
+
+	attrExp, ok := indexExp.Left.(*ast.AttributeAccess)
+	if !ok {
+		t.Fatalf("index left is not *ast.AttributeAccess. got=%T", indexExp.Left)
+	}
+
+	if attrExp.Property.Value != "params" {
+		t.Fatalf("property wrong. got=%q", attrExp.Property.Value)
+	}
+}

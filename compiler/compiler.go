@@ -28,6 +28,7 @@ type Compiler struct {
 	scopeIndex          int
 	importedFiles       map[string]bool
 	currentDir          string
+	errorTempCounter    int
 }
 
 func New() *Compiler {
@@ -329,12 +330,80 @@ func (c *Compiler) Compile(node ast.Node) error {
 		c.emit(code.OpClosure, fnIndex, len(freeSymbols))
 
 	case *ast.ReturnStatement:
+		if node.ReturnValue == nil {
+			c.emit(code.OpNull)
+			c.emit(code.OpReturnValue)
+			return nil
+		}
+
 		err := c.Compile(node.ReturnValue)
 		if err != nil {
 			return err
 		}
 
 		c.emit(code.OpReturnValue)
+
+	case *ast.AwaitExpression:
+		return c.Compile(node.Value)
+
+	case *ast.TryExpression:
+		return c.Compile(node.Value)
+
+	case *ast.ErrorHandlerExpression:
+		if err := c.Compile(node.Left); err != nil {
+			return err
+		}
+
+		c.emit(code.OpDup)
+		c.emit(code.OpIsError)
+
+		jumpNotErrorPos := c.emit(code.OpJumpNotTruthy, 9999)
+
+		if node.ErrorIdent != nil {
+			tempName := c.nextErrorTempName()
+			tempSymbol := c.symbolTable.Define(tempName)
+
+			c.emit(code.OpDup)
+
+			if tempSymbol.Scope == GlobalScope {
+				c.emit(code.OpSetGlobal, tempSymbol.Index)
+			} else {
+				c.emit(code.OpSetLocal, tempSymbol.Index)
+			}
+
+			rewriteErrorIdentInNode(node.Handler, node.ErrorIdent.Value, tempName)
+		}
+
+		if err := c.Compile(node.Handler); err != nil {
+			return err
+		}
+
+		if c.lastInstructionIs(code.OpPop) {
+			c.removeLastPop()
+		}
+
+		if !c.lastInstructionIs(code.OpReturnValue) &&
+			!c.lastInstructionIs(code.OpReturn) &&
+			!c.lastInstructionIs(code.OpConstant) &&
+			!c.lastInstructionIs(code.OpNull) &&
+			!c.lastInstructionIs(code.OpGetLocal) &&
+			!c.lastInstructionIs(code.OpGetGlobal) &&
+			!c.lastInstructionIs(code.OpGetBuiltin) &&
+			!c.lastInstructionIs(code.OpCall) &&
+			!c.lastInstructionIs(code.OpIndex) &&
+			!c.lastInstructionIs(code.OpGetAttr) &&
+			!c.lastInstructionIs(code.OpDict) &&
+			!c.lastInstructionIs(code.OpArray) {
+			c.emit(code.OpNull)
+		}
+
+		jumpEndPos := c.emit(code.OpJump, 9999)
+
+		afterHandlerPos := len(c.currentInstructions())
+		c.changeOperand(jumpNotErrorPos, afterHandlerPos)
+
+		afterEndPos := len(c.currentInstructions())
+		c.changeOperand(jumpEndPos, afterEndPos)
 
 	case *ast.CallExpression:
 		err := c.Compile(node.Function)
@@ -808,4 +877,128 @@ func (c *Compiler) compileForeverLoop(node *ast.ForEverLoop) error {
 
 	c.emit(code.OpNull)
 	return nil
+}
+
+func (c *Compiler) nextErrorTempName() string {
+	name := fmt.Sprintf("__z_or_err_%d", c.errorTempCounter)
+	c.errorTempCounter++
+	return name
+}
+
+func rewriteErrorIdentInNode(node ast.Node, from, to string) {
+	switch n := node.(type) {
+	case *ast.Identifier:
+		if n.Value == from {
+			n.Value = to
+		}
+
+	case *ast.Program:
+		for _, stmt := range n.Statements {
+			rewriteErrorIdentInNode(stmt, from, to)
+		}
+
+	case *ast.ExpressionStatement:
+		if n.Expression != nil {
+			rewriteErrorIdentInNode(n.Expression, from, to)
+		}
+
+	case *ast.BlockStatement:
+		for _, stmt := range n.Statements {
+			rewriteErrorIdentInNode(stmt, from, to)
+		}
+
+	case *ast.VarStatement:
+		if n.Value != nil {
+			rewriteErrorIdentInNode(n.Value, from, to)
+		}
+
+	case *ast.AssignStatement:
+		if n.Value != nil {
+			rewriteErrorIdentInNode(n.Value, from, to)
+		}
+
+	case *ast.ReturnStatement:
+		if n.ReturnValue != nil {
+			rewriteErrorIdentInNode(n.ReturnValue, from, to)
+		}
+
+	case *ast.IfExpression:
+		if n.Condition != nil {
+			rewriteErrorIdentInNode(n.Condition, from, to)
+		}
+		if n.Consequence != nil {
+			rewriteErrorIdentInNode(n.Consequence, from, to)
+		}
+		if n.Alternative != nil {
+			rewriteErrorIdentInNode(n.Alternative, from, to)
+		}
+
+	case *ast.PrefixExpression:
+		if n.Right != nil {
+			rewriteErrorIdentInNode(n.Right, from, to)
+		}
+
+	case *ast.InfixExpression:
+		if n.Left != nil {
+			rewriteErrorIdentInNode(n.Left, from, to)
+		}
+		if n.Right != nil {
+			rewriteErrorIdentInNode(n.Right, from, to)
+		}
+
+	case *ast.CallExpression:
+		if n.Function != nil {
+			rewriteErrorIdentInNode(n.Function, from, to)
+		}
+		for _, arg := range n.Arguments {
+			rewriteErrorIdentInNode(arg, from, to)
+		}
+
+	case *ast.ArrayLiteral:
+		for _, el := range n.Elements {
+			rewriteErrorIdentInNode(el, from, to)
+		}
+
+	case *ast.DictLiteral:
+		for k, v := range n.Pairs {
+			rewriteErrorIdentInNode(k, from, to)
+			rewriteErrorIdentInNode(v, from, to)
+		}
+
+	case *ast.IndexExpression:
+		if n.Left != nil {
+			rewriteErrorIdentInNode(n.Left, from, to)
+		}
+		if n.Index != nil {
+			rewriteErrorIdentInNode(n.Index, from, to)
+		}
+
+	case *ast.AttributeAccess:
+		if n.Object != nil {
+			rewriteErrorIdentInNode(n.Object, from, to)
+		}
+
+	case *ast.FunctionLiteral:
+		if n.Body != nil {
+			rewriteErrorIdentInNode(n.Body, from, to)
+		}
+
+	case *ast.AwaitExpression:
+		if n.Value != nil {
+			rewriteErrorIdentInNode(n.Value, from, to)
+		}
+
+	case *ast.TryExpression:
+		if n.Value != nil {
+			rewriteErrorIdentInNode(n.Value, from, to)
+		}
+
+	case *ast.ErrorHandlerExpression:
+		if n.Left != nil {
+			rewriteErrorIdentInNode(n.Left, from, to)
+		}
+		if n.Handler != nil {
+			rewriteErrorIdentInNode(n.Handler, from, to)
+		}
+	}
 }

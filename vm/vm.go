@@ -327,6 +327,25 @@ func (vm *VM) Run() error {
 
 			vm.currentFrame().ip = pos - 1
 
+		case code.OpDup:
+			value := vm.StackTop()
+			if err := vm.push(value); err != nil {
+				return err
+			}
+
+		case code.OpIsError:
+			value := vm.pop()
+			_, ok := value.(*object.Error)
+			if ok {
+				if err := vm.push(True); err != nil {
+					return err
+				}
+			} else {
+				if err := vm.push(False); err != nil {
+					return err
+				}
+			}
+
 		case code.OpGetAttr:
 			attrNameObj := vm.pop()
 			attrName, ok := attrNameObj.(*object.String)
@@ -340,22 +359,50 @@ func (vm *VM) Run() error {
 			case *object.Date:
 				switch attrName.Value {
 				case "hour":
-					vm.push(&object.Integer{Value: int64(d.Hour)})
+					if err := vm.push(&object.Integer{Value: int64(d.Hour)}); err != nil {
+						return err
+					}
 				case "minute":
-					vm.push(&object.Integer{Value: int64(d.Minute)})
+					if err := vm.push(&object.Integer{Value: int64(d.Minute)}); err != nil {
+						return err
+					}
 				case "day":
-					vm.push(&object.Integer{Value: int64(d.Day)})
+					if err := vm.push(&object.Integer{Value: int64(d.Day)}); err != nil {
+						return err
+					}
 				case "second":
-					vm.push(&object.Integer{Value: int64(d.Second)})
+					if err := vm.push(&object.Integer{Value: int64(d.Second)}); err != nil {
+						return err
+					}
 				case "month":
-					vm.push(&object.Integer{Value: int64(d.Month)})
+					if err := vm.push(&object.Integer{Value: int64(d.Month)}); err != nil {
+						return err
+					}
 				case "year":
-					vm.push(&object.Integer{Value: int64(d.Year)})
+					if err := vm.push(&object.Integer{Value: int64(d.Year)}); err != nil {
+						return err
+					}
 				case "fullDate":
-					vm.push(&object.String{Value: d.FullDate.String()})
+					if err := vm.push(&object.String{Value: d.FullDate.String()}); err != nil {
+						return err
+					}
 				default:
 					return fmt.Errorf("unknown attribute %s for Date", attrName.Value)
 				}
+
+			case *object.Dict:
+				key := &object.String{Value: attrName.Value}
+				pair, ok := d.Pairs[key.DictKey()]
+				if !ok {
+					if err := vm.push(Null); err != nil {
+						return err
+					}
+				} else {
+					if err := vm.push(pair.Value); err != nil {
+						return err
+					}
+				}
+
 			case *object.HttpRequest:
 				val := builtins.RequestAttr(d, attrName.Value)
 				if val == nil {
@@ -364,6 +411,7 @@ func (vm *VM) Run() error {
 				if err := vm.push(val); err != nil {
 					return err
 				}
+
 			case *object.HttpResponse:
 				val := builtins.ResponseMethod(d, attrName.Value)
 				if val == nil {
@@ -372,6 +420,17 @@ func (vm *VM) Run() error {
 				if err := vm.push(val); err != nil {
 					return err
 				}
+
+			case *object.Error:
+				switch attrName.Value {
+				case "message":
+					if err := vm.push(&object.String{Value: d.Message}); err != nil {
+						return err
+					}
+				default:
+					return fmt.Errorf("unknown attribute %s for Error", attrName.Value)
+				}
+
 			default:
 				return fmt.Errorf("object type %s has no attributes", obj.Type())
 			}

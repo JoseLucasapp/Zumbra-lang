@@ -7,6 +7,7 @@ import (
 	"zumbra/code"
 	"zumbra/lexer"
 	"zumbra/object"
+	"zumbra/object/builtins"
 	"zumbra/parser"
 )
 
@@ -831,7 +832,7 @@ func TestBuiltins(t *testing.T) {
 			input: `fct() { sizeOf([]) }`,
 			expectedConstants: []interface{}{
 				[]code.Instructions{
-					code.Make(code.OpGetBuiltin, 0),
+					code.Make(code.OpGetBuiltin, builtinIndexByName(t, "sizeOf")),
 					code.Make(code.OpArray, 0),
 					code.Make(code.OpCall, 1),
 					code.Make(code.OpReturnValue),
@@ -1049,7 +1050,7 @@ func TestCompileAttributeAccess(t *testing.T) {
 				"hour",
 			},
 			expectedInstructions: []code.Instructions{
-				code.Make(code.OpGetBuiltin, 18),
+				code.Make(code.OpGetBuiltin, builtinIndexByName(t, "date")),
 				code.Make(code.OpCall, 0),
 				code.Make(code.OpSetGlobal, 0),
 				code.Make(code.OpGetGlobal, 0),
@@ -1061,4 +1062,17 @@ func TestCompileAttributeAccess(t *testing.T) {
 	}
 
 	runCompilerTests(t, tests)
+}
+
+func builtinIndexByName(t *testing.T, name string) int {
+	t.Helper()
+
+	for i, b := range builtins.Builtins {
+		if b.Name == name {
+			return i
+		}
+	}
+
+	t.Fatalf("builtin %q not found", name)
+	return -1
 }

@@ -1,0 +1,9 @@
+var getUser << async fct() {
+    return {
+        "id": 1,
+        "name": "Lucas"
+    };
+};
+
+var user << try await getUser();
+show(user.name);

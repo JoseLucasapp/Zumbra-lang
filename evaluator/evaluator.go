@@ -28,11 +28,49 @@ func Eval(node ast.Node, env *object.Environment) object.Object {
 		return Eval(node.Expression, env)
 
 	case *ast.ReturnStatement:
+		if node.ReturnValue == nil {
+			return &object.ReturnValue{Value: NULL}
+		}
+
 		value := Eval(node.ReturnValue, env)
 		if isError(value) {
 			return value
 		}
 		return &object.ReturnValue{Value: value}
+
+	case *ast.AwaitExpression:
+		value := Eval(node.Value, env)
+		if isError(value) {
+			return value
+		}
+		return value
+
+	case *ast.TryExpression:
+		value := Eval(node.Value, env)
+		if isError(value) {
+			return value
+		}
+		return value
+
+	case *ast.ErrorHandlerExpression:
+		value := Eval(node.Left, env)
+		if isError(value) {
+			handlerEnv := object.NewEnclosedEnvironment(env)
+
+			if node.ErrorIdent != nil {
+				handlerEnv.Set(node.ErrorIdent.Value, value)
+			}
+
+			handlerResult := Eval(node.Handler, handlerEnv)
+			if rv, ok := handlerResult.(*object.ReturnValue); ok {
+				return rv
+			}
+			if handlerResult == nil {
+				return NULL
+			}
+			return handlerResult
+		}
+		return value
 
 	case *ast.VarStatement:
 

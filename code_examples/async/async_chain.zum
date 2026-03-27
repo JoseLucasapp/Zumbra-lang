@@ -1,0 +1,10 @@
+var getBase << async fct() {
+    return 10;
+};
+
+var calculate << async fct() {
+    var base << await getBase();
+    return base * 5;
+};
+
+show(await calculate());
