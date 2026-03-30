@@ -5,6 +5,7 @@ import (
 	"os"
 	"path/filepath"
 	"sort"
+	"strings"
 	"zumbra/ast"
 	"zumbra/code"
 	"zumbra/lexer"
@@ -32,12 +33,6 @@ type Compiler struct {
 }
 
 func New() *Compiler {
-	mainScope := CompilationScope{
-		instructions:        code.Instructions{},
-		lastInstruction:     EmittedInstruction{},
-		previousInstruction: EmittedInstruction{},
-	}
-
 	symbolTable := NewSymbolTable()
 
 	for i, v := range builtins.Builtins {
@@ -45,30 +40,61 @@ func New() *Compiler {
 	}
 
 	cwd, _ := os.Getwd()
-	return &Compiler{
-		constants:     []object.Object{},
-		symbolTable:   symbolTable,
-		scopes:        []CompilationScope{mainScope},
-		scopeIndex:    0,
-		importedFiles: map[string]bool{},
-		currentDir:    cwd,
-	}
+	return newCompilerWithState(symbolTable, []object.Object{}, cwd, nil)
 }
 
 func NewWithStateAndDir(s *SymbolTable, constants []object.Object, baseDir string) *Compiler {
+	return newCompilerWithState(s, constants, baseDir, nil)
+}
+
+func NewWithState(s *SymbolTable, constants []object.Object) *Compiler {
+	cwd, _ := os.Getwd()
+	return newCompilerWithState(s, constants, cwd, nil)
+}
+
+func NewWithStateAndDirAndImports(
+	s *SymbolTable,
+	constants []object.Object,
+	baseDir string,
+	importedFiles map[string]bool,
+) *Compiler {
+	return newCompilerWithState(s, constants, baseDir, importedFiles)
+}
+
+func newCompilerWithState(
+	s *SymbolTable,
+	constants []object.Object,
+	baseDir string,
+	importedFiles map[string]bool,
+) *Compiler {
 	mainScope := CompilationScope{
 		instructions:        code.Instructions{},
 		lastInstruction:     EmittedInstruction{},
 		previousInstruction: EmittedInstruction{},
 	}
 
+	if importedFiles == nil {
+		importedFiles = map[string]bool{}
+	}
+
+	if baseDir == "" {
+		if cwd, err := os.Getwd(); err == nil {
+			baseDir = cwd
+		}
+	}
+
+	if abs, err := filepath.Abs(baseDir); err == nil {
+		baseDir = abs
+	}
+
 	return &Compiler{
-		constants:     constants,
-		symbolTable:   s,
-		scopes:        []CompilationScope{mainScope},
-		scopeIndex:    0,
-		importedFiles: map[string]bool{},
-		currentDir:    baseDir,
+		constants:        constants,
+		symbolTable:      s,
+		scopes:           []CompilationScope{mainScope},
+		scopeIndex:       0,
+		importedFiles:    importedFiles,
+		currentDir:       baseDir,
+		errorTempCounter: 0,
 	}
 }
 
@@ -532,13 +558,6 @@ func (c *Compiler) changeOperand(pos int, operand int) {
 	c.replaceInstruction(pos, newInstruction)
 }
 
-func NewWithState(s *SymbolTable, constants []object.Object) *Compiler {
-	c := New()
-	c.symbolTable = s
-	c.constants = constants
-	return c
-}
-
 func (c *Compiler) currentInstructions() code.Instructions {
 	return c.scopes[c.scopeIndex].instructions
 }
@@ -638,25 +657,44 @@ func (c *Compiler) compileAssign(stmt *ast.AssignStatement) error {
 	return nil
 }
 
-func (c *Compiler) compileImport(stmt *ast.ImportStatement) error {
+func (c *Compiler) compileImport(stmt *ast.ImportStatement) (err error) {
+	if stmt == nil || stmt.Path == nil {
+		return fmt.Errorf("import path is required")
+	}
+
 	path := stmt.Path.Value
+	if path == "" {
+		return fmt.Errorf("import path cannot be empty")
+	}
 
 	if c.importedFiles == nil {
 		c.importedFiles = make(map[string]bool)
 	}
 
-	importFullPath := filepath.Join(c.currentDir, path)
+	importFullPath := path
+	if !filepath.IsAbs(importFullPath) {
+		importFullPath = filepath.Join(c.currentDir, importFullPath)
+	}
 	importFullPath = filepath.Clean(importFullPath)
+
+	if absPath, absErr := filepath.Abs(importFullPath); absErr == nil {
+		importFullPath = absPath
+	}
 
 	if c.importedFiles[importFullPath] {
 		return nil
 	}
 
 	c.importedFiles[importFullPath] = true
+	defer func() {
+		if err != nil {
+			delete(c.importedFiles, importFullPath)
+		}
+	}()
 
 	content, err := os.ReadFile(importFullPath)
 	if err != nil {
-		return fmt.Errorf("could not read imported file: %s", path)
+		return fmt.Errorf("could not read imported file %s: %w", path, err)
 	}
 
 	l := lexer.New(string(content))
@@ -664,16 +702,24 @@ func (c *Compiler) compileImport(stmt *ast.ImportStatement) error {
 	program := p.ParseProgram()
 
 	if len(p.Errors()) != 0 {
-		return fmt.Errorf("could not parse imported file: %s", path)
+		return fmt.Errorf(
+			"could not parse imported file %s:\n\t%s",
+			path,
+			strings.Join(p.Errors(), "\n\t"),
+		)
 	}
 
 	oldDir := c.currentDir
 	c.currentDir = filepath.Dir(importFullPath)
+	defer func() {
+		c.currentDir = oldDir
+	}()
 
-	err = c.Compile(program)
-	c.currentDir = oldDir
+	if err = c.Compile(program); err != nil {
+		return fmt.Errorf("could not compile imported file %s: %w", path, err)
+	}
 
-	return err
+	return nil
 }
 
 // for i in array where cond { block }

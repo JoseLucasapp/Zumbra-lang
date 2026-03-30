@@ -2,6 +2,8 @@ package compiler
 
 import (
 	"fmt"
+	"os"
+	"path/filepath"
 	"testing"
 	"zumbra/ast"
 	"zumbra/code"
@@ -1075,4 +1077,56 @@ func builtinIndexByName(t *testing.T, name string) int {
 
 	t.Fatalf("builtin %q not found", name)
 	return -1
+}
+
+func TestImportStatementIsOnlyCompiledOnceAcrossSharedCompilerState(t *testing.T) {
+	dir := t.TempDir()
+
+	modulePath := filepath.Join(dir, "module.zum")
+	err := os.WriteFile(modulePath, []byte(`var importedValue << 10;`), 0o644)
+	if err != nil {
+		t.Fatalf("failed to write module: %s", err)
+	}
+
+	symbolTable := NewSymbolTable()
+	for i, v := range builtins.Builtins {
+		symbolTable.DefineBuiltin(i, v.Name)
+	}
+
+	constants := []object.Object{}
+	importedFiles := map[string]bool{}
+
+	program1 := parse(`import "module.zum"; importedValue;`)
+	compiler1 := NewWithStateAndDirAndImports(symbolTable, constants, dir, importedFiles)
+
+	err = compiler1.Compile(program1)
+	if err != nil {
+		t.Fatalf("compiler1 error: %s", err)
+	}
+
+	symbol, ok := symbolTable.Resolve("importedValue")
+	if !ok {
+		t.Fatalf("importedValue was not defined after first import")
+	}
+
+	if symbol.Index != 0 {
+		t.Fatalf("wrong symbol index after first import. got=%d", symbol.Index)
+	}
+
+	program2 := parse(`import "module.zum"; importedValue;`)
+	compiler2 := NewWithStateAndDirAndImports(symbolTable, compiler1.Bytecode().Constants, dir, importedFiles)
+
+	err = compiler2.Compile(program2)
+	if err != nil {
+		t.Fatalf("compiler2 error: %s", err)
+	}
+
+	symbol, ok = symbolTable.Resolve("importedValue")
+	if !ok {
+		t.Fatalf("importedValue was not defined after second import")
+	}
+
+	if symbol.Index != 0 {
+		t.Fatalf("module was compiled twice; expected symbol index 0, got=%d", symbol.Index)
+	}
 }
