@@ -7,6 +7,8 @@ import (
 )
 
 func ZumbraTranspiler(zum string) (string, error) {
+	zum = strings.ReplaceAll(zum, "\r\n", "\n")
+	zum = strings.ReplaceAll(zum, "\r", "\n")
 	lines := strings.Split(zum, "\n")
 	var goBody []string
 	var blockStack []string
@@ -310,16 +312,18 @@ func translateProgramLines(lines []string, blockStack *[]string) []string {
 }
 
 func sanitizeLine(raw string) string {
-	line := raw
+	line := strings.ReplaceAll(raw, "\r", "")
+
 	if idx := strings.Index(line, " //"); idx != -1 {
 		line = line[:idx]
 	}
+
 	line = strings.TrimSpace(line)
 	line = strings.TrimSuffix(line, ";")
 	line = strings.TrimSpace(line)
+
 	return line
 }
-
 func splitArgs(input string) []string {
 	var args []string
 	var curr strings.Builder
