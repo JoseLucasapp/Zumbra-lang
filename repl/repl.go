@@ -4,6 +4,8 @@ import (
 	"bufio"
 	"fmt"
 	"io"
+	"os"
+	"strings"
 
 	"zumbra/compiler"
 	"zumbra/lexer"
@@ -21,10 +23,17 @@ func Start(in io.Reader, out io.Writer) {
 	constants := []object.Object{}
 	globals := make([]object.Object, vm.GlobalSize)
 	symbolTable := compiler.NewSymbolTable()
+	importedFiles := map[string]bool{}
+
+	baseDir, err := os.Getwd()
+	if err != nil {
+		baseDir = "."
+	}
 
 	for i, v := range builtins.Builtins {
 		symbolTable.DefineBuiltin(i, v.Name)
 	}
+
 	builtins.SetRouteInvoker(func(handler object.Object, args ...object.Object) (object.Object, error) {
 		return vm.InvokeFunction(handler, args, constants, globals)
 	})
@@ -33,8 +42,16 @@ func Start(in io.Reader, out io.Writer) {
 		var lines string
 		var openBraces int
 
-		fmt.Printf(PROMPT)
-		for scanner.Scan() {
+		_, _ = io.WriteString(out, PROMPT)
+
+		for {
+			if !scanner.Scan() {
+				if err := scanner.Err(); err != nil {
+					fmt.Fprintf(out, "repl error: %s\n", err)
+				}
+				return
+			}
+
 			line := scanner.Text()
 			lines += line + "\n"
 
@@ -44,7 +61,12 @@ func Start(in io.Reader, out io.Writer) {
 			if openBraces <= 0 {
 				break
 			}
-			fmt.Printf(".. ")
+
+			_, _ = io.WriteString(out, ".. ")
+		}
+
+		if strings.TrimSpace(lines) == "" {
+			continue
 		}
 
 		l := lexer.New(lines)
@@ -56,7 +78,7 @@ func Start(in io.Reader, out io.Writer) {
 			continue
 		}
 
-		comp := compiler.NewWithState(symbolTable, constants)
+		comp := compiler.NewWithStateAndDirAndImports(symbolTable, constants, baseDir, importedFiles)
 		err := comp.Compile(program)
 		if err != nil {
 			fmt.Fprintf(out, "compiler error: %s\n", err)
@@ -74,11 +96,10 @@ func Start(in io.Reader, out io.Writer) {
 		}
 
 		lastPopped := machine.LastPoppedStackElem()
-		if lastPopped.Type() != object.NULL_OBJ {
-			io.WriteString(out, lastPopped.Inspect())
-			io.WriteString(out, "\n")
+		if lastPopped != nil && lastPopped.Type() != object.NULL_OBJ {
+			_, _ = io.WriteString(out, lastPopped.Inspect())
+			_, _ = io.WriteString(out, "\n")
 		}
-
 	}
 }
 
