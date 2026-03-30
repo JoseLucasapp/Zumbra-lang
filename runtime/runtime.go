@@ -517,6 +517,10 @@ func mysqlDeleteTable(tableName string) error {
 	return nil
 }
 
+func mysqlDropTable(tableName string) error {
+	return mysqlDeleteTable(tableName)
+}
+
 func mysqlInsertIntoTable(tableName string, data map[string]interface{}) error {
 	keys := []string{}
 	placeholders := []string{}
