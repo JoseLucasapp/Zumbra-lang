@@ -13,19 +13,14 @@ type BlockStatement struct {
 
 func (bs *BlockStatement) Pos() token.Position {
 	return bs.Token.Pos
-
 }
 
-//func (bs *BlockStatement) End() token.Position {
-//	aLen := len(bs.Statements)
-//	if aLen > 0 {
-//		return bs.Statements[aLen-1].End()
-//	}
-//	return bs.Token.Pos
-//}
-
 func (bs *BlockStatement) End() token.Position {
-	return token.Position{Line: bs.RBraceToken.Pos.Line, Col: bs.RBraceToken.Pos.Col + 1}
+	return token.Position{
+		Filename: bs.RBraceToken.Pos.Filename,
+		Line:     bs.RBraceToken.Pos.Line,
+		Col:      bs.RBraceToken.Pos.Col + 1,
+	}
 }
 
 func (bs *BlockStatement) expressionNode()      {}
@@ -36,9 +31,14 @@ func (bs *BlockStatement) String() string {
 
 	for _, s := range bs.Statements {
 		str := s.String()
-
 		out.WriteString(str)
-		if str[len(str)-1:] != ";" {
+
+		if str == "" {
+			continue
+		}
+
+		last := str[len(str)-1]
+		if last != ';' && last != '}' {
 			out.WriteString(";")
 		}
 	}

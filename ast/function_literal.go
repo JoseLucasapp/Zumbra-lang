@@ -28,13 +28,20 @@ func (fl *FunctionLiteral) String() string {
 		out.WriteString("async ")
 	}
 	out.WriteString(fl.TokenLiteral())
+
 	if fl.Name != "" {
-		out.WriteString("<%s>" + fl.Name)
+		out.WriteString("<")
+		out.WriteString(fl.Name)
+		out.WriteString(">")
 	}
+
 	out.WriteString("(")
 	out.WriteString(strings.Join(params, ", "))
 	out.WriteString(") ")
-	out.WriteString(fl.Body.String())
+
+	if fl.Body != nil {
+		out.WriteString(fl.Body.String())
+	}
 
 	return out.String()
 }
