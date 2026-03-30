@@ -6,16 +6,33 @@ const (
 	ILLEGAL = "ILLEGAL"
 	EOF     = "EOF"
 
-	// Identifiers
+	// Identifiers / literals
 	IDENT  = "IDENT"
 	INT    = "INT"
 	FLOAT  = "FLOAT"
 	STRING = "STRING"
-	FOR    = "FOR"
+
+	// Keywords
+	FUNCTION = "FUNCTION"
+	VAR      = "VAR"
+	TRUE     = "TRUE"
+	FALSE    = "FALSE"
+	IF       = "IF"
+	ELSE     = "ELSE"
+	RETURN   = "RETURN"
+	WHILE    = "WHILE"
+	IMPORT   = "IMPORT"
+	ASYNC    = "ASYNC"
+	AWAIT    = "AWAIT"
+	TRY      = "TRY"
+	FOR      = "FOR"
+	IN       = "IN"
+	WHERE    = "WHERE"
+	BREAK    = "BREAK"
+	CONTINUE = "CONTINUE"
 
 	// Operators
-	ASSIGN = "<<"
-
+	ASSIGN     = "<<"
 	EQUAL      = "=="
 	NOT_EQUAL  = "!="
 	PLUS       = "+"
@@ -32,15 +49,11 @@ const (
 	PLUSPLUS   = "++"
 	MINUSMINUS = "--"
 	DOT        = "."
+	DOTDOT     = ".."
 
 	// Logical
-	OR       = "or"
-	AND      = "and"
-	BREAK    = "BREAK"
-	CONTINUE = "CONTINUE"
-	WHERE    = "WHERE"
-	IN       = "IN"
-	DOTDOT   = "DOTDOT"
+	OR  = "or"
+	AND = "and"
 
 	// Delimiters
 	COMMA     = ","
@@ -52,20 +65,6 @@ const (
 	RBRACE    = "}"
 	LBRACKET  = "["
 	RBRACKET  = "]"
-
-	// Keywords
-	FUNCTION = "FUNCTION"
-	VAR      = "VAR"
-	TRUE     = "TRUE"
-	FALSE    = "FALSE"
-	IF       = "IF"
-	ELSE     = "ELSE"
-	RETURN   = "RETURN"
-	WHILE    = "WHILE"
-	IMPORT   = "IMPORT"
-	ASYNC    = "ASYNC"
-	AWAIT    = "AWAIT"
-	TRY      = "TRY"
 )
 
 type Token struct {

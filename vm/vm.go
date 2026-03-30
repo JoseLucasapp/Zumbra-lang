@@ -281,10 +281,16 @@ func (vm *VM) Run() error {
 			builtinIndex := code.ReadUint8(ins[ip+1:])
 			vm.currentFrame().ip += 1
 
+			if int(builtinIndex) >= len(builtins.Builtins) {
+				return fmt.Errorf("builtin index out of range: %d", builtinIndex)
+			}
+
 			definition := builtins.Builtins[builtinIndex]
+			if definition.Builtin == nil {
+				return fmt.Errorf("builtin at index %d is nil", builtinIndex)
+			}
 
 			err := vm.push(definition.Builtin)
-
 			if err != nil {
 				return err
 			}
@@ -895,6 +901,10 @@ func (vm *VM) callClosure(cl *object.Closure, numArgs int) error {
 func (vm *VM) executeCall(numArgs int) error {
 	callee := vm.stack[vm.sp-1-numArgs]
 
+	if callee == nil {
+		return fmt.Errorf("calling nil object")
+	}
+
 	switch callee := callee.(type) {
 	case *object.Closure:
 		return vm.callClosure(callee, numArgs)
@@ -912,12 +922,13 @@ func (vm *VM) callBuiltin(builtin *object.Builtin, numArgs int) error {
 	vm.sp = vm.sp - numArgs - 1
 
 	if result != nil {
-		vm.push(result)
-	} else {
-		vm.push(Null)
+		if err := vm.push(result); err != nil {
+			return err
+		}
+		return nil
 	}
 
-	return nil
+	return vm.push(Null)
 }
 
 func (vm *VM) pushClosure(constIndex int, numFree int) error {

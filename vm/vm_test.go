@@ -799,15 +799,23 @@ func TestWhileLoops(t *testing.T) {
 	runVmTests(t, tests)
 }
 
-func TestAttributeAccess(t *testing.T) {
-	tests := []vmTestCase{
-		{
-			input: `
-				var a << date();
-				a.hour;
-			`,
-			expected: 3,
-		},
+func TestCallingNonFunctionObject(t *testing.T) {
+	program := parse(`1(2);`)
+
+	comp := compiler.New()
+	err := comp.Compile(program)
+	if err != nil {
+		t.Fatalf("compiler error: %s", err)
 	}
-	runVmTests(t, tests)
+
+	vm := New(comp.Bytecode())
+	err = vm.Run()
+	if err == nil {
+		t.Fatalf("expected VM error but got nil")
+	}
+
+	expected := "calling non-function and non-built-in object: INTEGER"
+	if err.Error() != expected {
+		t.Fatalf("wrong VM error. want=%q, got=%q", expected, err.Error())
+	}
 }

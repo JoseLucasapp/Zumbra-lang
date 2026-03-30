@@ -17,36 +17,64 @@ import (
 	"zumbra/vm"
 )
 
+const version = "0.1.0"
+
 func main() {
 	currentUser, err := user.Current()
 	if err != nil {
 		panic(err)
 	}
 
-	if len(os.Args) > 1 && os.Args[1] == "build" {
-		if len(os.Args) < 3 {
-			fmt.Println("usage: zumbra build <file.zum>")
-			os.Exit(1)
+	args := os.Args[1:]
+
+	if len(args) > 0 {
+		switch args[0] {
+		case "build":
+			if len(args) < 2 {
+				printUsage()
+				os.Exit(1)
+			}
+
+			if err := buildZumbra(args[1]); err != nil {
+				fmt.Printf("Error when trying to build the file: %s\n", err)
+				os.Exit(1)
+			}
+			return
+
+		case "run":
+			if len(args) < 2 {
+				printUsage()
+				os.Exit(1)
+			}
+			runFile(args[1])
+			return
+
+		case "version", "--version", "-v":
+			fmt.Println(version)
+			return
+
+		case "help", "--help", "-h":
+			printUsage()
+			return
+
+		default:
+			runFile(args[0])
+			return
 		}
-
-		if err := buildZumbra(os.Args[2]); err != nil {
-			fmt.Printf("Error when trying to build the file: %s\n", err)
-			os.Exit(1)
-		}
-		return
 	}
-
-	if len(os.Args) > 1 {
-		runFile(os.Args[1])
-		return
-	}
-
-	version := "0.1.0"
 
 	fmt.Printf("\nHello %s!\n", currentUser.Username)
 	fmt.Printf("This is the ZUMBRA programming language, version: %s!\n", version)
 	fmt.Printf("Feel free to type in commands\n")
 	repl.Start(os.Stdin, os.Stdout)
+}
+
+func printUsage() {
+	fmt.Println("Usage:")
+	fmt.Println("  zumbra <file.zum>")
+	fmt.Println("  zumbra run <file.zum>")
+	fmt.Println("  zumbra build <file.zum>")
+	fmt.Println("  zumbra version")
 }
 
 func runFile(filename string) {
@@ -74,7 +102,7 @@ func runFile(filename string) {
 	program := p.ParseProgram()
 
 	if len(p.Errors()) != 0 {
-		fmt.Println("Parsing errors:")
+		fmt.Printf("Parsing errors in %s:\n", filename)
 		for _, msg := range p.Errors() {
 			fmt.Println("\t" + msg)
 		}
@@ -123,11 +151,11 @@ func buildZumbra(filename string) error {
 		}
 	}
 
-	if err := os.MkdirAll("build", 0755); err != nil {
+	if err := os.MkdirAll("build", 0o755); err != nil {
 		return fmt.Errorf("error when trying to create build dir: %w", err)
 	}
 
-	if err := os.WriteFile("build/main.go", []byte(goCode), 0644); err != nil {
+	if err := os.WriteFile("build/main.go", []byte(goCode), 0o644); err != nil {
 		return fmt.Errorf("error when trying to write main.go: %w", err)
 	}
 
@@ -143,7 +171,7 @@ require (
 	github.com/redis/go-redis/v9 v9.6.1
 )
 `
-	if err := os.WriteFile("build/go.mod", []byte(goModContent), 0644); err != nil {
+	if err := os.WriteFile("build/go.mod", []byte(goModContent), 0o644); err != nil {
 		return fmt.Errorf("error when trying to write go.mod: %w", err)
 	}
 
