@@ -46,6 +46,13 @@ func testEval(input string) object.Object {
 	return Eval(program, env)
 }
 
+func testEvalWithEnv(input string, env *object.Environment) object.Object {
+	l := lexer.New(input)
+	p := parser.New(l)
+	program := p.ParseProgram()
+	return Eval(program, env)
+}
+
 func testIntegerObject(t *testing.T, obj object.Object, expected int64) bool {
 	result, ok := obj.(*object.Integer)
 	if !ok {
@@ -726,4 +733,47 @@ func TestStringComparison(t *testing.T) {
 			t.Errorf("input: %q - expected %t, got %t", tt.input, tt.expected, boolean.Value)
 		}
 	}
+}
+
+func TestFunctionWrongNumberOfArguments(t *testing.T) {
+	evaluated := testEval(`
+var add << fct(a, b) { a + b; };
+add(1);
+`)
+
+	errObj, ok := evaluated.(*object.Error)
+	if !ok {
+		t.Fatalf("object is not Error. got=%T (%+v)", evaluated, evaluated)
+	}
+
+	expected := "wrong number of arguments: want=2, got=1"
+	if errObj.Message != expected {
+		t.Fatalf("wrong error message. expected=%q, got=%q", expected, errObj.Message)
+	}
+}
+
+func TestImportStatementUsesSharedImportState(t *testing.T) {
+	dir := t.TempDir()
+	oldWd, err := os.Getwd()
+	if err != nil {
+		t.Fatalf("getwd failed: %s", err)
+	}
+	defer os.Chdir(oldWd)
+
+	if err := os.Chdir(dir); err != nil {
+		t.Fatalf("chdir failed: %s", err)
+	}
+
+	moduleContent := `var importedValue << 10;`
+	if err := os.WriteFile("module.zum", []byte(moduleContent), 0o644); err != nil {
+		t.Fatalf("write module failed: %s", err)
+	}
+
+	env := object.NewEnvironment()
+
+	first := testEvalWithEnv(`import "module.zum"; importedValue;`, env)
+	testIntegerObject(t, first, 10)
+
+	second := testEvalWithEnv(`import "module.zum"; importedValue;`, env)
+	testIntegerObject(t, second, 10)
 }

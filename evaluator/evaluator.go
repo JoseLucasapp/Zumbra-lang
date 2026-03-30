@@ -4,6 +4,8 @@ import (
 	"fmt"
 	"math"
 	"os"
+	"path/filepath"
+	"strings"
 	"zumbra/ast"
 	"zumbra/lexer"
 	"zumbra/object"
@@ -520,9 +522,32 @@ func evalExpressions(
 	return result
 }
 
+func extendFunctionEnv(fct *object.Function, args []object.Object) *object.Environment {
+	env := object.NewEnclosedEnvironment(fct.Env)
+
+	limit := len(fct.Parameters)
+	if len(args) < limit {
+		limit = len(args)
+	}
+
+	for paramIdx := 0; paramIdx < limit; paramIdx++ {
+		env.Set(fct.Parameters[paramIdx].Value, args[paramIdx])
+	}
+
+	return env
+}
+
 func applyFunction(fct object.Object, args []object.Object) object.Object {
 	switch fct := fct.(type) {
 	case *object.Function:
+		if len(args) != len(fct.Parameters) {
+			return newError(
+				"wrong number of arguments: want=%d, got=%d",
+				len(fct.Parameters),
+				len(args),
+			)
+		}
+
 		extendedEnv := extendFunctionEnv(fct, args)
 		evaluated := Eval(fct.Body, extendedEnv)
 		return unwrapReturnValue(evaluated)
@@ -537,17 +562,6 @@ func applyFunction(fct object.Object, args []object.Object) object.Object {
 	default:
 		return newError("not a function: %s", fct.Type())
 	}
-
-}
-
-func extendFunctionEnv(fct *object.Function, args []object.Object) *object.Environment {
-	env := object.NewEnclosedEnvironment(fct.Env)
-
-	for paramIdx, param := range fct.Parameters {
-		env.Set(param.Value, args[paramIdx])
-	}
-
-	return env
 }
 
 func unwrapReturnValue(obj object.Object) object.Object {
@@ -657,17 +671,31 @@ func evalWhileStatement(ws *ast.WhileStatement, env *object.Environment) object.
 }
 
 func evalImportStatement(node *ast.ImportStatement, env *object.Environment) object.Object {
-	path := node.Path.Value
+	if node == nil || node.Path == nil {
+		return newError("import path is required")
+	}
 
-	if env.IsImported(path) {
+	path := strings.TrimSpace(node.Path.Value)
+	if path == "" {
+		return newError("import path cannot be empty")
+	}
+
+	importPath := path
+	if !filepath.IsAbs(importPath) {
+		absPath, err := filepath.Abs(importPath)
+		if err == nil {
+			importPath = absPath
+		}
+	}
+	importPath = filepath.Clean(importPath)
+
+	if env.IsImported(importPath) {
 		return nil
 	}
 
-	env.MarkImported(path)
-
-	content, err := os.ReadFile(path)
+	content, err := os.ReadFile(importPath)
 	if err != nil {
-		return newError("Could not read imported file: %s", path)
+		return newError("could not read imported file: %s", path)
 	}
 
 	l := lexer.New(string(content))
@@ -675,8 +703,19 @@ func evalImportStatement(node *ast.ImportStatement, env *object.Environment) obj
 	program := p.ParseProgram()
 
 	if len(p.Errors()) != 0 {
-		return newError("Could not parse imported file: %s", path)
+		return newError(
+			"could not parse imported file %s:\n\t%s",
+			path,
+			strings.Join(p.Errors(), "\n\t"),
+		)
 	}
 
-	return Eval(program, env)
+	env.MarkImported(importPath)
+
+	result := Eval(program, env)
+	if isError(result) {
+		return result
+	}
+
+	return result
 }
