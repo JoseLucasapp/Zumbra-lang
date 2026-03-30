@@ -18,3 +18,20 @@ func TestStringDictKey(t *testing.T) {
 		t.Errorf("diff1.DictKey() != diff2.DictKey()")
 	}
 }
+
+func TestEnclosedEnvironmentSharesImportedFiles(t *testing.T) {
+	outer := NewEnvironment()
+	outer.MarkImported("/tmp/a.zum")
+
+	inner := NewEnclosedEnvironment(outer)
+
+	if !inner.IsImported("/tmp/a.zum") {
+		t.Fatalf("inner environment did not inherit imported file state")
+	}
+
+	inner.MarkImported("/tmp/b.zum")
+
+	if !outer.IsImported("/tmp/b.zum") {
+		t.Fatalf("outer environment did not see imported file marked by inner environment")
+	}
+}

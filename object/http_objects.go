@@ -12,7 +12,7 @@ type HttpRequest struct {
 	RawBody string
 }
 
-func (r *HttpRequest) Type() ObjectType { return "HTTP_REQUEST" }
+func (r *HttpRequest) Type() ObjectType { return HTTP_REQUEST_OBJ }
 func (r *HttpRequest) Inspect() string {
 	return fmt.Sprintf("HttpRequest<%s %s>", r.Method, r.Path)
 }
@@ -26,10 +26,13 @@ type HttpResponse struct {
 }
 
 func NewHttpResponse() *HttpResponse {
-	return &HttpResponse{StatusCode: 200, Headers: map[string]string{}}
+	return &HttpResponse{
+		StatusCode: 200,
+		Headers:    map[string]string{},
+	}
 }
 
-func (r *HttpResponse) Type() ObjectType { return "HTTP_RESPONSE" }
+func (r *HttpResponse) Type() ObjectType { return HTTP_RESPONSE_OBJ }
 func (r *HttpResponse) Inspect() string {
 	return fmt.Sprintf("HttpResponse<status=%d>", r.StatusCode)
 }

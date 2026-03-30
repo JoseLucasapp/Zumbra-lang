@@ -2,7 +2,11 @@ package object
 
 func NewEnvironment() *Environment {
 	s := make(map[string]Object)
-	return &Environment{store: s, outer: nil, importedFiles: make(map[string]bool)}
+	return &Environment{
+		store:         s,
+		outer:         nil,
+		importedFiles: make(map[string]bool),
+	}
 }
 
 type Environment struct {
@@ -25,15 +29,30 @@ func (e *Environment) Set(name string, val Object) Object {
 }
 
 func NewEnclosedEnvironment(outer *Environment) *Environment {
-	env := NewEnvironment()
-	env.outer = outer
+	env := &Environment{
+		store: make(map[string]Object),
+		outer: outer,
+	}
+
+	if outer != nil && outer.importedFiles != nil {
+		env.importedFiles = outer.importedFiles
+	} else {
+		env.importedFiles = make(map[string]bool)
+	}
+
 	return env
 }
 
 func (e *Environment) IsImported(path string) bool {
+	if e.importedFiles == nil {
+		return false
+	}
 	return e.importedFiles[path]
 }
 
 func (e *Environment) MarkImported(path string) {
+	if e.importedFiles == nil {
+		e.importedFiles = make(map[string]bool)
+	}
 	e.importedFiles[path] = true
 }
