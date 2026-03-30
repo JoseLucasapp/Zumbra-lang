@@ -125,3 +125,49 @@ func TestNextToken(t *testing.T) {
 		}
 	}
 }
+
+func TestRangeAndFloatTokens(t *testing.T) {
+	input := `
+for i in 1..10 {
+	i;
+}
+
+var x << 10.5;
+`
+
+	tests := []struct {
+		expectedType    token.TokenType
+		expectedLiteral string
+	}{
+		{token.FOR, "for"},
+		{token.IDENT, "i"},
+		{token.IN, "in"},
+		{token.INT, "1"},
+		{token.DOTDOT, ".."},
+		{token.INT, "10"},
+		{token.LBRACE, "{"},
+		{token.IDENT, "i"},
+		{token.SEMICOLON, ";"},
+		{token.RBRACE, "}"},
+		{token.VAR, "var"},
+		{token.IDENT, "x"},
+		{token.ASSIGN, "<<"},
+		{token.FLOAT, "10.5"},
+		{token.SEMICOLON, ";"},
+		{token.EOF, ""},
+	}
+
+	l := New(input)
+
+	for i, tt := range tests {
+		tok := l.NextToken()
+
+		if tok.Type != tt.expectedType {
+			t.Fatalf("tests[%d] - tokentype wrong. expected=%q, got=%q", i, tt.expectedType, tok.Type)
+		}
+
+		if tok.Literal != tt.expectedLiteral {
+			t.Fatalf("tests[%d] - literal wrong. expected=%q, got=%q", i, tt.expectedLiteral, tok.Literal)
+		}
+	}
+}
