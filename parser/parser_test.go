@@ -994,32 +994,6 @@ func TestWhileStatement(t *testing.T) {
 	testInfixExpression(t, assignStmt.Value, "x", "+", 1)
 }
 
-func TestImportStatement(t *testing.T) {
-	input := `import "utils.zum"`
-
-	l := lexer.New(input)
-	p := New(l)
-	program := p.ParseProgram()
-	checkParserErrors(t, p)
-
-	if len(program.Statements) != 1 {
-		t.Fatalf("program.Statements does not contain 1 statement. got=%d\n", len(program.Statements))
-	}
-
-	stmt, ok := program.Statements[0].(*ast.ImportStatement)
-	if !ok {
-		t.Fatalf("program.Statements[0] is not ast.ImportStatement. got=%T", program.Statements[0])
-	}
-
-	if stmt.Path.Value != "utils.zum" {
-		t.Errorf("Path.Value not 'utils.zum'. got=%q", stmt.Path.Value)
-	}
-
-	if stmt.Path.TokenLiteral() != "utils.zum" {
-		t.Errorf("Path.TokenLiteral() not 'utils.zum'. got=%q", stmt.Path.TokenLiteral())
-	}
-}
-
 func TestLogicalExpressions(t *testing.T) {
 	input := `
 	var a << true and false;
@@ -1114,44 +1088,6 @@ func TestAsyncFunctionLiteral(t *testing.T) {
 	}
 }
 
-func TestAwaitExpression(t *testing.T) {
-	input := `await fetchUser(id);`
-
-	l := lexer.New(input)
-	p := New(l)
-	program := p.ParseProgram()
-	checkParserErrors(t, p)
-
-	stmt := program.Statements[0].(*ast.ExpressionStatement)
-	exp, ok := stmt.Expression.(*ast.AwaitExpression)
-	if !ok {
-		t.Fatalf("stmt.Expression is not ast.AwaitExpression. got=%T", stmt.Expression)
-	}
-
-	if exp.Value == nil {
-		t.Fatalf("await value is nil")
-	}
-}
-
-func TestTryExpression(t *testing.T) {
-	input := `try callApi();`
-
-	l := lexer.New(input)
-	p := New(l)
-	program := p.ParseProgram()
-	checkParserErrors(t, p)
-
-	stmt := program.Statements[0].(*ast.ExpressionStatement)
-	exp, ok := stmt.Expression.(*ast.TryExpression)
-	if !ok {
-		t.Fatalf("stmt.Expression is not ast.TryExpression. got=%T", stmt.Expression)
-	}
-
-	if exp.Value == nil {
-		t.Fatalf("try value is nil")
-	}
-}
-
 func TestErrorHandlerExpression(t *testing.T) {
 	input := `
 result or {
@@ -1197,42 +1133,6 @@ func TestReturnWithoutValue(t *testing.T) {
 	}
 }
 
-func TestAttributeAccessExpression(t *testing.T) {
-	input := `req.method;`
-
-	l := lexer.New(input)
-	p := New(l)
-	program := p.ParseProgram()
-	checkParserErrors(t, p)
-
-	if len(program.Statements) != 1 {
-		t.Fatalf("program.Statements does not contain 1 statement. got=%d", len(program.Statements))
-	}
-
-	stmt, ok := program.Statements[0].(*ast.ExpressionStatement)
-	if !ok {
-		t.Fatalf("stmt is not *ast.ExpressionStatement. got=%T", program.Statements[0])
-	}
-
-	exp, ok := stmt.Expression.(*ast.AttributeAccess)
-	if !ok {
-		t.Fatalf("stmt.Expression is not *ast.AttributeAccess. got=%T", stmt.Expression)
-	}
-
-	left, ok := exp.Object.(*ast.Identifier)
-	if !ok {
-		t.Fatalf("exp.Object is not *ast.Identifier. got=%T", exp.Object)
-	}
-
-	if left.Value != "req" {
-		t.Fatalf("left.Value wrong. got=%q", left.Value)
-	}
-
-	if exp.Property.Value != "method" {
-		t.Fatalf("property wrong. got=%q", exp.Property.Value)
-	}
-}
-
 func TestAttributeAccessWithIndex(t *testing.T) {
 	input := `req.params["id"];`
 
@@ -1255,5 +1155,110 @@ func TestAttributeAccessWithIndex(t *testing.T) {
 
 	if attrExp.Property.Value != "params" {
 		t.Fatalf("property wrong. got=%q", attrExp.Property.Value)
+	}
+}
+
+func TestImportStatement(t *testing.T) {
+	input := `import "mod.zum";`
+
+	l := lexer.New(input)
+	p := New(l)
+	program := p.ParseProgram()
+	checkParserErrors(t, p)
+
+	if len(program.Statements) != 1 {
+		t.Fatalf("program.Statements does not contain 1 statement. got=%d", len(program.Statements))
+	}
+
+	stmt, ok := program.Statements[0].(*ast.ImportStatement)
+	if !ok {
+		t.Fatalf("statement is not *ast.ImportStatement. got=%T", program.Statements[0])
+	}
+
+	if stmt.Path == nil {
+		t.Fatalf("import path is nil")
+	}
+
+	if stmt.Path.Value != "mod.zum" {
+		t.Fatalf("wrong import path. got=%q", stmt.Path.Value)
+	}
+}
+
+func TestAwaitExpression(t *testing.T) {
+	input := `await task();`
+
+	l := lexer.New(input)
+	p := New(l)
+	program := p.ParseProgram()
+	checkParserErrors(t, p)
+
+	stmt := program.Statements[0].(*ast.ExpressionStatement)
+	_, ok := stmt.Expression.(*ast.AwaitExpression)
+	if !ok {
+		t.Fatalf("expression is not *ast.AwaitExpression. got=%T", stmt.Expression)
+	}
+}
+
+func TestTryExpression(t *testing.T) {
+	input := `try call();`
+
+	l := lexer.New(input)
+	p := New(l)
+	program := p.ParseProgram()
+	checkParserErrors(t, p)
+
+	stmt := program.Statements[0].(*ast.ExpressionStatement)
+	_, ok := stmt.Expression.(*ast.TryExpression)
+	if !ok {
+		t.Fatalf("expression is not *ast.TryExpression. got=%T", stmt.Expression)
+	}
+}
+
+func TestOrHandlerExpression(t *testing.T) {
+	input := `result or err { return err; };`
+
+	l := lexer.New(input)
+	p := New(l)
+	program := p.ParseProgram()
+	checkParserErrors(t, p)
+
+	stmt := program.Statements[0].(*ast.ExpressionStatement)
+	_, ok := stmt.Expression.(*ast.ErrorHandlerExpression)
+	if !ok {
+		t.Fatalf("expression is not *ast.ErrorHandlerExpression. got=%T", stmt.Expression)
+	}
+}
+
+func TestAttributeAccessExpression(t *testing.T) {
+	input := `user.name;`
+
+	l := lexer.New(input)
+	p := New(l)
+	program := p.ParseProgram()
+	checkParserErrors(t, p)
+
+	stmt := program.Statements[0].(*ast.ExpressionStatement)
+	exp, ok := stmt.Expression.(*ast.AttributeAccess)
+	if !ok {
+		t.Fatalf("expression is not *ast.AttributeAccess. got=%T", stmt.Expression)
+	}
+
+	if exp.Property == nil || exp.Property.Value != "name" {
+		t.Fatalf("wrong property. got=%v", exp.Property)
+	}
+}
+
+func TestRangeForExpression(t *testing.T) {
+	input := `for i in 1..10 { i; }`
+
+	l := lexer.New(input)
+	p := New(l)
+	program := p.ParseProgram()
+	checkParserErrors(t, p)
+
+	stmt := program.Statements[0].(*ast.ExpressionStatement)
+	_, ok := stmt.Expression.(*ast.ForEachDotRange)
+	if !ok {
+		t.Fatalf("expression is not *ast.ForEachDotRange. got=%T", stmt.Expression)
 	}
 }

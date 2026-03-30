@@ -2,8 +2,8 @@ package parser
 
 import (
 	"fmt"
-
 	"strconv"
+
 	"zumbra/ast"
 	"zumbra/lexer"
 	"zumbra/token"
@@ -16,12 +16,15 @@ var precedences = map[token.TokenType]int{
 	token.NOT_EQUAL: EQUALS,
 	token.LT:        LESSGREATER,
 	token.GT:        LESSGREATER,
+	token.LTE:       LESSGREATER,
+	token.GTE:       LESSGREATER,
+	token.DOTDOT:    RANGE,
 	token.PLUS:      SUM,
 	token.MINUS:     SUM,
 	token.SLASH:     PRODUCT,
 	token.ASTERISK:  PRODUCT,
 	token.MODULE:    PRODUCT,
-	token.POWER:     PRODUCT,
+	token.POWER:     POWER,
 	token.LPAREN:    CALL,
 	token.LBRACKET:  INDEX,
 	token.DOT:       INDEX,
@@ -32,13 +35,14 @@ const (
 	LOWEST
 	OR
 	AND
-	EQUALS      // ==
-	LESSGREATER // > or <
-	DOTDOT
-	SUM     // +
-	PRODUCT // *
-	PREFIX  // -X or !X
-	CALL    // myFunction(X)
+	EQUALS
+	LESSGREATER
+	RANGE
+	SUM
+	PRODUCT
+	POWER
+	PREFIX
+	CALL
 	INDEX
 )
 
@@ -84,6 +88,8 @@ func New(l *lexer.Lexer) *Parser {
 	p.registerPrefix(token.ASYNC, p.parseAsyncFunctionLiteral)
 	p.registerPrefix(token.AWAIT, p.parseAwaitExpression)
 	p.registerPrefix(token.TRY, p.parseTryExpression)
+	p.registerPrefix(token.BREAK, p.parseBreakWithoutLoopContext)
+	p.registerPrefix(token.CONTINUE, p.parseContinueWithoutLoopContext)
 
 	p.infixParseFcts = make(map[token.TokenType]infixParseFct)
 	p.registerInfix(token.PLUS, p.parseInfixExpression)
@@ -91,20 +97,18 @@ func New(l *lexer.Lexer) *Parser {
 	p.registerInfix(token.SLASH, p.parseInfixExpression)
 	p.registerInfix(token.ASTERISK, p.parseInfixExpression)
 	p.registerInfix(token.MODULE, p.parseInfixExpression)
+	p.registerInfix(token.POWER, p.parseInfixExpression)
 	p.registerInfix(token.EQUAL, p.parseInfixExpression)
 	p.registerInfix(token.NOT_EQUAL, p.parseInfixExpression)
 	p.registerInfix(token.LT, p.parseInfixExpression)
 	p.registerInfix(token.GT, p.parseInfixExpression)
-	p.registerInfix(token.MODULE, p.parseInfixExpression)
-	p.registerInfix(token.POWER, p.parseInfixExpression)
 	p.registerInfix(token.LTE, p.parseInfixExpression)
 	p.registerInfix(token.GTE, p.parseInfixExpression)
+	p.registerInfix(token.AND, p.parseInfixExpression)
+	p.registerInfix(token.OR, p.parseOrExpression)
 	p.registerInfix(token.LPAREN, p.parseCallExpression)
 	p.registerInfix(token.LBRACKET, p.parseIndexExpression)
-	p.registerInfix(token.OR, p.parseInfixExpression)
-	p.registerInfix(token.AND, p.parseInfixExpression)
 	p.registerInfix(token.DOT, p.parseAttributeAccess)
-	p.registerInfix(token.OR, p.parseOrExpression)
 
 	p.nextToken()
 	p.nextToken()
@@ -134,6 +138,7 @@ func (p *Parser) ParseProgram() *ast.Program {
 		}
 		p.nextToken()
 	}
+
 	return program
 }
 
@@ -167,6 +172,10 @@ func (p *Parser) parseImportStatement() *ast.ImportStatement {
 	stmt.Path = &ast.StringLiteral{
 		Token: p.curToken,
 		Value: p.curToken.Literal,
+	}
+
+	if p.peekTokenIs(token.SEMICOLON) {
+		p.nextToken()
 	}
 
 	return stmt
@@ -232,7 +241,7 @@ func (p *Parser) parseVarStatement() *ast.VarStatement {
 		fl.Name = stmt.Name.Value
 	}
 
-	for !p.curTokenIs(token.SEMICOLON) && !p.curTokenIs(token.EOF) {
+	if p.peekTokenIs(token.SEMICOLON) {
 		p.nextToken()
 	}
 
@@ -251,10 +260,10 @@ func (p *Parser) expectPeek(t token.TokenType) bool {
 	if p.peekTokenIs(t) {
 		p.nextToken()
 		return true
-	} else {
-		p.peekError(t)
-		return false
 	}
+
+	p.peekError(t)
+	return false
 }
 
 func (p *Parser) peekError(t token.TokenType) {
@@ -281,23 +290,18 @@ func (p *Parser) parseReturnStatement() *ast.ReturnStatement {
 }
 
 func (p *Parser) parseAsyncFunctionLiteral() ast.Expression {
-	asyncToken := p.curToken
-
 	if !p.expectPeek(token.FUNCTION) {
 		return nil
 	}
 
 	lit := p.parseFunctionLiteral()
-	if fn, ok := lit.(*ast.FunctionLiteral); ok {
-		fn.Async = true
-		fn.Token = p.curToken
-		if fn.Token.Type == "" {
-			fn.Token = asyncToken
-		}
-		return fn
+	fn, ok := lit.(*ast.FunctionLiteral)
+	if !ok {
+		return lit
 	}
 
-	return lit
+	fn.Async = true
+	return fn
 }
 
 func (p *Parser) parseAwaitExpression() ast.Expression {
@@ -360,9 +364,11 @@ func (p *Parser) registerInfix(tokenType token.TokenType, fct infixParseFct) {
 func (p *Parser) parseExpressionStatement() *ast.ExpressionStatement {
 	stmt := &ast.ExpressionStatement{Token: p.curToken}
 	stmt.Expression = p.parseExpression(LOWEST)
+
 	if p.peekTokenIs(token.SEMICOLON) {
 		p.nextToken()
 	}
+
 	return stmt
 }
 
@@ -372,6 +378,7 @@ func (p *Parser) parseExpression(precedence int) ast.Expression {
 		p.noPrefixParseFctError(p.curToken.Type)
 		return nil
 	}
+
 	leftExp := prefix()
 
 	for !p.peekTokenIs(token.SEMICOLON) && precedence < p.peekPrecedence() {
@@ -383,6 +390,7 @@ func (p *Parser) parseExpression(precedence int) ast.Expression {
 		p.nextToken()
 		leftExp = infix(leftExp)
 	}
+
 	return leftExp
 }
 
@@ -442,7 +450,13 @@ func (p *Parser) parseInfixExpression(left ast.Expression) ast.Expression {
 
 	precedence := p.curPrecedence()
 	p.nextToken()
-	expression.Right = p.parseExpression(precedence)
+
+	if expression.Token.Type == token.POWER {
+		expression.Right = p.parseExpression(precedence - 1)
+	} else {
+		expression.Right = p.parseExpression(precedence)
+	}
+
 	return expression
 }
 
@@ -484,9 +498,11 @@ func (p *Parser) parseIfExpression() ast.Expression {
 
 	if p.peekTokenIs(token.ELSE) {
 		p.nextToken()
+
 		if !p.expectPeek(token.LBRACE) {
 			return nil
 		}
+
 		expression.Alternative = p.parseBlockStatement()
 	}
 
@@ -507,6 +523,7 @@ func (p *Parser) parseBlockStatement() *ast.BlockStatement {
 		p.nextToken()
 	}
 
+	block.RBraceToken = p.curToken
 	return block
 }
 
@@ -524,7 +541,6 @@ func (p *Parser) parseFunctionLiteral() ast.Expression {
 	}
 
 	lit.Body = p.parseBlockStatement()
-
 	return lit
 }
 
@@ -537,7 +553,6 @@ func (p *Parser) parseFunctionParameters() []*ast.Identifier {
 	}
 
 	p.nextToken()
-
 	ident := &ast.Identifier{Token: p.curToken, Value: p.curToken.Literal}
 	identifiers = append(identifiers, ident)
 
@@ -561,39 +576,13 @@ func (p *Parser) parseCallExpression(function ast.Expression) ast.Expression {
 	return exp
 }
 
-func (p *Parser) parseCallArguments() []ast.Expression {
-	args := []ast.Expression{}
-
-	if p.peekTokenIs(token.RPAREN) {
-		p.nextToken()
-		return args
-	}
-
-	p.nextToken()
-	args = append(args, p.parseExpression(LOWEST))
-
-	for p.peekTokenIs(token.COMMA) {
-		p.nextToken()
-		p.nextToken()
-		args = append(args, p.parseExpression(LOWEST))
-	}
-
-	if !p.expectPeek(token.RPAREN) {
-		return nil
-	}
-
-	return args
-}
-
 func (p *Parser) parseStringLiteral() ast.Expression {
 	return &ast.StringLiteral{Token: p.curToken, Value: p.curToken.Literal}
 }
 
 func (p *Parser) parseArrayLiteral() ast.Expression {
 	array := &ast.ArrayLiteral{Token: p.curToken}
-
 	array.Elements = p.parseExpressionList(token.RBRACKET)
-
 	return array
 }
 
@@ -648,7 +637,6 @@ func (p *Parser) parseDictLiteral() ast.Expression {
 		}
 
 		p.nextToken()
-
 		value := p.parseExpression(LOWEST)
 
 		dict.Pairs[key] = value
@@ -669,21 +657,20 @@ func (p *Parser) parseFloatLiteral() ast.Expression {
 	float := &ast.FloatLiteral{Token: p.curToken}
 
 	value, err := strconv.ParseFloat(p.curToken.Literal, 64)
-
 	if err != nil {
-		msg := fmt.Sprintf("Could not parse %q as integer", p.curToken.Literal)
+		msg := fmt.Sprintf("could not parse %q as float", p.curToken.Literal)
 		p.errors = append(p.errors, msg)
 		return nil
 	}
 
 	float.Value = value
-
 	return float
-
 }
 
 func (p *Parser) parseAttributeAccess(left ast.Expression) ast.Expression {
-	p.nextToken()
+	if !p.expectPeek(token.IDENT) {
+		return nil
+	}
 
 	property := &ast.Identifier{
 		Token: p.curToken,
@@ -697,7 +684,7 @@ func (p *Parser) parseAttributeAccess(left ast.Expression) ast.Expression {
 }
 
 func (p *Parser) parseForLoopExpression() ast.Expression {
-	curToken := p.curToken //save current token
+	curToken := p.curToken
 
 	if p.peekTokenIs(token.LBRACE) {
 		return p.parseForEverLoopExpression(curToken)
@@ -710,14 +697,13 @@ func (p *Parser) parseForLoopExpression() ast.Expression {
 	if !p.expectPeek(token.IDENT) {
 		return nil
 	}
-	variable := p.curToken.Literal //save current identifier
+	variable := p.curToken.Literal
 
 	if p.peekTokenIs(token.COMMA) {
 		return p.parseForEachMapExpression(curToken, variable)
 	}
 
-	ret := p.parseForEachArrayOrRangeExpression(curToken, variable)
-	return ret
+	return p.parseForEachArrayOrRangeExpression(curToken, variable)
 }
 
 func (p *Parser) parseForEverLoopExpression(curToken token.Token) ast.Expression {
@@ -737,6 +723,7 @@ func (p *Parser) parseForEverLoopExpression(curToken token.Token) ast.Expression
 
 func (p *Parser) parseCForLoopExpression(curToken token.Token) ast.Expression {
 	var result ast.Expression
+
 	p.registerPrefix(token.BREAK, p.parseBreakExpression)
 	p.registerPrefix(token.CONTINUE, p.parseContinueExpression)
 
@@ -754,14 +741,14 @@ func (p *Parser) parseCForLoopExpression(curToken token.Token) ast.Expression {
 		p.nextToken()
 	}
 
-	p.nextToken() //skip ';'
+	p.nextToken()
 	if !p.curTokenIs(token.SEMICOLON) {
 		cond = p.parseExpression(LOWEST)
 		p.nextToken()
 	}
 
 	p.nextToken()
-	if !p.curTokenIs(token.SEMICOLON) {
+	if !p.curTokenIs(token.RPAREN) {
 		update = p.parseExpression(LOWEST)
 	}
 
@@ -823,6 +810,7 @@ func (p *Parser) parseForEachMapExpression(curToken token.Token, variable string
 	}
 
 	loop.Block = p.parseBlockStatement()
+
 	p.registerPrefix(token.BREAK, p.parseBreakWithoutLoopContext)
 	p.registerPrefix(token.CONTINUE, p.parseContinueWithoutLoopContext)
 
@@ -833,21 +821,21 @@ func (p *Parser) parseForEachArrayOrRangeExpression(curToken token.Token, variab
 	p.registerPrefix(token.BREAK, p.parseBreakExpression)
 	p.registerPrefix(token.CONTINUE, p.parseContinueExpression)
 
-	var isRange bool = false
-	//loop := &ast.ForEachArrayLoop{Token: curToken, Var:variable}
-
 	if !p.expectPeek(token.IN) {
 		return nil
 	}
+
 	p.nextToken()
 	aValue1 := p.parseExpression(LOWEST)
 
 	var aValue2 ast.Expression
+	isRange := false
+
 	if p.peekTokenIs(token.DOTDOT) {
 		isRange = true
 		p.nextToken()
 		p.nextToken()
-		aValue2 = p.parseExpression(DOTDOT)
+		aValue2 = p.parseExpression(RANGE)
 	}
 
 	var aCond ast.Expression
@@ -865,9 +853,22 @@ func (p *Parser) parseForEachArrayOrRangeExpression(curToken token.Token, variab
 
 	var result ast.Expression
 	if !isRange {
-		result = &ast.ForEachArrayLoop{Token: curToken, Var: variable, Value: aValue1, Cond: aCond, Block: aBlock}
+		result = &ast.ForEachArrayLoop{
+			Token: curToken,
+			Var:   variable,
+			Value: aValue1,
+			Cond:  aCond,
+			Block: aBlock,
+		}
 	} else {
-		result = &ast.ForEachDotRange{Token: curToken, Var: variable, StartIdx: aValue1, EndIdx: aValue2, Cond: aCond, Block: aBlock}
+		result = &ast.ForEachDotRange{
+			Token:    curToken,
+			Var:      variable,
+			StartIdx: aValue1,
+			EndIdx:   aValue2,
+			Cond:     aCond,
+			Block:    aBlock,
+		}
 	}
 
 	p.registerPrefix(token.BREAK, p.parseBreakWithoutLoopContext)
