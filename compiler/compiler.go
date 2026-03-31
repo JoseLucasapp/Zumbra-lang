@@ -148,6 +148,8 @@ func (c *Compiler) Compile(node ast.Node) error {
 			c.emit(code.OpDiv)
 		case "%":
 			c.emit(code.OpMod)
+		case "**":
+			c.emit(code.OpPower)
 		case ">":
 			c.emit(code.OpGreaterThan)
 		case "<":
@@ -209,13 +211,15 @@ func (c *Compiler) Compile(node ast.Node) error {
 
 		jumpNotTruthyPos := c.emit(code.OpJumpNotTruthy, 9999)
 
-		err = c.Compile(node.Consequence)
+		err = c.compileBlockWithScope(node.Consequence)
 		if err != nil {
 			return err
 		}
 
 		if c.lastInstructionIs(code.OpPop) {
 			c.removeLastPop()
+		} else if !c.lastInstructionLeavesValue() {
+			c.emit(code.OpNull)
 		}
 
 		jumpPos := c.emit(code.OpJump, 9999)
@@ -225,14 +229,16 @@ func (c *Compiler) Compile(node ast.Node) error {
 
 		if node.Alternative == nil {
 			c.emit(code.OpNull)
-
 		} else {
-			err := c.Compile(node.Alternative)
+			err := c.compileBlockWithScope(node.Alternative)
 			if err != nil {
 				return err
 			}
+
 			if c.lastInstructionIs(code.OpPop) {
 				c.removeLastPop()
+			} else if !c.lastInstructionLeavesValue() {
+				c.emit(code.OpNull)
 			}
 		}
 
@@ -584,6 +590,60 @@ func (c *Compiler) leaveScope() code.Instructions {
 	return instructions
 }
 
+func (c *Compiler) enterBlockScope() {
+	c.symbolTable = NewBlockSymbolTable(c.symbolTable)
+}
+
+func (c *Compiler) leaveBlockScope() {
+	outer := c.symbolTable.Outer
+	if outer != nil && c.symbolTable.numDefinitions > outer.numDefinitions {
+		outer.numDefinitions = c.symbolTable.numDefinitions
+	}
+	c.symbolTable = outer
+}
+
+func (c *Compiler) compileBlockWithScope(block *ast.BlockStatement) error {
+	c.enterBlockScope()
+	defer c.leaveBlockScope()
+
+	for _, statement := range block.Statements {
+		if err := c.Compile(statement); err != nil {
+			return err
+		}
+	}
+
+	return nil
+}
+
+func (c *Compiler) lastInstructionLeavesValue() bool {
+	if len(c.currentInstructions()) == 0 {
+		return false
+	}
+
+	switch c.scopes[c.scopeIndex].lastInstruction.Opcode {
+	case code.OpConstant,
+		code.OpTrue,
+		code.OpFalse,
+		code.OpNull,
+		code.OpGetGlobal,
+		code.OpGetLocal,
+		code.OpGetBuiltin,
+		code.OpGetFree,
+		code.OpCurrentClosure,
+		code.OpArray,
+		code.OpDict,
+		code.OpIndex,
+		code.OpCall,
+		code.OpGetAttr,
+		code.OpClosure,
+		code.OpReturnValue,
+		code.OpReturn:
+		return true
+	default:
+		return false
+	}
+}
+
 func (c *Compiler) lastInstructionIs(op code.Opcode) bool {
 	if len(c.currentInstructions()) == 0 {
 		return false
@@ -623,7 +683,7 @@ func (c *Compiler) compileWhile(stmt *ast.WhileStatement) error {
 
 	jumpNotTruthyPos := c.emit(code.OpJumpNotTruthy, 9999)
 
-	if err := c.Compile(stmt.Body); err != nil {
+	if err := c.compileBlockWithScope(stmt.Body); err != nil {
 		return err
 	}
 
@@ -875,14 +935,129 @@ func (c *Compiler) compileForEachArrayLoop(node *ast.ForEachArrayLoop) error {
 }
 
 func (c *Compiler) compileForEachDotRange(node *ast.ForEachDotRange) error {
-	if err := c.Compile(node.StartIdx); err != nil {
+	dummyTok := token.Token{}
+
+	iterName := "__z_for_iter_" + node.Var
+	endName := "__z_for_end_" + node.Var
+
+	iterVarStmt := &ast.VarStatement{
+		Token: dummyTok,
+		Name: &ast.Identifier{
+			Token: dummyTok,
+			Value: iterName,
+		},
+		Value: node.StartIdx,
+	}
+
+	endVarStmt := &ast.VarStatement{
+		Token: dummyTok,
+		Name: &ast.Identifier{
+			Token: dummyTok,
+			Value: endName,
+		},
+		Value: node.EndIdx,
+	}
+
+	loopVarStmt := &ast.VarStatement{
+		Token: dummyTok,
+		Name: &ast.Identifier{
+			Token: dummyTok,
+			Value: node.Var,
+		},
+		Value: &ast.Identifier{
+			Token: dummyTok,
+			Value: iterName,
+		},
+	}
+
+	cond := &ast.InfixExpression{
+		Token: dummyTok,
+		Left: &ast.Identifier{
+			Token: dummyTok,
+			Value: iterName,
+		},
+		Operator: "<=",
+		Right: &ast.Identifier{
+			Token: dummyTok,
+			Value: endName,
+		},
+	}
+
+	assignLoopVar := &ast.AssignStatement{
+		Token: dummyTok,
+		Name: &ast.Identifier{
+			Token: dummyTok,
+			Value: node.Var,
+		},
+		Value: &ast.Identifier{
+			Token: dummyTok,
+			Value: iterName,
+		},
+	}
+
+	inc := &ast.AssignStatement{
+		Token: dummyTok,
+		Name: &ast.Identifier{
+			Token: dummyTok,
+			Value: iterName,
+		},
+		Value: &ast.InfixExpression{
+			Token: dummyTok,
+			Left: &ast.Identifier{
+				Token: dummyTok,
+				Value: iterName,
+			},
+			Operator: "+",
+			Right: &ast.IntegerLiteral{
+				Token: dummyTok,
+				Value: 1,
+			},
+		},
+	}
+
+	var loopBodyStatements []ast.Statement
+	loopBodyStatements = append(loopBodyStatements, assignLoopVar)
+
+	if node.Cond != nil {
+		ifExpr := &ast.IfExpression{
+			Token:       dummyTok,
+			Condition:   node.Cond,
+			Consequence: node.Block,
+			Alternative: nil,
+		}
+
+		loopBodyStatements = append(loopBodyStatements, &ast.ExpressionStatement{
+			Token:      dummyTok,
+			Expression: ifExpr,
+		})
+	} else {
+		loopBodyStatements = append(loopBodyStatements, node.Block.Statements...)
+	}
+
+	loopBodyStatements = append(loopBodyStatements, inc)
+
+	whileStmt := &ast.WhileStatement{
+		Token:     dummyTok,
+		Condition: cond,
+		Body: &ast.BlockStatement{
+			Token:      dummyTok,
+			Statements: loopBodyStatements,
+		},
+	}
+
+	if err := c.Compile(iterVarStmt); err != nil {
 		return err
 	}
-	if err := c.Compile(node.EndIdx); err != nil {
+	if err := c.Compile(endVarStmt); err != nil {
+		return err
+	}
+	if err := c.Compile(loopVarStmt); err != nil {
+		return err
+	}
+	if err := c.Compile(whileStmt); err != nil {
 		return err
 	}
 
-	c.emit(code.OpNull)
 	return nil
 }
 
@@ -917,11 +1092,13 @@ func (c *Compiler) compileCStyleForLoop(node *ast.ForLoop) error {
 }
 
 func (c *Compiler) compileForeverLoop(node *ast.ForEverLoop) error {
-	if err := c.Compile(node.Block); err != nil {
+	loopStartPos := len(c.currentInstructions())
+
+	if err := c.compileBlockWithScope(node.Block); err != nil {
 		return err
 	}
 
-	c.emit(code.OpNull)
+	c.emit(code.OpJump, loopStartPos)
 	return nil
 }
 

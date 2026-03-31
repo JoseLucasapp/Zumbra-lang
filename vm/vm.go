@@ -2,6 +2,7 @@ package vm
 
 import (
 	"fmt"
+	"math"
 	"zumbra/code"
 	"zumbra/compiler"
 	"zumbra/object"
@@ -92,7 +93,7 @@ func (vm *VM) Run() error {
 				return err
 			}
 
-		case code.OpAdd, code.OpSub, code.OpMul, code.OpDiv, code.OpMod:
+		case code.OpAdd, code.OpSub, code.OpMul, code.OpDiv, code.OpMod, code.OpPower:
 			err := vm.executeBinaryOperation(op)
 			if err != nil {
 				return err
@@ -523,6 +524,8 @@ func (vm *VM) executeBinaryIntegerOperation(op code.Opcode, left, right object.O
 		result = leftValue / rightValue
 	case code.OpMod:
 		result = leftValue % rightValue
+	case code.OpPower:
+		result = int64(math.Pow(float64(leftValue), float64(rightValue)))
 	default:
 		return fmt.Errorf("unknown integer operator: %d", op)
 	}
@@ -545,6 +548,8 @@ func (vm *VM) executeFloatOperation(op code.Opcode, left, right object.Object) e
 		result = leftValue * rightValue
 	case code.OpDiv:
 		result = leftValue / rightValue
+	case code.OpPower:
+		result = math.Pow(leftValue, rightValue)
 	default:
 		return fmt.Errorf("unknown float operator: %d", op)
 	}
@@ -567,6 +572,8 @@ func (vm *VM) executeIntLeftFloatRight(op code.Opcode, left, right object.Object
 		result = float64(leftValue) * rightValue
 	case code.OpDiv:
 		result = float64(leftValue) / rightValue
+	case code.OpPower:
+		result = math.Pow(float64(leftValue), rightValue)
 	default:
 		return fmt.Errorf("unknown float operator: %d", op)
 	}
@@ -589,6 +596,8 @@ func (vm *VM) executeIntRightFloatLeft(op code.Opcode, left, right object.Object
 		result = leftValue * float64(rightValue)
 	case code.OpDiv:
 		result = leftValue / float64(rightValue)
+	case code.OpPower:
+		result = math.Pow(leftValue, float64(rightValue))
 	default:
 		return fmt.Errorf("unknown float operator: %d", op)
 	}
@@ -708,14 +717,17 @@ func (vm *VM) executeFloatComparison(op code.Opcode, left, right object.Object) 
 }
 
 func (vm *VM) executeStringComparison(op code.Opcode, left, right object.Object) error {
-	if op != code.OpEqual {
-		return fmt.Errorf("unknown string operator: %d", op)
-	}
-
 	leftValue := left.(*object.String).Value
 	rightValue := right.(*object.String).Value
 
-	return vm.push(nativeBoolToBooleanObject(leftValue == rightValue))
+	switch op {
+	case code.OpEqual:
+		return vm.push(nativeBoolToBooleanObject(leftValue == rightValue))
+	case code.OpNotEqual:
+		return vm.push(nativeBoolToBooleanObject(leftValue != rightValue))
+	default:
+		return fmt.Errorf("unknown string operator: %d", op)
+	}
 }
 
 func (vm *VM) executeIntegerComparison(op code.Opcode, left, right object.Object) error {

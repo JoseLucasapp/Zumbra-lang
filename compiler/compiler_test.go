@@ -1130,3 +1130,43 @@ func TestImportStatementIsOnlyCompiledOnceAcrossSharedCompilerState(t *testing.T
 		t.Fatalf("module was compiled twice; expected symbol index 0, got=%d", symbol.Index)
 	}
 }
+
+func TestResolveShadowedLocalOverGlobal(t *testing.T) {
+	global := NewSymbolTable()
+	global.Define("x")
+
+	local := NewEnclosedSymbolTable(global)
+	symbol := local.Define("x")
+
+	if symbol.Scope != LocalScope {
+		t.Fatalf("shadowed symbol scope wrong. got=%s", symbol.Scope)
+	}
+
+	if symbol.Index != 0 {
+		t.Fatalf("shadowed symbol index wrong. got=%d", symbol.Index)
+	}
+
+	resolved, ok := local.Resolve("x")
+	if !ok {
+		t.Fatalf("name x not resolvable in local scope")
+	}
+
+	if resolved.Scope != LocalScope {
+		t.Fatalf("resolved shadowed symbol wrong scope. got=%s", resolved.Scope)
+	}
+}
+
+func TestResolveOuterGlobalFromLocalScope(t *testing.T) {
+	global := NewSymbolTable()
+	expected := global.Define("x")
+
+	local := NewEnclosedSymbolTable(global)
+	resolved, ok := local.Resolve("x")
+	if !ok {
+		t.Fatalf("name x not resolvable from enclosed scope")
+	}
+
+	if resolved != expected {
+		t.Fatalf("resolved symbol wrong. want=%+v, got=%+v", expected, resolved)
+	}
+}

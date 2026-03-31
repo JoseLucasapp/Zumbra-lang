@@ -19,24 +19,45 @@ type Symbol struct {
 type SymbolTable struct {
 	Outer *SymbolTable
 
-	store          map[string]Symbol
-	numDefinitions int
-	FreeSymbols    []Symbol
+	store           map[string]Symbol
+	numDefinitions  int
+	FreeSymbols     []Symbol
+	isFunctionScope bool
 }
 
 func NewEnclosedSymbolTable(outer *SymbolTable) *SymbolTable {
-	s := &SymbolTable{
-		store:          make(map[string]Symbol),
-		Outer:          outer,
-		numDefinitions: 0,
+	return &SymbolTable{
+		store:           make(map[string]Symbol),
+		Outer:           outer,
+		numDefinitions:  0,
+		FreeSymbols:     []Symbol{},
+		isFunctionScope: true,
 	}
-	return s
+}
+
+func NewBlockSymbolTable(outer *SymbolTable) *SymbolTable {
+	numDefinitions := 0
+	if outer != nil {
+		numDefinitions = outer.numDefinitions
+	}
+
+	return &SymbolTable{
+		store:           make(map[string]Symbol),
+		Outer:           outer,
+		numDefinitions:  numDefinitions,
+		FreeSymbols:     []Symbol{},
+		isFunctionScope: false,
+	}
 }
 
 func NewSymbolTable() *SymbolTable {
 	s := make(map[string]Symbol)
 	free := []Symbol{}
-	return &SymbolTable{store: s, FreeSymbols: free}
+	return &SymbolTable{
+		store:           s,
+		FreeSymbols:     free,
+		isFunctionScope: false,
+	}
 }
 
 func (s *SymbolTable) Define(name string) Symbol {
@@ -55,20 +76,29 @@ func (s *SymbolTable) Define(name string) Symbol {
 
 func (s *SymbolTable) Resolve(name string) (Symbol, bool) {
 	obj, ok := s.store[name]
-	if !ok && s.Outer != nil {
-		obj, ok = s.Outer.Resolve(name)
-		if !ok {
-			return obj, ok
-		}
+	if ok {
+		return obj, true
+	}
 
-		if obj.Scope == GlobalScope || obj.Scope == BuiltinScope {
-			return obj, ok
-		}
+	if s.Outer == nil {
+		return obj, false
+	}
 
+	obj, ok = s.Outer.Resolve(name)
+	if !ok {
+		return obj, false
+	}
+
+	if obj.Scope == GlobalScope || obj.Scope == BuiltinScope {
+		return obj, true
+	}
+
+	if s.isFunctionScope {
 		free := s.DefineFree(obj)
 		return free, true
 	}
-	return obj, ok
+
+	return obj, true
 }
 
 func (s *SymbolTable) DefineBuiltin(index int, name string) Symbol {
