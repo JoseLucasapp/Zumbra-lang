@@ -21,6 +21,11 @@ type CompilationScope struct {
 	previousInstruction EmittedInstruction
 }
 
+type LoopContext struct {
+	breakPositions    []int
+	continuePositions []int
+}
+
 type Compiler struct {
 	constants           []object.Object
 	previousInstruction EmittedInstruction
@@ -28,8 +33,10 @@ type Compiler struct {
 	scopes              []CompilationScope
 	scopeIndex          int
 	importedFiles       map[string]bool
+	importingFiles      map[string]bool
 	currentDir          string
 	errorTempCounter    int
+	loopStack           []LoopContext
 }
 
 func New() *Compiler {
@@ -93,8 +100,10 @@ func newCompilerWithState(
 		scopes:           []CompilationScope{mainScope},
 		scopeIndex:       0,
 		importedFiles:    importedFiles,
+		importingFiles:   map[string]bool{},
 		currentDir:       baseDir,
 		errorTempCounter: 0,
+		loopStack:        []LoopContext{},
 	}
 }
 
@@ -246,12 +255,7 @@ func (c *Compiler) Compile(node ast.Node) error {
 		c.changeOperand(jumpPos, afterAlternativePos)
 
 	case *ast.BlockStatement:
-		for _, statement := range node.Statements {
-			err := c.Compile(statement)
-			if err != nil {
-				return err
-			}
-		}
+		return c.compileBlockWithScope(node)
 
 	case *ast.VarStatement:
 		symbol := c.symbolTable.Define(node.Name.Value)
@@ -481,6 +485,20 @@ func (c *Compiler) Compile(node ast.Node) error {
 	case *ast.ImportStatement:
 		return c.compileImport(node)
 
+	case *ast.BreakExpression:
+		if !c.inLoop() {
+			return fmt.Errorf("break outside loop")
+		}
+		pos := c.emit(code.OpJump, 9999)
+		c.registerBreak(pos)
+
+	case *ast.ContinueExpression:
+		if !c.inLoop() {
+			return fmt.Errorf("continue outside loop")
+		}
+		pos := c.emit(code.OpJump, 9999)
+		c.registerContinue(pos)
+
 	case *ast.AttributeAccess:
 		if err := c.Compile(node.Object); err != nil {
 			return err
@@ -644,6 +662,42 @@ func (c *Compiler) lastInstructionLeavesValue() bool {
 	}
 }
 
+func (c *Compiler) enterLoop() {
+	c.loopStack = append(c.loopStack, LoopContext{})
+}
+
+func (c *Compiler) leaveLoop() LoopContext {
+	last := c.loopStack[len(c.loopStack)-1]
+	c.loopStack = c.loopStack[:len(c.loopStack)-1]
+	return last
+}
+
+func (c *Compiler) inLoop() bool {
+	return len(c.loopStack) > 0
+}
+
+func (c *Compiler) registerBreak(pos int) {
+	idx := len(c.loopStack) - 1
+	c.loopStack[idx].breakPositions = append(c.loopStack[idx].breakPositions, pos)
+}
+
+func (c *Compiler) registerContinue(pos int) {
+	idx := len(c.loopStack) - 1
+	c.loopStack[idx].continuePositions = append(c.loopStack[idx].continuePositions, pos)
+}
+
+func (c *Compiler) patchLoopBreaks(ctx LoopContext, target int) {
+	for _, pos := range ctx.breakPositions {
+		c.changeOperand(pos, target)
+	}
+}
+
+func (c *Compiler) patchLoopContinues(ctx LoopContext, target int) {
+	for _, pos := range ctx.continuePositions {
+		c.changeOperand(pos, target)
+	}
+}
+
 func (c *Compiler) lastInstructionIs(op code.Opcode) bool {
 	if len(c.currentInstructions()) == 0 {
 		return false
@@ -683,14 +737,20 @@ func (c *Compiler) compileWhile(stmt *ast.WhileStatement) error {
 
 	jumpNotTruthyPos := c.emit(code.OpJumpNotTruthy, 9999)
 
+	c.enterLoop()
+
 	if err := c.compileBlockWithScope(stmt.Body); err != nil {
 		return err
 	}
+
+	ctx := c.leaveLoop()
+	c.patchLoopContinues(ctx, loopStartPos)
 
 	c.emit(code.OpJump, loopStartPos)
 
 	afterLoopPos := len(c.currentInstructions())
 	c.changeOperand(jumpNotTruthyPos, afterLoopPos)
+	c.patchLoopBreaks(ctx, afterLoopPos)
 
 	return nil
 }
@@ -730,6 +790,9 @@ func (c *Compiler) compileImport(stmt *ast.ImportStatement) (err error) {
 	if c.importedFiles == nil {
 		c.importedFiles = make(map[string]bool)
 	}
+	if c.importingFiles == nil {
+		c.importingFiles = make(map[string]bool)
+	}
 
 	importFullPath := path
 	if !filepath.IsAbs(importFullPath) {
@@ -745,12 +808,12 @@ func (c *Compiler) compileImport(stmt *ast.ImportStatement) (err error) {
 		return nil
 	}
 
-	c.importedFiles[importFullPath] = true
-	defer func() {
-		if err != nil {
-			delete(c.importedFiles, importFullPath)
-		}
-	}()
+	if c.importingFiles[importFullPath] {
+		return fmt.Errorf("cyclic import detected: %s", path)
+	}
+
+	c.importingFiles[importFullPath] = true
+	defer delete(c.importingFiles, importFullPath)
 
 	content, err := os.ReadFile(importFullPath)
 	if err != nil {
@@ -779,6 +842,7 @@ func (c *Compiler) compileImport(stmt *ast.ImportStatement) (err error) {
 		return fmt.Errorf("could not compile imported file %s: %w", path, err)
 	}
 
+	c.importedFiles[importFullPath] = true
 	return nil
 }
 
@@ -970,6 +1034,18 @@ func (c *Compiler) compileForEachDotRange(node *ast.ForEachDotRange) error {
 		},
 	}
 
+	if err := c.Compile(iterVarStmt); err != nil {
+		return err
+	}
+	if err := c.Compile(endVarStmt); err != nil {
+		return err
+	}
+	if err := c.Compile(loopVarStmt); err != nil {
+		return err
+	}
+
+	loopStartPos := len(c.currentInstructions())
+
 	cond := &ast.InfixExpression{
 		Token: dummyTok,
 		Left: &ast.Identifier{
@@ -983,6 +1059,12 @@ func (c *Compiler) compileForEachDotRange(node *ast.ForEachDotRange) error {
 		},
 	}
 
+	if err := c.Compile(cond); err != nil {
+		return err
+	}
+
+	jumpNotTruthyPos := c.emit(code.OpJumpNotTruthy, 9999)
+
 	assignLoopVar := &ast.AssignStatement{
 		Token: dummyTok,
 		Name: &ast.Identifier{
@@ -994,6 +1076,33 @@ func (c *Compiler) compileForEachDotRange(node *ast.ForEachDotRange) error {
 			Value: iterName,
 		},
 	}
+
+	if err := c.Compile(assignLoopVar); err != nil {
+		return err
+	}
+
+	c.enterLoop()
+
+	if node.Cond != nil {
+		if err := c.Compile(node.Cond); err != nil {
+			return err
+		}
+
+		skipBodyPos := c.emit(code.OpJumpNotTruthy, 9999)
+
+		if err := c.compileBlockWithScope(node.Block); err != nil {
+			return err
+		}
+
+		afterBodyPos := len(c.currentInstructions())
+		c.changeOperand(skipBodyPos, afterBodyPos)
+	} else {
+		if err := c.compileBlockWithScope(node.Block); err != nil {
+			return err
+		}
+	}
+
+	continueTargetPos := len(c.currentInstructions())
 
 	inc := &ast.AssignStatement{
 		Token: dummyTok,
@@ -1015,58 +1124,221 @@ func (c *Compiler) compileForEachDotRange(node *ast.ForEachDotRange) error {
 		},
 	}
 
-	var loopBodyStatements []ast.Statement
-	loopBodyStatements = append(loopBodyStatements, assignLoopVar)
-
-	if node.Cond != nil {
-		ifExpr := &ast.IfExpression{
-			Token:       dummyTok,
-			Condition:   node.Cond,
-			Consequence: node.Block,
-			Alternative: nil,
-		}
-
-		loopBodyStatements = append(loopBodyStatements, &ast.ExpressionStatement{
-			Token:      dummyTok,
-			Expression: ifExpr,
-		})
-	} else {
-		loopBodyStatements = append(loopBodyStatements, node.Block.Statements...)
-	}
-
-	loopBodyStatements = append(loopBodyStatements, inc)
-
-	whileStmt := &ast.WhileStatement{
-		Token:     dummyTok,
-		Condition: cond,
-		Body: &ast.BlockStatement{
-			Token:      dummyTok,
-			Statements: loopBodyStatements,
-		},
-	}
-
-	if err := c.Compile(iterVarStmt); err != nil {
+	if err := c.Compile(inc); err != nil {
 		return err
 	}
-	if err := c.Compile(endVarStmt); err != nil {
-		return err
-	}
-	if err := c.Compile(loopVarStmt); err != nil {
-		return err
-	}
-	if err := c.Compile(whileStmt); err != nil {
-		return err
-	}
+
+	ctx := c.leaveLoop()
+	c.patchLoopContinues(ctx, continueTargetPos)
+
+	c.emit(code.OpJump, loopStartPos)
+
+	afterLoopPos := len(c.currentInstructions())
+	c.changeOperand(jumpNotTruthyPos, afterLoopPos)
+	c.patchLoopBreaks(ctx, afterLoopPos)
 
 	return nil
 }
 
 func (c *Compiler) compileForEachMapLoop(node *ast.ForEachMapLoop) error {
-	if err := c.Compile(node.X); err != nil {
+	dummyTok := token.Token{}
+
+	keysName := "__z_for_keys_" + node.Key
+	idxName := "__z_for_idx_" + node.Key
+
+	keysVarStmt := &ast.VarStatement{
+		Token: dummyTok,
+		Name: &ast.Identifier{
+			Token: dummyTok,
+			Value: keysName,
+		},
+		Value: &ast.CallExpression{
+			Token: dummyTok,
+			Function: &ast.Identifier{
+				Token: dummyTok,
+				Value: "dictKeys",
+			},
+			Arguments: []ast.Expression{node.X},
+		},
+	}
+
+	idxVarStmt := &ast.VarStatement{
+		Token: dummyTok,
+		Name: &ast.Identifier{
+			Token: dummyTok,
+			Value: idxName,
+		},
+		Value: &ast.IntegerLiteral{
+			Token: dummyTok,
+			Value: 0,
+		},
+	}
+
+	keyVarStmt := &ast.VarStatement{
+		Token: dummyTok,
+		Name: &ast.Identifier{
+			Token: dummyTok,
+			Value: node.Key,
+		},
+		Value: &ast.StringLiteral{
+			Token: dummyTok,
+			Value: "",
+		},
+	}
+
+	valueVarStmt := &ast.VarStatement{
+		Token: dummyTok,
+		Name: &ast.Identifier{
+			Token: dummyTok,
+			Value: node.Value,
+		},
+		Value: &ast.IntegerLiteral{
+			Token: dummyTok,
+			Value: 0,
+		},
+	}
+
+	if err := c.Compile(keysVarStmt); err != nil {
+		return err
+	}
+	if err := c.Compile(idxVarStmt); err != nil {
+		return err
+	}
+	if err := c.Compile(keyVarStmt); err != nil {
+		return err
+	}
+	if err := c.Compile(valueVarStmt); err != nil {
 		return err
 	}
 
-	c.emit(code.OpNull)
+	loopStartPos := len(c.currentInstructions())
+
+	cond := &ast.InfixExpression{
+		Token: dummyTok,
+		Left: &ast.Identifier{
+			Token: dummyTok,
+			Value: idxName,
+		},
+		Operator: "<",
+		Right: &ast.CallExpression{
+			Token: dummyTok,
+			Function: &ast.Identifier{
+				Token: dummyTok,
+				Value: "sizeOf",
+			},
+			Arguments: []ast.Expression{
+				&ast.Identifier{
+					Token: dummyTok,
+					Value: keysName,
+				},
+			},
+		},
+	}
+
+	if err := c.Compile(cond); err != nil {
+		return err
+	}
+
+	jumpNotTruthyPos := c.emit(code.OpJumpNotTruthy, 9999)
+
+	assignKey := &ast.AssignStatement{
+		Token: dummyTok,
+		Name: &ast.Identifier{
+			Token: dummyTok,
+			Value: node.Key,
+		},
+		Value: &ast.IndexExpression{
+			Token: dummyTok,
+			Left: &ast.Identifier{
+				Token: dummyTok,
+				Value: keysName,
+			},
+			Index: &ast.Identifier{
+				Token: dummyTok,
+				Value: idxName,
+			},
+		},
+	}
+
+	assignValue := &ast.AssignStatement{
+		Token: dummyTok,
+		Name: &ast.Identifier{
+			Token: dummyTok,
+			Value: node.Value,
+		},
+		Value: &ast.IndexExpression{
+			Token: dummyTok,
+			Left:  node.X,
+			Index: &ast.Identifier{
+				Token: dummyTok,
+				Value: node.Key,
+			},
+		},
+	}
+
+	if err := c.Compile(assignKey); err != nil {
+		return err
+	}
+	if err := c.Compile(assignValue); err != nil {
+		return err
+	}
+
+	c.enterLoop()
+
+	if node.Cond != nil {
+		if err := c.Compile(node.Cond); err != nil {
+			return err
+		}
+
+		skipBodyPos := c.emit(code.OpJumpNotTruthy, 9999)
+
+		if err := c.compileBlockWithScope(node.Block); err != nil {
+			return err
+		}
+
+		afterBodyPos := len(c.currentInstructions())
+		c.changeOperand(skipBodyPos, afterBodyPos)
+	} else {
+		if err := c.compileBlockWithScope(node.Block); err != nil {
+			return err
+		}
+	}
+
+	continueTargetPos := len(c.currentInstructions())
+
+	inc := &ast.AssignStatement{
+		Token: dummyTok,
+		Name: &ast.Identifier{
+			Token: dummyTok,
+			Value: idxName,
+		},
+		Value: &ast.InfixExpression{
+			Token: dummyTok,
+			Left: &ast.Identifier{
+				Token: dummyTok,
+				Value: idxName,
+			},
+			Operator: "+",
+			Right: &ast.IntegerLiteral{
+				Token: dummyTok,
+				Value: 1,
+			},
+		},
+	}
+
+	if err := c.Compile(inc); err != nil {
+		return err
+	}
+
+	ctx := c.leaveLoop()
+	c.patchLoopContinues(ctx, continueTargetPos)
+
+	c.emit(code.OpJump, loopStartPos)
+
+	afterLoopPos := len(c.currentInstructions())
+	c.changeOperand(jumpNotTruthyPos, afterLoopPos)
+	c.patchLoopBreaks(ctx, afterLoopPos)
+
 	return nil
 }
 
@@ -1094,11 +1366,20 @@ func (c *Compiler) compileCStyleForLoop(node *ast.ForLoop) error {
 func (c *Compiler) compileForeverLoop(node *ast.ForEverLoop) error {
 	loopStartPos := len(c.currentInstructions())
 
+	c.enterLoop()
+
 	if err := c.compileBlockWithScope(node.Block); err != nil {
 		return err
 	}
 
+	ctx := c.leaveLoop()
+	c.patchLoopContinues(ctx, loopStartPos)
+
 	c.emit(code.OpJump, loopStartPos)
+
+	afterLoopPos := len(c.currentInstructions())
+	c.patchLoopBreaks(ctx, afterLoopPos)
+
 	return nil
 }
 

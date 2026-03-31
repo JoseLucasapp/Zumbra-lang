@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 	"zumbra/ast"
 	"zumbra/code"
@@ -1168,5 +1169,43 @@ func TestResolveOuterGlobalFromLocalScope(t *testing.T) {
 
 	if resolved != expected {
 		t.Fatalf("resolved symbol wrong. want=%+v, got=%+v", expected, resolved)
+	}
+}
+
+func TestCompilerImportCycleDetection(t *testing.T) {
+	dir := t.TempDir()
+
+	err := os.WriteFile(filepath.Join(dir, "a.zum"), []byte(`
+import "b.zum";
+var aValue << 1;
+`), 0o644)
+	if err != nil {
+		t.Fatalf("write a.zum failed: %s", err)
+	}
+
+	err = os.WriteFile(filepath.Join(dir, "b.zum"), []byte(`
+import "a.zum";
+var bValue << 2;
+`), 0o644)
+	if err != nil {
+		t.Fatalf("write b.zum failed: %s", err)
+	}
+
+	program := parse(`import "a.zum";`)
+
+	symbolTable := NewSymbolTable()
+	for i, v := range builtins.Builtins {
+		symbolTable.DefineBuiltin(i, v.Name)
+	}
+
+	comp := NewWithStateAndDir(symbolTable, []object.Object{}, dir)
+	err = comp.Compile(program)
+	if err == nil {
+		t.Fatalf("expected cyclic import compile error, got nil")
+	}
+
+	msg := err.Error()
+	if !strings.Contains(msg, "cyclic import") && !strings.Contains(msg, "import cycle") {
+		t.Fatalf("wrong cyclic import error: %q", msg)
 	}
 }

@@ -1,0 +1,2 @@
+import "nested_import_module.zum";
+nestedValue;
