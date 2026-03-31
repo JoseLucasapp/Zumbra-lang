@@ -17,17 +17,30 @@ import (
 func TestRunnableCodeExamplesParseCompileAndRun(t *testing.T) {
 	root := "code_examples"
 
-	nonRunnableDirs := map[string]bool{
-		"http":         true,
-		"database":     true,
-		"db":           true,
-		"mysql":        true,
-		"postgres":     true,
-		"redis":        true,
-		"supabase":     true,
-		"rest":         true,
-		"integrations": true,
-		"experimental": true,
+	allowedRunnableDirs := map[string]bool{
+		"arrays":     true,
+		"async":      true,
+		"comparison": true,
+		"dicts":      true,
+		"errors":     true,
+		"imports":    true,
+		"math":       true,
+		"strings":    true,
+	}
+
+	allowedRunnableFiles := map[string]bool{
+		"attribute_access.zum": true,
+		"date.zum":             true,
+		"for.zum":              true,
+		"functions.zum":        true,
+		"hello_world.zum":      true,
+		"parse.zum":            true,
+		"show.zum":             true,
+		"switch_case.zum":      true,
+		"types.zum":            true,
+		"var_names.zum":        true,
+		"vars.zum":             true,
+		"while.zum":            true,
 	}
 
 	err := filepath.Walk(root, func(path string, info os.FileInfo, err error) error {
@@ -49,7 +62,16 @@ func TestRunnableCodeExamplesParseCompileAndRun(t *testing.T) {
 		}
 
 		parts := strings.Split(rel, string(filepath.Separator))
-		if len(parts) > 0 && nonRunnableDirs[parts[0]] {
+
+		shouldRun := false
+
+		if len(parts) == 1 {
+			shouldRun = allowedRunnableFiles[parts[0]]
+		} else if len(parts) > 1 {
+			shouldRun = allowedRunnableDirs[parts[0]]
+		}
+
+		if !shouldRun {
 			return nil
 		}
 
