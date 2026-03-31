@@ -1221,3 +1221,319 @@ func TestErrorPropagationThroughFunction(t *testing.T) {
 		t.Fatalf("wrong error message. want=%q, got=%q", "boom", errObj.Message)
 	}
 }
+
+func TestAsyncAndAwaitSemantics(t *testing.T) {
+	tests := []vmTestCase{
+		{
+			input: `
+			var task << async fct() {
+				10;
+			};
+			await task();
+			`,
+			expected: 10,
+		},
+		{
+			input: `
+			var task << async fct() {
+				return 20;
+			};
+			await task();
+			`,
+			expected: 20,
+		},
+		{
+			input: `
+			var task << async fct() {
+				10 + 20;
+			};
+			await task();
+			`,
+			expected: 30,
+		},
+		{
+			input: `
+			var task << async fct(a, b) {
+				a + b;
+			};
+			await task(2, 3);
+			`,
+			expected: 5,
+		},
+		{
+			input: `
+			var task << async fct() {
+				10;
+			};
+			await task() + 5;
+			`,
+			expected: 15,
+		},
+	}
+
+	runVmTests(t, tests)
+}
+
+func TestAsyncErrorHandlingSemantics(t *testing.T) {
+	tests := []vmTestCase{
+		{
+			input: `
+			var task << async fct() {
+				error("boom");
+			};
+			try await task() or {
+				30;
+			};
+			`,
+			expected: 30,
+		},
+	}
+
+	runVmTests(t, tests)
+
+	input := `
+	var task << async fct() {
+		error("boom");
+	};
+	await task();
+	`
+
+	program := parse(input)
+
+	comp := compiler.New()
+	err := comp.Compile(program)
+	if err != nil {
+		t.Fatalf("compiler error: %s", err)
+	}
+
+	vm := New(comp.Bytecode())
+	err = vm.Run()
+	if err != nil {
+		t.Fatalf("vm error: %s", err)
+	}
+
+	stackElem := vm.LastPoppedStackElem()
+
+	errObj, ok := stackElem.(*object.Error)
+	if !ok {
+		t.Fatalf("object is not Error. got=%T (%+v)", stackElem, stackElem)
+	}
+
+	if errObj.Message != "boom" {
+		t.Fatalf("wrong error message. want=%q, got=%q", "boom", errObj.Message)
+	}
+}
+
+func TestArrayAndIndexSemantics(t *testing.T) {
+	tests := []vmTestCase{
+		{
+			input: `
+			var arr << [1, 2, 3];
+			arr[0];
+			`,
+			expected: 1,
+		},
+		{
+			input: `
+			var arr << [1, 2, 3];
+			arr[2];
+			`,
+			expected: 3,
+		},
+		{
+			input: `
+			var arr << [1, 2, 3];
+			arr[1] + arr[2];
+			`,
+			expected: 5,
+		},
+	}
+
+	runVmTests(t, tests)
+}
+
+func TestDictAndIndexSemantics(t *testing.T) {
+	tests := []vmTestCase{
+		{
+			input: `
+			var user << {"name": "Lucas", "age": 25};
+			user["name"];
+			`,
+			expected: "Lucas",
+		},
+		{
+			input: `
+			var user << {"name": "Lucas", "age": 25};
+			user["age"];
+			`,
+			expected: 25,
+		},
+	}
+
+	runVmTests(t, tests)
+}
+
+func TestAttributeAccessSemantics(t *testing.T) {
+	tests := []vmTestCase{
+		{
+			input: `
+			var user << {"name": "Lucas", "age": 25};
+			user.name;
+			`,
+			expected: "Lucas",
+		},
+		{
+			input: `
+			var user << {"profile": {"name": "Lucas"}};
+			user.profile.name;
+			`,
+			expected: "Lucas",
+		},
+		{
+			input: `
+			var user << {"profile": {"name": "Lucas"}};
+			user["profile"]["name"];
+			`,
+			expected: "Lucas",
+		},
+	}
+
+	runVmTests(t, tests)
+}
+
+func TestMixedAccessSemantics(t *testing.T) {
+	tests := []vmTestCase{
+		{
+			input: `
+			var user << {"profile": {"name": "Lucas"}};
+			user.profile["name"];
+			`,
+			expected: "Lucas",
+		},
+		{
+			input: `
+			var user << {"items": [{"name": "a"}, {"name": "b"}]};
+			user.items[1].name;
+			`,
+			expected: "b",
+		},
+	}
+
+	runVmTests(t, tests)
+}
+
+func TestLoopBreakAndContinueSemantics(t *testing.T) {
+	tests := []vmTestCase{
+		{
+			input: `
+			var x << 0;
+			for i in 1..10 {
+				if (i == 4) {
+					break;
+				}
+				x << i;
+			}
+			x;
+			`,
+			expected: 3,
+		},
+		{
+			input: `
+			var x << 0;
+			for i in 1..5 {
+				if (i == 3) {
+					continue;
+				}
+				x << i;
+			}
+			x;
+			`,
+			expected: 5,
+		},
+		{
+			input: `
+			var done << false;
+			var x << 0;
+			for {
+				x << x + 1;
+				done << true;
+				if (done == true) {
+					break;
+				}
+			}
+			x;
+			`,
+			expected: 1,
+		},
+	}
+
+	runVmTests(t, tests)
+}
+
+func TestForArrayAndDictLoopSemantics(t *testing.T) {
+	tests := []vmTestCase{
+		{
+			input: `
+			var total << 0;
+			var arr << [1, 2, 3];
+			for item in arr {
+				total << total + item;
+			}
+			total;
+			`,
+			expected: 6,
+		},
+		{
+			input: `
+			var total << 0;
+			var dict << {"a": 1, "b": 2};
+			for key, value in dict {
+				total << total + value;
+			}
+			total;
+			`,
+			expected: 3,
+		},
+	}
+
+	runVmTests(t, tests)
+}
+
+func TestWhereLoopSemantics(t *testing.T) {
+	tests := []vmTestCase{
+		{
+			input: `
+			var total << 0;
+			for i in 1..5 where i > 2 {
+				total << total + i;
+			}
+			total;
+			`,
+			expected: 12,
+		},
+		{
+			input: `
+			var total << 0;
+			var arr << [1, 2, 3, 4];
+			for item in arr where item > 2 {
+				total << total + item;
+			}
+			total;
+			`,
+			expected: 7,
+		},
+		{
+			input: `
+			var total << 0;
+			var dict << {"a": 1, "b": 2, "c": 3};
+			for key, value in dict where value > 1 {
+				total << total + value;
+			}
+			total;
+			`,
+			expected: 5,
+		},
+	}
+
+	runVmTests(t, tests)
+}
