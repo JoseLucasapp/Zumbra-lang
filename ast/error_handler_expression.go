@@ -32,9 +32,11 @@ func (ehe *ErrorHandlerExpression) String() string {
 
 	out.WriteString(" ")
 
+	out.WriteString("{")
 	if ehe.Handler != nil {
 		out.WriteString(ehe.Handler.String())
 	}
+	out.WriteString("}")
 
 	return out.String()
 }
