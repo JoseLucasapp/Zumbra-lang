@@ -12,6 +12,8 @@ import (
 	"zumbra/object"
 	"zumbra/object/builtins"
 	"zumbra/parser"
+	"zumbra/semantic"
+	"zumbra/types"
 	"zumbra/vm"
 )
 
@@ -33,6 +35,9 @@ func Start(in io.Reader, out io.Writer) {
 	for i, v := range builtins.Builtins {
 		symbolTable.DefineBuiltin(i, v.Name)
 	}
+
+	semanticResolver := semantic.NewResolver()
+	typeChecker := types.NewChecker()
 
 	builtins.SetRouteInvoker(func(handler object.Object, args ...object.Object) (object.Object, error) {
 		return vm.InvokeFunction(handler, args, constants, globals)
@@ -78,6 +83,18 @@ func Start(in io.Reader, out io.Writer) {
 			continue
 		}
 
+		_, semErrs := semantic.AnalyzeWithResolver(semanticResolver, program)
+		if len(semErrs) != 0 {
+			printSemanticErrors(out, semErrs)
+			continue
+		}
+
+		typeErrs := types.AnalyzeWithChecker(typeChecker, program)
+		if len(typeErrs) != 0 {
+			printTypeErrors(out, typeErrs)
+			continue
+		}
+
 		comp := compiler.NewWithStateAndDirAndImports(symbolTable, constants, baseDir, importedFiles)
 		err := comp.Compile(program)
 		if err != nil {
@@ -119,6 +136,24 @@ func printParserErrors(out io.Writer, errors []string) {
 	io.WriteString(out, "Parser errors:\n")
 	for _, msg := range errors {
 		io.WriteString(out, "\t"+msg+"\n")
+	}
+}
+
+func printSemanticErrors(out io.Writer, errors []error) {
+	io.WriteString(out, beer)
+	io.WriteString(out, "Woops! Semantic analysis found some issues here!\n")
+	io.WriteString(out, "Semantic errors:\n")
+	for _, err := range errors {
+		io.WriteString(out, "\t"+err.Error()+"\n")
+	}
+}
+
+func printTypeErrors(out io.Writer, errors []error) {
+	io.WriteString(out, beer)
+	io.WriteString(out, "Woops! Type checking found some issues here!\n")
+	io.WriteString(out, "Type errors:\n")
+	for _, err := range errors {
+		io.WriteString(out, "\t"+err.Error()+"\n")
 	}
 }
 

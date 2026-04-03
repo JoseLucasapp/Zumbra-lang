@@ -13,11 +13,13 @@ import (
 	"zumbra/object/builtins"
 	"zumbra/parser"
 	"zumbra/repl"
+	"zumbra/semantic"
 	"zumbra/transpiler"
+	"zumbra/types"
 	"zumbra/vm"
 )
 
-const version = "0.1.0"
+const version = "0.1.4"
 
 func main() {
 	currentUser, err := user.Current()
@@ -105,6 +107,24 @@ func runFile(filename string) {
 		fmt.Printf("Parsing errors in %s:\n", filename)
 		for _, msg := range p.Errors() {
 			fmt.Println("\t" + msg)
+		}
+		return
+	}
+
+	_, semErrs := semantic.Analyze(program)
+	if len(semErrs) != 0 {
+		fmt.Printf("Semantic errors in %s:\n", filename)
+		for _, err := range semErrs {
+			fmt.Println("\t" + err.Error())
+		}
+		return
+	}
+
+	typeErrs := types.Analyze(program)
+	if len(typeErrs) != 0 {
+		fmt.Printf("Type errors in %s:\n", filename)
+		for _, err := range typeErrs {
+			fmt.Println("\t" + err.Error())
 		}
 		return
 	}
