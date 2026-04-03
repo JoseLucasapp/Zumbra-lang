@@ -1,6 +1,7 @@
 package compiler
 
 import (
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -25,7 +26,6 @@ type LoopContext struct {
 	breakPositions    []int
 	continuePositions []int
 }
-
 type Compiler struct {
 	constants           []object.Object
 	previousInstruction EmittedInstruction
@@ -37,6 +37,7 @@ type Compiler struct {
 	currentDir          string
 	errorTempCounter    int
 	loopStack           []LoopContext
+	warnings            []Diagnostic
 }
 
 func New() *Compiler {
@@ -104,6 +105,7 @@ func newCompilerWithState(
 		currentDir:       baseDir,
 		errorTempCounter: 0,
 		loopStack:        []LoopContext{},
+		warnings:         []Diagnostic{},
 	}
 }
 
@@ -111,8 +113,19 @@ func (c *Compiler) Compile(node ast.Node) error {
 
 	switch node := node.(type) {
 	case *ast.Program:
-		for _, statement := range node.Statements {
-			err := c.Compile(statement)
+		if c.scopeIndex == 0 {
+			arityErrors := ValidateProgramArity(node)
+			for _, d := range arityErrors {
+				if d.Severity == DiagnosticError {
+					return errors.New(d.Message)
+				}
+			}
+
+			c.warnings = append(c.warnings, AnalyzeProgram(node)...)
+		}
+
+		for _, s := range node.Statements {
+			err := c.Compile(s)
 			if err != nil {
 				return err
 			}
@@ -522,6 +535,10 @@ func (c *Compiler) Bytecode() *Bytecode {
 type Bytecode struct {
 	Instructions code.Instructions
 	Constants    []object.Object
+}
+
+func (c *Compiler) Warnings() []Diagnostic {
+	return c.warnings
 }
 
 func (c *Compiler) addConstant(obj object.Object) int {

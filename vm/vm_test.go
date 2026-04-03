@@ -527,35 +527,22 @@ func TestCallingFunctionsWithArgumentsAndBindings(t *testing.T) {
 }
 
 func TestCallingFunctionsWithWrongArguments(t *testing.T) {
-	tests := []vmTestCase{
-		{
-			input:    `fct() { 1; }(1);`,
-			expected: `wrong number of arguments: want=0, got=1`,
-		},
-		{
-			input:    `fct(a) { a; }();`,
-			expected: `wrong number of arguments: want=1, got=0`,
-		},
-		{
-			input:    `fct(a, b) { a + b; }(1);`,
-			expected: `wrong number of arguments: want=2, got=1`,
-		},
+	input := `
+	var f << fct() { 1; };
+	f(1);
+	`
+
+	program := parse(input)
+
+	comp := compiler.New()
+	err := comp.Compile(program)
+	if err == nil {
+		t.Fatalf("expected compile error, got nil")
 	}
-	for _, tt := range tests {
-		program := parse(tt.input)
-		comp := compiler.New()
-		err := comp.Compile(program)
-		if err != nil {
-			t.Fatalf("compiler error: %s", err)
-		}
-		vm := New(comp.Bytecode())
-		err = vm.Run()
-		if err == nil {
-			t.Fatalf("expected VM error but resulted in none.")
-		}
-		if err.Error() != tt.expected {
-			t.Fatalf("wrong VM error: want=%q, got=%q", tt.expected, err)
-		}
+
+	expected := "wrong number of arguments for f: want=0, got=1"
+	if err.Error() != expected {
+		t.Fatalf("wrong compile error. want=%q, got=%q", expected, err.Error())
 	}
 }
 

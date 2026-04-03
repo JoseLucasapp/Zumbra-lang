@@ -405,6 +405,58 @@ func TestOperatorPrecedenceParsing(t *testing.T) {
 			"add(a * b[2], b[1], 2 * [1, 2][1])",
 			"add((a * (b[2])), (b[1]), (2 * ([1, 2][1])))",
 		},
+		{
+			"await task()",
+			"await task()",
+		},
+		{
+			"try call()",
+			"try call()",
+		},
+		{
+			"await a.b(c)[0]",
+			"await a.b(c)[0]",
+		},
+		{
+			"try req.params[\"id\"]",
+			"try req.params[id]",
+		},
+		{
+			"result or { return; }",
+			"result or {return;}",
+		},
+		{
+			"await task() or { return; }",
+			"await task() or {return;}",
+		},
+		{
+			"try call() or err { return err; }",
+			"try call() or err {return err;}",
+		},
+		{
+			"user.profile.name",
+			"user.profile.name",
+		},
+		{
+			"user.profile.getName()",
+			"user.profile.getName()",
+		},
+		{
+			"req.params[\"id\"].len()",
+			"req.params[id].len()",
+		},
+		{
+			"service.findUser(id).profile.name",
+			"service.findUser(id).profile.name",
+		},
+		{
+			"arr[0].name",
+			"arr[0].name",
+		},
+		{
+			"obj.method()[1].field",
+			"obj.method()[1].field",
+		},
 	}
 
 	for _, tt := range tests {
@@ -1260,5 +1312,90 @@ func TestRangeForExpression(t *testing.T) {
 	_, ok := stmt.Expression.(*ast.ForEachDotRange)
 	if !ok {
 		t.Fatalf("expression is not *ast.ForEachDotRange. got=%T", stmt.Expression)
+	}
+}
+
+func TestChainedAttributeCallIndexAccess(t *testing.T) {
+	input := `obj.method()[1].field;`
+
+	l := lexer.New(input)
+	p := New(l)
+	program := p.ParseProgram()
+	checkParserErrors(t, p)
+
+	stmt := program.Statements[0].(*ast.ExpressionStatement)
+
+	outerAttr, ok := stmt.Expression.(*ast.AttributeAccess)
+	if !ok {
+		t.Fatalf("expression is not *ast.AttributeAccess. got=%T", stmt.Expression)
+	}
+
+	if outerAttr.Property.Value != "field" {
+		t.Fatalf("expected property field, got=%q", outerAttr.Property.Value)
+	}
+
+	indexExp, ok := outerAttr.Object.(*ast.IndexExpression)
+	if !ok {
+		t.Fatalf("object is not *ast.IndexExpression. got=%T", outerAttr.Object)
+	}
+
+	callExp, ok := indexExp.Left.(*ast.CallExpression)
+	if !ok {
+		t.Fatalf("index left is not *ast.CallExpression. got=%T", indexExp.Left)
+	}
+
+	attrExp, ok := callExp.Function.(*ast.AttributeAccess)
+	if !ok {
+		t.Fatalf("call function is not *ast.AttributeAccess. got=%T", callExp.Function)
+	}
+
+	if attrExp.Property.Value != "method" {
+		t.Fatalf("expected property method, got=%q", attrExp.Property.Value)
+	}
+}
+
+func TestAwaitOverChainedExpression(t *testing.T) {
+	input := `await service.findUser(id).profile.name;`
+
+	l := lexer.New(input)
+	p := New(l)
+	program := p.ParseProgram()
+	checkParserErrors(t, p)
+
+	stmt := program.Statements[0].(*ast.ExpressionStatement)
+
+	awaitExp, ok := stmt.Expression.(*ast.AwaitExpression)
+	if !ok {
+		t.Fatalf("expression is not *ast.AwaitExpression. got=%T", stmt.Expression)
+	}
+
+	_, ok = awaitExp.Value.(*ast.AttributeAccess)
+	if !ok {
+		t.Fatalf("await value is not *ast.AttributeAccess. got=%T", awaitExp.Value)
+	}
+}
+
+func TestTryExpressionWithOrHandler(t *testing.T) {
+	input := `try call() or err { return err; };`
+
+	l := lexer.New(input)
+	p := New(l)
+	program := p.ParseProgram()
+	checkParserErrors(t, p)
+
+	stmt := program.Statements[0].(*ast.ExpressionStatement)
+
+	handler, ok := stmt.Expression.(*ast.ErrorHandlerExpression)
+	if !ok {
+		t.Fatalf("expression is not *ast.ErrorHandlerExpression. got=%T", stmt.Expression)
+	}
+
+	_, ok = handler.Left.(*ast.TryExpression)
+	if !ok {
+		t.Fatalf("handler.Left is not *ast.TryExpression. got=%T", handler.Left)
+	}
+
+	if handler.ErrorIdent == nil || handler.ErrorIdent.Value != "err" {
+		t.Fatalf("expected err identifier")
 	}
 }

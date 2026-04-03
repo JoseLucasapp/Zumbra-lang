@@ -267,7 +267,13 @@ func (p *Parser) expectPeek(t token.TokenType) bool {
 }
 
 func (p *Parser) peekError(t token.TokenType) {
-	msg := fmt.Sprintf("expected next token to be %s, got %s instead", t, p.peekToken.Type)
+	msg := fmt.Sprintf(
+		"expected next token to be %s, got %s at line %d, col %d",
+		t,
+		p.tokenDebugString(p.peekToken),
+		p.peekToken.Pos.Line,
+		p.peekToken.Pos.Col,
+	)
 	p.errors = append(p.errors, msg)
 }
 
@@ -413,7 +419,12 @@ func (p *Parser) parseIntegerLiteral() ast.Expression {
 }
 
 func (p *Parser) noPrefixParseFctError(t token.TokenType) {
-	msg := fmt.Sprintf("no prefix parse function for %s found", t)
+	msg := fmt.Sprintf(
+		"no prefix parse function for %s at line %d, col %d",
+		p.tokenDebugString(p.curToken),
+		p.curToken.Pos.Line,
+		p.curToken.Pos.Col,
+	)
 	p.errors = append(p.errors, msg)
 }
 
@@ -595,12 +606,21 @@ func (p *Parser) parseExpressionList(end token.TokenType) []ast.Expression {
 	}
 
 	p.nextToken()
-	list = append(list, p.parseExpression(LOWEST))
+	first := p.parseExpression(LOWEST)
+	if first == nil {
+		return nil
+	}
+	list = append(list, first)
 
 	for p.peekTokenIs(token.COMMA) {
 		p.nextToken()
 		p.nextToken()
-		list = append(list, p.parseExpression(LOWEST))
+
+		exp := p.parseExpression(LOWEST)
+		if exp == nil {
+			return nil
+		}
+		list = append(list, exp)
 	}
 
 	if !p.expectPeek(end) {
@@ -901,4 +921,11 @@ func (p *Parser) parseContinueExpression() ast.Expression {
 
 func (p *Parser) peekSecondTokenIs(t token.TokenType) bool {
 	return p.peekToken2.Type == t
+}
+
+func (p *Parser) tokenDebugString(tok token.Token) string {
+	if tok.Literal == "" {
+		return string(tok.Type)
+	}
+	return fmt.Sprintf("%s(%q)", tok.Type, tok.Literal)
 }
