@@ -129,6 +129,22 @@ func mergeTypes(current *Type, wanted *Type) *Type {
 	return Simple(Unknown)
 }
 
+func unifyReturnTypes(left *Type, right *Type) *Type {
+	if left == nil {
+		return right
+	}
+	if right == nil {
+		return left
+	}
+	if left.Kind == Unknown || right.Kind == Unknown {
+		return Simple(Unknown)
+	}
+	if Same(left, right) {
+		return left
+	}
+	return Simple(Unknown)
+}
+
 func (c *Checker) constrainIdentifier(expr ast.Expression, wanted *Type) {
 	id, ok := isIdentifierUnknownParam(expr)
 	if !ok || wanted == nil {
@@ -206,6 +222,35 @@ func (c *Checker) checkWhileStatement(stmt *ast.WhileStatement) {
 	}
 }
 
+func (c *Checker) inferSingleStatementReturnType(stmt ast.Statement) *Type {
+	switch s := stmt.(type) {
+	case *ast.ReturnStatement:
+		if s.ReturnValue == nil {
+			return Simple(Null)
+		}
+		return c.inferExpression(s.ReturnValue)
+
+	case *ast.ExpressionStatement:
+		if s.Expression == nil {
+			return nil
+		}
+
+		if ifExpr, ok := s.Expression.(*ast.IfExpression); ok {
+			return c.inferIfReturnType(ifExpr)
+		}
+
+		c.inferExpression(s.Expression)
+		return nil
+
+	case *ast.VarStatement, *ast.AssignStatement, *ast.WhileStatement:
+		c.checkStatement(stmt)
+		return nil
+	}
+
+	c.checkStatement(stmt)
+	return nil
+}
+
 func (c *Checker) inferBlockReturnType(block *ast.BlockStatement) *Type {
 	if block == nil {
 		return Simple(Unknown)
@@ -213,30 +258,24 @@ func (c *Checker) inferBlockReturnType(block *ast.BlockStatement) *Type {
 
 	var inferred *Type
 	for _, stmt := range block.Statements {
-		switch s := stmt.(type) {
-		case *ast.ReturnStatement:
-			current := Simple(Null)
-			if s.ReturnValue != nil {
-				current = c.inferExpression(s.ReturnValue)
-			}
+		current := c.inferSingleStatementReturnType(stmt)
+		if current == nil {
+			continue
+		}
 
-			if inferred == nil {
-				inferred = current
-				continue
-			}
+		if inferred == nil {
+			inferred = current
+			continue
+		}
 
-			if inferred.Kind == Unknown || current.Kind == Unknown {
-				inferred = Simple(Unknown)
-				continue
-			}
+		if inferred.Kind == Unknown || current.Kind == Unknown {
+			inferred = Simple(Unknown)
+			continue
+		}
 
-			if !Same(inferred, current) {
-				c.addError(fmt.Errorf("function has conflicting return types: %s and %s", inferred.Kind, current.Kind))
-				inferred = Simple(Unknown)
-			}
-
-		default:
-			c.checkStatement(stmt)
+		if !Same(inferred, current) {
+			c.addError(fmt.Errorf("function has conflicting return types: %s and %s", inferred.Kind, current.Kind))
+			inferred = Simple(Unknown)
 		}
 	}
 
@@ -273,8 +312,8 @@ func (c *Checker) checkBuiltinCall(name string, args []ast.Expression) *Type {
 			return Simple(Int)
 		}
 		argType := c.inferExpression(args[0])
-		if argType.Kind != Unknown && argType.Kind != Array && argType.Kind != String {
-			c.addError(fmt.Errorf("sizeOf expects array or string, got %s", argType.Kind))
+		if argType.Kind != Unknown && argType.Kind != Array && argType.Kind != String && argType.Kind != Dict {
+			c.addError(fmt.Errorf("sizeOf expects array, string or dict, got %s", argType.Kind))
 		}
 		return Simple(Int)
 
@@ -334,6 +373,95 @@ func (c *Checker) checkBuiltinCall(name string, args []ast.Expression) *Type {
 	return Simple(Unknown)
 }
 
+func (c *Checker) inferDictLiteral(e *ast.DictLiteral) *Type {
+	if len(e.Pairs) == 0 {
+		return DictOf(Simple(Unknown), Simple(Unknown))
+	}
+
+	var keyType *Type
+	var valueType *Type
+	keyHomogeneous := true
+	valueHomogeneous := true
+
+	for keyExpr, valueExpr := range e.Pairs {
+		currentKey := c.inferExpression(keyExpr)
+		currentValue := c.inferExpression(valueExpr)
+
+		if keyType == nil {
+			keyType = currentKey
+		} else if keyType.Kind == Unknown || currentKey.Kind == Unknown {
+			keyType = Simple(Unknown)
+		} else if !Same(keyType, currentKey) {
+			keyHomogeneous = false
+		}
+
+		if valueType == nil {
+			valueType = currentValue
+		} else if valueType.Kind == Unknown || currentValue.Kind == Unknown {
+			valueType = Simple(Unknown)
+		} else if !Same(valueType, currentValue) {
+			valueHomogeneous = false
+		}
+	}
+
+	if !keyHomogeneous {
+		c.addError(fmt.Errorf("dict literal has mixed key types"))
+		keyType = Simple(Unknown)
+	}
+
+	if !valueHomogeneous {
+		c.addError(fmt.Errorf("dict literal has mixed value types"))
+		valueType = Simple(Unknown)
+	}
+
+	if keyType == nil {
+		keyType = Simple(Unknown)
+	}
+	if valueType == nil {
+		valueType = Simple(Unknown)
+	}
+
+	return DictOf(keyType, valueType)
+}
+
+func (c *Checker) inferIfReturnType(e *ast.IfExpression) *Type {
+	if e == nil {
+		return nil
+	}
+
+	var consequenceType *Type
+	var alternativeType *Type
+
+	if e.Consequence != nil {
+		c.pushScope()
+		consequenceType = c.inferBlockReturnType(e.Consequence)
+		c.popScope()
+	}
+
+	if e.Alternative != nil {
+		c.pushScope()
+		alternativeType = c.inferBlockReturnType(e.Alternative)
+		c.popScope()
+	}
+
+	if consequenceType == nil && alternativeType == nil {
+		return nil
+	}
+	if consequenceType == nil {
+		return alternativeType
+	}
+	if alternativeType == nil {
+		return consequenceType
+	}
+
+	unified := unifyReturnTypes(consequenceType, alternativeType)
+	if unified.Kind == Unknown && consequenceType.Kind != Unknown && alternativeType.Kind != Unknown && !Same(consequenceType, alternativeType) {
+		c.addError(fmt.Errorf("function has conflicting return types: %s and %s", consequenceType.Kind, alternativeType.Kind))
+	}
+
+	return unified
+}
+
 func (c *Checker) inferExpression(exp ast.Expression) *Type {
 	switch e := exp.(type) {
 	case nil:
@@ -388,6 +516,9 @@ func (c *Checker) inferExpression(exp ast.Expression) *Type {
 
 		return ArrayOf(first)
 
+	case *ast.DictLiteral:
+		return c.inferDictLiteral(e)
+
 	case *ast.PrefixExpression:
 		if e.Right == nil {
 			return Simple(Unknown)
@@ -400,7 +531,6 @@ func (c *Checker) inferExpression(exp ast.Expression) *Type {
 
 		switch e.Operator {
 		case "+", "-", "*", "/":
-			// tenta restringir parâmetros unknown com base no contexto do operador
 			if e.Operator == "+" {
 				if left.Kind == String && right.Kind == Unknown {
 					c.constrainIdentifier(e.Right, Simple(String))
@@ -421,7 +551,6 @@ func (c *Checker) inferExpression(exp ast.Expression) *Type {
 				left = c.inferExpression(e.Left)
 			}
 
-			// se ambos ainda forem unknown, não erra cedo
 			if left.Kind == Unknown || right.Kind == Unknown {
 				return Simple(Unknown)
 			}
@@ -486,7 +615,6 @@ func (c *Checker) inferExpression(exp ast.Expression) *Type {
 			ret = c.inferBlockReturnType(e.Body)
 		}
 
-		// captura tipos possivelmente refinados dos parâmetros após analisar o corpo
 		refinedParams := make([]*Type, 0, len(e.Parameters))
 		for _, p := range e.Parameters {
 			if p == nil {
@@ -551,12 +679,28 @@ func (c *Checker) inferExpression(exp ast.Expression) *Type {
 		left := c.inferExpression(e.Left)
 		index := c.inferExpression(e.Index)
 
-		if index.Kind != Unknown && index.Kind != Int {
-			c.addError(fmt.Errorf("array index must be int, got %s", index.Kind))
+		if left.Kind == Array {
+			if index.Kind != Unknown && index.Kind != Int {
+				c.addError(fmt.Errorf("array index must be int, got %s", index.Kind))
+			}
+			if left.Elem != nil {
+				return left.Elem
+			}
+			return Simple(Unknown)
 		}
 
-		if left.Kind == Array && left.Elem != nil {
-			return left.Elem
+		if left.Kind == Dict {
+			if left.Key != nil && index.Kind != Unknown && left.Key.Kind != Unknown && !Same(left.Key, index) {
+				c.addError(fmt.Errorf("dict key expects %s, got %s", left.Key.Kind, index.Kind))
+			}
+			if left.Value != nil {
+				return left.Value
+			}
+			return Simple(Unknown)
+		}
+
+		if index.Kind != Unknown && index.Kind != Int {
+			c.addError(fmt.Errorf("array index must be int, got %s", index.Kind))
 		}
 		return Simple(Unknown)
 
@@ -566,6 +710,10 @@ func (c *Checker) inferExpression(exp ast.Expression) *Type {
 			if condType.Kind != Unknown && condType.Kind != Bool {
 				c.addError(fmt.Errorf("if condition must be bool, got %s", condType.Kind))
 			}
+		}
+
+		if ret := c.inferIfReturnType(e); ret != nil {
+			return ret
 		}
 
 		c.pushScope()
@@ -599,9 +747,6 @@ func (c *Checker) inferExpression(exp ast.Expression) *Type {
 		return Simple(Unknown)
 
 	case *ast.AttributeAccess:
-		return Simple(Unknown)
-
-	case *ast.DictLiteral:
 		return Simple(Unknown)
 	}
 

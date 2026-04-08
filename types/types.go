@@ -10,12 +10,15 @@ const (
 	String  Kind = "string"
 	Null    Kind = "null"
 	Array   Kind = "array"
+	Dict    Kind = "dict"
 	Func    Kind = "function"
 )
 
 type Type struct {
 	Kind   Kind
 	Elem   *Type
+	Key    *Type
+	Value  *Type
 	Params []*Type
 	Return *Type
 }
@@ -28,6 +31,14 @@ func ArrayOf(elem *Type) *Type {
 	return &Type{
 		Kind: Array,
 		Elem: elem,
+	}
+}
+
+func DictOf(key *Type, value *Type) *Type {
+	return &Type{
+		Kind:  Dict,
+		Key:   key,
+		Value: value,
 	}
 }
 
@@ -54,6 +65,12 @@ func Same(a, b *Type) bool {
 			return a.Elem == b.Elem
 		}
 		return Same(a.Elem, b.Elem)
+
+	case Dict:
+		if a.Key == nil || b.Key == nil || a.Value == nil || b.Value == nil {
+			return a.Key == b.Key && a.Value == b.Value
+		}
+		return Same(a.Key, b.Key) && Same(a.Value, b.Value)
 
 	case Func:
 		if len(a.Params) != len(b.Params) {

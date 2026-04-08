@@ -863,12 +863,6 @@ func (c *Compiler) compileImport(stmt *ast.ImportStatement) (err error) {
 	return nil
 }
 
-// for i in array where cond { block }
-// =========================
-// Loops "for"
-// =========================
-
-// for i in array where cond { block }
 func (c *Compiler) compileForEachArrayLoop(node *ast.ForEachArrayLoop) error {
 	dummyTok := token.Token{}
 
