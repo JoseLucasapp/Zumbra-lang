@@ -298,3 +298,96 @@ func TestBuiltinAndUserFunctionCallsCanCoexist(t *testing.T) {
 		t.Fatalf("expected 0 errors, got %d: %v", len(errs), errs)
 	}
 }
+
+func TestUserFunctionArgumentTypeMismatchNumericWithConcreteBody(t *testing.T) {
+	errs := checkInput(t, `
+		var addOne << fct(a) { return a + 1; };
+		addOne("x");
+	`)
+
+	if len(errs) != 1 {
+		t.Fatalf("expected 1 error, got %d: %v", len(errs), errs)
+	}
+
+	if !strings.Contains(errs[0].Error(), "argument 1 expects int, got string") {
+		t.Fatalf("unexpected error: %v", errs[0])
+	}
+}
+
+func TestUserFunctionArgumentTypeMatchNumericWithConcreteBody(t *testing.T) {
+	errs := checkInput(t, `
+		var addOne << fct(a) { return a + 1; };
+		addOne(10);
+	`)
+
+	if len(errs) != 0 {
+		t.Fatalf("expected 0 errors, got %d: %v", len(errs), errs)
+	}
+}
+
+func TestUserFunctionArgumentTypeMismatchNumericTwoParamsWithConcreteBody(t *testing.T) {
+	errs := checkInput(t, `
+		var addBase << fct(a, b) { return a + 1; };
+		addBase("x", 2);
+	`)
+
+	if len(errs) != 1 {
+		t.Fatalf("expected 1 error, got %d: %v", len(errs), errs)
+	}
+
+	if !strings.Contains(errs[0].Error(), "argument 1 expects int, got string") {
+		t.Fatalf("unexpected error: %v", errs[0])
+	}
+}
+
+func TestUserFunctionArgumentTypeMatchNumeric(t *testing.T) {
+	errs := checkInput(t, `
+		var add << fct(a, b) { return a + b; };
+		add(1, 2);
+	`)
+
+	if len(errs) != 0 {
+		t.Fatalf("expected 0 errors, got %d: %v", len(errs), errs)
+	}
+}
+
+func TestUserFunctionArgumentTypeMismatchString(t *testing.T) {
+	errs := checkInput(t, `
+		var suffix << fct(a) { return a + "!"; };
+		suffix(10);
+	`)
+
+	if len(errs) != 1 {
+		t.Fatalf("expected 1 error, got %d: %v", len(errs), errs)
+	}
+
+	if !strings.Contains(errs[0].Error(), "argument 1 expects string, got int") {
+		t.Fatalf("unexpected error: %v", errs[0])
+	}
+}
+
+func TestUserFunctionArgumentTypeMatchString(t *testing.T) {
+	errs := checkInput(t, `
+		var suffix << fct(a) { return a + "!"; };
+		suffix("hi");
+	`)
+
+	if len(errs) != 0 {
+		t.Fatalf("expected 0 errors, got %d: %v", len(errs), errs)
+	}
+}
+
+func TestUserFunctionArgumentTypesCanBeRefinedFromComparison(t *testing.T) {
+	errs := checkInput(t, `
+		var isTen << fct(a) { return a == 10; };
+		isTen("10");
+	`)
+
+	if len(errs) != 1 {
+		t.Fatalf("expected 1 error, got %d: %v", len(errs), errs)
+	}
+
+	if !strings.Contains(errs[0].Error(), "argument 1 expects int, got string") {
+		t.Fatalf("unexpected error: %v", errs[0])
+	}
+}

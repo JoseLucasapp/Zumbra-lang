@@ -108,6 +108,47 @@ func (c *Checker) popScope() {
 	}
 }
 
+func isIdentifierUnknownParam(expr ast.Expression) (*ast.Identifier, bool) {
+	id, ok := expr.(*ast.Identifier)
+	if !ok || id == nil {
+		return nil, false
+	}
+	return id, true
+}
+
+func mergeTypes(current *Type, wanted *Type) *Type {
+	if current == nil || current.Kind == Unknown {
+		return wanted
+	}
+	if wanted == nil || wanted.Kind == Unknown {
+		return current
+	}
+	if Same(current, wanted) {
+		return current
+	}
+	return Simple(Unknown)
+}
+
+func (c *Checker) constrainIdentifier(expr ast.Expression, wanted *Type) {
+	id, ok := isIdentifierUnknownParam(expr)
+	if !ok || wanted == nil {
+		return
+	}
+
+	current, exists := c.scope.resolve(id.Value)
+	if !exists || current == nil {
+		return
+	}
+
+	if current.Kind == Unknown {
+		_ = c.scope.assign(id.Value, wanted)
+		return
+	}
+
+	merged := mergeTypes(current, wanted)
+	_ = c.scope.assign(id.Value, merged)
+}
+
 func (c *Checker) checkStatement(stmt ast.Statement) {
 	switch s := stmt.(type) {
 	case *ast.VarStatement:
@@ -359,6 +400,28 @@ func (c *Checker) inferExpression(exp ast.Expression) *Type {
 
 		switch e.Operator {
 		case "+", "-", "*", "/":
+			// tenta restringir parâmetros unknown com base no contexto do operador
+			if e.Operator == "+" {
+				if left.Kind == String && right.Kind == Unknown {
+					c.constrainIdentifier(e.Right, Simple(String))
+					right = c.inferExpression(e.Right)
+				}
+				if right.Kind == String && left.Kind == Unknown {
+					c.constrainIdentifier(e.Left, Simple(String))
+					left = c.inferExpression(e.Left)
+				}
+			}
+
+			if IsNumeric(left) && right.Kind == Unknown {
+				c.constrainIdentifier(e.Right, left)
+				right = c.inferExpression(e.Right)
+			}
+			if IsNumeric(right) && left.Kind == Unknown {
+				c.constrainIdentifier(e.Left, right)
+				left = c.inferExpression(e.Left)
+			}
+
+			// se ambos ainda forem unknown, não erra cedo
 			if left.Kind == Unknown || right.Kind == Unknown {
 				return Simple(Unknown)
 			}
@@ -378,6 +441,15 @@ func (c *Checker) inferExpression(exp ast.Expression) *Type {
 			return Simple(Unknown)
 
 		case "==", "!=", "<", ">", "<=", ">=":
+			if left.Kind == Unknown && right.Kind != Unknown {
+				c.constrainIdentifier(e.Left, right)
+				left = c.inferExpression(e.Left)
+			}
+			if right.Kind == Unknown && left.Kind != Unknown {
+				c.constrainIdentifier(e.Right, left)
+				right = c.inferExpression(e.Right)
+			}
+
 			if left.Kind == Unknown || right.Kind == Unknown {
 				return Simple(Bool)
 			}
@@ -414,8 +486,21 @@ func (c *Checker) inferExpression(exp ast.Expression) *Type {
 			ret = c.inferBlockReturnType(e.Body)
 		}
 
+		// captura tipos possivelmente refinados dos parâmetros após analisar o corpo
+		refinedParams := make([]*Type, 0, len(e.Parameters))
+		for _, p := range e.Parameters {
+			if p == nil {
+				continue
+			}
+			if pt, ok := c.scope.resolve(p.Value); ok {
+				refinedParams = append(refinedParams, pt)
+			} else {
+				refinedParams = append(refinedParams, Simple(Unknown))
+			}
+		}
+
 		c.popScope()
-		return FuncOf(params, ret)
+		return FuncOf(refinedParams, ret)
 
 	case *ast.CallExpression:
 		if ident, ok := e.Function.(*ast.Identifier); ok {
@@ -429,14 +514,31 @@ func (c *Checker) inferExpression(exp ast.Expression) *Type {
 			fnType = c.inferExpression(e.Function)
 		}
 
+		argTypes := make([]*Type, 0, len(e.Arguments))
 		for _, arg := range e.Arguments {
-			c.inferExpression(arg)
+			argTypes = append(argTypes, c.inferExpression(arg))
 		}
 
 		if fnType.Kind == Func {
 			if len(fnType.Params) != len(e.Arguments) {
 				c.addError(fmt.Errorf("function expects %d arguments, got %d", len(fnType.Params), len(e.Arguments)))
+			} else {
+				for i := range fnType.Params {
+					paramType := fnType.Params[i]
+					argType := argTypes[i]
+
+					if paramType == nil || argType == nil {
+						continue
+					}
+					if paramType.Kind == Unknown || argType.Kind == Unknown {
+						continue
+					}
+					if !Same(paramType, argType) {
+						c.addError(fmt.Errorf("argument %d expects %s, got %s", i+1, paramType.Kind, argType.Kind))
+					}
+				}
 			}
+
 			if fnType.Return != nil {
 				return fnType.Return
 			}
