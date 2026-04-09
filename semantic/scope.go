@@ -24,6 +24,7 @@ type Symbol struct {
 	Mutable     bool
 	IsFree      bool
 	OriginDepth int
+	Used        bool
 }
 
 type Scope struct {
@@ -73,4 +74,15 @@ func (s *Scope) Resolve(name string) (Symbol, *Scope, bool) {
 	}
 
 	return Symbol{}, nil, false
+}
+
+func (s *Scope) MarkUsed(name string) bool {
+	for current := s; current != nil; current = current.Parent {
+		if sym, ok := current.Symbols[name]; ok {
+			sym.Used = true
+			current.Symbols[name] = sym
+			return true
+		}
+	}
+	return false
 }

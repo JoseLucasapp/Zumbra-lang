@@ -111,13 +111,20 @@ func runFile(filename string) {
 		return
 	}
 
-	_, semErrs := semantic.Analyze(program)
+	semResult, semErrs := semantic.Analyze(program)
 	if len(semErrs) != 0 {
 		fmt.Printf("Semantic errors in %s:\n", filename)
 		for _, err := range semErrs {
 			fmt.Println("\t" + err.Error())
 		}
 		return
+	}
+
+	if semResult != nil && len(semResult.Warnings) > 0 {
+		fmt.Printf("Semantic warnings in %s:\n", filename)
+		for _, w := range semResult.Warnings {
+			fmt.Println("\t" + w.Message)
+		}
 	}
 
 	typeErrs := types.Analyze(program)

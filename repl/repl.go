@@ -83,11 +83,12 @@ func Start(in io.Reader, out io.Writer) {
 			continue
 		}
 
-		_, semErrs := semantic.AnalyzeWithResolver(semanticResolver, program)
+		semResult, semErrs := semantic.AnalyzeWithResolver(semanticResolver, program)
 		if len(semErrs) != 0 {
 			printSemanticErrors(out, semErrs)
 			continue
 		}
+		printSemanticWarnings(out, semResult)
 
 		typeErrs := types.AnalyzeWithChecker(typeChecker, program)
 		if len(typeErrs) != 0 {
@@ -145,6 +146,17 @@ func printSemanticErrors(out io.Writer, errors []error) {
 	io.WriteString(out, "Semantic errors:\n")
 	for _, err := range errors {
 		io.WriteString(out, "\t"+err.Error()+"\n")
+	}
+}
+
+func printSemanticWarnings(out io.Writer, result *semantic.Result) {
+	if result == nil || len(result.Warnings) == 0 {
+		return
+	}
+
+	io.WriteString(out, "Semantic warnings:\n")
+	for _, w := range result.Warnings {
+		io.WriteString(out, "\t"+w.Message+"\n")
 	}
 }
 

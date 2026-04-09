@@ -1,6 +1,7 @@
 package semantic
 
 import (
+	"fmt"
 	"zumbra/ast"
 	objbuiltins "zumbra/object/builtins"
 )
@@ -72,6 +73,7 @@ func (r *Resolver) ResetForNextRun() {
 func (r *Resolver) Resolve(program *ast.Program) []error {
 	r.ResetForNextRun()
 	r.resolveProgram(program)
+	r.collectWarningsFromScope(r.global)
 	return r.errors
 }
 
@@ -84,6 +86,7 @@ func (r *Resolver) installBuiltins() {
 			Mutable:     false,
 			IsFree:      false,
 			OriginDepth: r.global.Depth,
+			Used:        true,
 		})
 	}
 }
@@ -94,6 +97,10 @@ func (r *Resolver) pushScope(kind ScopeKind) *Scope {
 }
 
 func (r *Resolver) popScope() {
+	if r.scope != nil {
+		r.collectWarningsFromScope(r.scope)
+	}
+
 	if r.scope.Parent != nil {
 		r.scope = r.scope.Parent
 	}
@@ -103,6 +110,10 @@ func (r *Resolver) addError(err error) {
 	if err != nil {
 		r.errors = append(r.errors, err)
 	}
+}
+
+func (r *Resolver) addWarning(message string) {
+	r.result.Warnings = append(r.result.Warnings, Warning{Message: message})
 }
 
 func (r *Resolver) currentFunction() *functionContext {
@@ -158,17 +169,27 @@ func scopeBelongsToFunction(defScope *Scope, fnRoot *Scope) bool {
 	return false
 }
 
-func (r *Resolver) defineSymbol(name string, kind SymbolKind, mutable bool, tok interface{ GetToken() }) {
-	err := r.scope.Define(Symbol{
-		Name:        name,
-		Kind:        kind,
-		Depth:       r.scope.Depth,
-		Mutable:     mutable,
-		IsFree:      false,
-		OriginDepth: r.scope.Depth,
-	})
-	if err != nil {
-		r.addError(ErrDuplicateSymbol(name))
+func (r *Resolver) collectWarningsFromScope(scope *Scope) {
+	if scope == nil {
+		return
+	}
+
+	for _, sym := range scope.Symbols {
+		switch sym.Kind {
+		case SymbolVar, SymbolParam, SymbolFunction, SymbolImport:
+			if !sym.Used {
+				switch sym.Kind {
+				case SymbolVar:
+					r.addWarning(fmt.Sprintf("unused variable: %s", sym.Name))
+				case SymbolParam:
+					r.addWarning(fmt.Sprintf("unused parameter: %s", sym.Name))
+				case SymbolFunction:
+					r.addWarning(fmt.Sprintf("unused function: %s", sym.Name))
+				case SymbolImport:
+					r.addWarning(fmt.Sprintf("unused import: %s", sym.Name))
+				}
+			}
+		}
 	}
 }
 
@@ -192,8 +213,27 @@ func (r *Resolver) resolveBlockStatement(block *ast.BlockStatement, createScope 
 		defer r.popScope()
 	}
 
+	reachedReturn := false
+
 	for _, stmt := range block.Statements {
+		if reachedReturn {
+			r.addWarning("unreachable code after return")
+			break
+		}
+
 		r.resolveStatement(stmt)
+
+		if _, ok := stmt.(*ast.ReturnStatement); ok {
+			reachedReturn = true
+			continue
+		}
+
+		if exprStmt, ok := stmt.(*ast.ExpressionStatement); ok && exprStmt.Expression != nil {
+			if _, ok := exprStmt.Expression.(*ast.IfExpression); ok {
+				// não marca como unreachable ainda;
+				// isso exigiria análise mais profunda de todos os caminhos.
+			}
+		}
 	}
 }
 
@@ -219,10 +259,19 @@ func (r *Resolver) resolveStatement(stmt ast.Statement) {
 		r.resolveWhileStatement(s)
 
 	case *ast.ImportStatement:
-		if s.Path != nil {
-			r.resolveExpression(s.Path)
-		}
+		r.resolveImportStatement(s)
 	}
+}
+
+func (r *Resolver) resolveImportStatement(stmt *ast.ImportStatement) {
+	if stmt == nil {
+		return
+	}
+
+	if stmt.Path != nil {
+		r.resolveExpression(stmt.Path)
+	}
+
 }
 
 func (r *Resolver) resolveVarStatement(stmt *ast.VarStatement) {
@@ -246,6 +295,7 @@ func (r *Resolver) resolveVarStatement(stmt *ast.VarStatement) {
 		Mutable:     true,
 		IsFree:      false,
 		OriginDepth: r.scope.Depth,
+		Used:        false,
 	})
 	if err != nil {
 		r.addError(ErrDuplicateSymbolAt(stmt.Name.Value, stmt.Token))
@@ -259,6 +309,8 @@ func (r *Resolver) resolveAssignStatement(stmt *ast.AssignStatement) {
 
 	if _, _, ok := r.scope.Resolve(stmt.Name.Value); !ok {
 		r.addError(ErrAssignmentToUndefinedSymbolAt(stmt.Name.Value, stmt.Token))
+	} else {
+		r.scope.MarkUsed(stmt.Name.Value)
 	}
 
 	if stmt.Value != nil {
@@ -376,6 +428,7 @@ func (r *Resolver) resolveExpression(exp ast.Expression) {
 				Mutable:     false,
 				IsFree:      false,
 				OriginDepth: r.scope.Depth,
+				Used:        false,
 			})
 			if err != nil {
 				r.addError(ErrDuplicateSymbolAt(e.ErrorIdent.Value, e.ErrorIdent.Token))
@@ -423,6 +476,7 @@ func (r *Resolver) resolveFunctionLiteral(fn *ast.FunctionLiteral) {
 			Mutable:     false,
 			IsFree:      false,
 			OriginDepth: r.scope.Depth,
+			Used:        false,
 		})
 		if err != nil {
 			r.addError(ErrDuplicateSymbol(fn.Name))
@@ -441,6 +495,7 @@ func (r *Resolver) resolveFunctionLiteral(fn *ast.FunctionLiteral) {
 			Mutable:     false,
 			IsFree:      false,
 			OriginDepth: r.scope.Depth,
+			Used:        false,
 		})
 		if err != nil {
 			r.addError(ErrDuplicateSymbolAt(param.Value, param.Token))
@@ -463,6 +518,8 @@ func (r *Resolver) resolveIdentifier(id *ast.Identifier) {
 		return
 	}
 
+	r.scope.MarkUsed(id.Value)
+
 	ctx := r.currentFunction()
 	if ctx == nil || defScope == nil {
 		return
@@ -483,6 +540,7 @@ func (r *Resolver) resolveIdentifier(id *ast.Identifier) {
 		Mutable:     sym.Mutable,
 		IsFree:      true,
 		OriginDepth: defScope.Depth,
+		Used:        true,
 	})
 }
 
@@ -530,6 +588,7 @@ func (r *Resolver) resolveForEachArrayLoop(loop *ast.ForEachArrayLoop) {
 			Mutable:     true,
 			IsFree:      false,
 			OriginDepth: r.scope.Depth,
+			Used:        false,
 		})
 		if err != nil {
 			r.addError(ErrDuplicateSymbol(loop.Var))
@@ -562,6 +621,7 @@ func (r *Resolver) resolveForEachMapLoop(loop *ast.ForEachMapLoop) {
 			Mutable:     true,
 			IsFree:      false,
 			OriginDepth: r.scope.Depth,
+			Used:        false,
 		})
 		if err != nil {
 			r.addError(ErrDuplicateSymbol(loop.Key))
@@ -576,6 +636,7 @@ func (r *Resolver) resolveForEachMapLoop(loop *ast.ForEachMapLoop) {
 			Mutable:     true,
 			IsFree:      false,
 			OriginDepth: r.scope.Depth,
+			Used:        false,
 		})
 		if err != nil {
 			r.addError(ErrDuplicateSymbol(loop.Value))
@@ -611,6 +672,7 @@ func (r *Resolver) resolveForEachDotRange(loop *ast.ForEachDotRange) {
 			Mutable:     true,
 			IsFree:      false,
 			OriginDepth: r.scope.Depth,
+			Used:        false,
 		})
 		if err != nil {
 			r.addError(ErrDuplicateSymbol(loop.Var))

@@ -39,6 +39,21 @@ func resolveInput(input string) []error {
 	return r.Resolve(program)
 }
 
+func resolveWithResult(t *testing.T, input string) (*Result, []error) {
+	t.Helper()
+
+	p := parse(input)
+	program := p.ParseProgram()
+
+	if len(p.Errors()) > 0 {
+		t.Fatalf("parser errors: %v", p.Errors())
+	}
+
+	r := NewResolver()
+	errs := r.Resolve(program)
+	return r.Result(), errs
+}
+
 func findFunctionLiteralInVar(t *testing.T, program *ast.Program, varName string) *ast.FunctionLiteral {
 	t.Helper()
 
@@ -71,6 +86,15 @@ func freeSymbolNames(fr FunctionResolution) []string {
 func containsName(names []string, want string) bool {
 	for _, name := range names {
 		if name == want {
+			return true
+		}
+	}
+	return false
+}
+
+func hasWarning(result *Result, want string) bool {
+	for _, w := range result.Warnings {
+		if strings.Contains(w.Message, want) {
 			return true
 		}
 	}
@@ -332,5 +356,52 @@ func TestResolveDuplicateParameterIncludesPosition(t *testing.T) {
 	}
 	if !strings.Contains(msg, "line") || !strings.Contains(msg, "col") {
 		t.Fatalf("expected line/col in message, got: %s", msg)
+	}
+}
+
+func TestWarnUnusedVariable(t *testing.T) {
+	result, errs := resolveWithResult(t, `
+		var x << 10;
+	`)
+
+	if len(errs) != 0 {
+		t.Fatalf("expected 0 errors, got %d: %v", len(errs), errs)
+	}
+
+	if !hasWarning(result, "unused variable: x") {
+		t.Fatalf("expected unused variable warning, got %+v", result.Warnings)
+	}
+}
+
+func TestWarnUnusedParameter(t *testing.T) {
+	result, errs := resolveWithResult(t, `
+		var f << fct(a) {
+			return 10;
+		};
+	`)
+
+	if len(errs) != 0 {
+		t.Fatalf("expected 0 errors, got %d: %v", len(errs), errs)
+	}
+
+	if !hasWarning(result, "unused parameter: a") {
+		t.Fatalf("expected unused parameter warning, got %+v", result.Warnings)
+	}
+}
+
+func TestWarnUnreachableCodeAfterReturn(t *testing.T) {
+	result, errs := resolveWithResult(t, `
+		var f << fct(a) {
+			return 10;
+			show(a);
+		};
+	`)
+
+	if len(errs) != 0 {
+		t.Fatalf("expected 0 errors, got %d: %v", len(errs), errs)
+	}
+
+	if !hasWarning(result, "unreachable code after return") {
+		t.Fatalf("expected unreachable code warning, got %+v", result.Warnings)
 	}
 }
