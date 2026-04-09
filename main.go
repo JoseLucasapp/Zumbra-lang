@@ -111,7 +111,7 @@ func runFile(filename string) {
 		return
 	}
 
-	semResult, semErrs := semantic.Analyze(program)
+	semResult, semErrs := semantic.AnalyzeModule(filename, program)
 	if len(semErrs) != 0 {
 		fmt.Printf("Semantic errors in %s:\n", filename)
 		for _, err := range semErrs {
@@ -127,7 +127,7 @@ func runFile(filename string) {
 		}
 	}
 
-	typeErrs := types.Analyze(program)
+	typeErrs := types.AnalyzeModule(filename, program)
 	if len(typeErrs) != 0 {
 		fmt.Printf("Type errors in %s:\n", filename)
 		for _, err := range typeErrs {
@@ -145,6 +145,19 @@ func runFile(filename string) {
 	dir := filepath.Dir(absPath)
 
 	comp := compiler.NewWithStateAndDir(symbolTable, constants, dir)
+
+	if diagProvider, ok := any(comp).(interface {
+		Diagnostics() []error
+	}); ok {
+		diags := diagProvider.Diagnostics()
+		if len(diags) > 0 {
+			fmt.Printf("Compiler diagnostics in %s:\n", filename)
+			for _, d := range diags {
+				fmt.Println("\t" + d.Error())
+			}
+		}
+	}
+
 	if err := comp.Compile(program); err != nil {
 		fmt.Printf("Compilation error: %s\n", err)
 		return

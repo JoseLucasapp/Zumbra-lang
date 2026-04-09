@@ -83,12 +83,11 @@ func Start(in io.Reader, out io.Writer) {
 			continue
 		}
 
-		semResult, semErrs := semantic.AnalyzeWithResolver(semanticResolver, program)
+		_, semErrs := semantic.AnalyzeWithResolver(semanticResolver, program)
 		if len(semErrs) != 0 {
 			printSemanticErrors(out, semErrs)
 			continue
 		}
-		printSemanticWarnings(out, semResult)
 
 		typeErrs := types.AnalyzeWithChecker(typeChecker, program)
 		if len(typeErrs) != 0 {
@@ -97,6 +96,19 @@ func Start(in io.Reader, out io.Writer) {
 		}
 
 		comp := compiler.NewWithStateAndDirAndImports(symbolTable, constants, baseDir, importedFiles)
+
+		if diagProvider, ok := any(comp).(interface {
+			Diagnostics() []error
+		}); ok {
+			diags := diagProvider.Diagnostics()
+			if len(diags) > 0 {
+				io.WriteString(out, "Compiler diagnostics:\n")
+				for _, d := range diags {
+					io.WriteString(out, "\t"+d.Error()+"\n")
+				}
+			}
+		}
+
 		err := comp.Compile(program)
 		if err != nil {
 			fmt.Fprintf(out, "compiler error: %s\n", err)
@@ -146,17 +158,6 @@ func printSemanticErrors(out io.Writer, errors []error) {
 	io.WriteString(out, "Semantic errors:\n")
 	for _, err := range errors {
 		io.WriteString(out, "\t"+err.Error()+"\n")
-	}
-}
-
-func printSemanticWarnings(out io.Writer, result *semantic.Result) {
-	if result == nil || len(result.Warnings) == 0 {
-		return
-	}
-
-	io.WriteString(out, "Semantic warnings:\n")
-	for _, w := range result.Warnings {
-		io.WriteString(out, "\t"+w.Message+"\n")
 	}
 }
 

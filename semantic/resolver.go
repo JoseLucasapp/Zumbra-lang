@@ -112,8 +112,11 @@ func (r *Resolver) addError(err error) {
 	}
 }
 
-func (r *Resolver) addWarning(message string) {
-	r.result.Warnings = append(r.result.Warnings, Warning{Message: message})
+func (r *Resolver) addWarning(code, message string) {
+	r.result.Warnings = append(r.result.Warnings, Warning{
+		Code:    code,
+		Message: message,
+	})
 }
 
 func (r *Resolver) currentFunction() *functionContext {
@@ -180,13 +183,13 @@ func (r *Resolver) collectWarningsFromScope(scope *Scope) {
 			if !sym.Used {
 				switch sym.Kind {
 				case SymbolVar:
-					r.addWarning(fmt.Sprintf("unused variable: %s", sym.Name))
+					r.addWarning("unused_variable", fmt.Sprintf("unused variable: %s", sym.Name))
 				case SymbolParam:
-					r.addWarning(fmt.Sprintf("unused parameter: %s", sym.Name))
+					r.addWarning("unused_parameter", fmt.Sprintf("unused parameter: %s", sym.Name))
 				case SymbolFunction:
-					r.addWarning(fmt.Sprintf("unused function: %s", sym.Name))
+					r.addWarning("unused_function", fmt.Sprintf("unused function: %s", sym.Name))
 				case SymbolImport:
-					r.addWarning(fmt.Sprintf("unused import: %s", sym.Name))
+					r.addWarning("unused_import", fmt.Sprintf("unused import: %s", sym.Name))
 				}
 			}
 		}
@@ -217,7 +220,7 @@ func (r *Resolver) resolveBlockStatement(block *ast.BlockStatement, createScope 
 
 	for _, stmt := range block.Statements {
 		if reachedReturn {
-			r.addWarning("unreachable code after return")
+			r.addWarning("unreachable_after_return", "unreachable code after return")
 			break
 		}
 
@@ -226,13 +229,6 @@ func (r *Resolver) resolveBlockStatement(block *ast.BlockStatement, createScope 
 		if _, ok := stmt.(*ast.ReturnStatement); ok {
 			reachedReturn = true
 			continue
-		}
-
-		if exprStmt, ok := stmt.(*ast.ExpressionStatement); ok && exprStmt.Expression != nil {
-			if _, ok := exprStmt.Expression.(*ast.IfExpression); ok {
-				// não marca como unreachable ainda;
-				// isso exigiria análise mais profunda de todos os caminhos.
-			}
 		}
 	}
 }
@@ -271,7 +267,6 @@ func (r *Resolver) resolveImportStatement(stmt *ast.ImportStatement) {
 	if stmt.Path != nil {
 		r.resolveExpression(stmt.Path)
 	}
-
 }
 
 func (r *Resolver) resolveVarStatement(stmt *ast.VarStatement) {

@@ -9,6 +9,7 @@ type FunctionResolution struct {
 
 type Warning struct {
 	Message string
+	Code    string
 }
 
 type Result struct {
