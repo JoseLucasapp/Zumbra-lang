@@ -458,3 +458,49 @@ func TestSizeOfAcceptsDict(t *testing.T) {
 		t.Fatalf("expected 0 errors, got %d: %v", len(errs), errs)
 	}
 }
+
+func TestAwaitPropagatesType(t *testing.T) {
+	errs := checkInput(t, `
+		var getAge << fct() { return 20; };
+		var x << await getAge();
+		var y << x + 1;
+	`)
+	if len(errs) != 0 {
+		t.Fatalf("expected 0 errors, got %d: %v", len(errs), errs)
+	}
+}
+
+func TestTryPropagatesType(t *testing.T) {
+	errs := checkInput(t, `
+		var getName << fct() { return "ana"; };
+		var x << try getName();
+		var y << x + "!";
+	`)
+	if len(errs) != 0 {
+		t.Fatalf("expected 0 errors, got %d: %v", len(errs), errs)
+	}
+}
+
+func TestOrHandlerCompatibleTypes(t *testing.T) {
+	errs := checkInput(t, `
+		var getAge << fct() { return 20; };
+		var x << getAge() or { return 30; };
+		var y << x + 1;
+	`)
+	if len(errs) != 0 {
+		t.Fatalf("expected 0 errors, got %d: %v", len(errs), errs)
+	}
+}
+
+func TestOrHandlerIncompatibleTypes(t *testing.T) {
+	errs := checkInput(t, `
+		var getAge << fct() { return 20; };
+		var x << getAge() or { return "fallback"; };
+	`)
+	if len(errs) != 1 {
+		t.Fatalf("expected 1 error, got %d: %v", len(errs), errs)
+	}
+	if !strings.Contains(errs[0].Error(), "or handler has incompatible types") {
+		t.Fatalf("unexpected error: %v", errs[0])
+	}
+}

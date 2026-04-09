@@ -145,6 +145,24 @@ func unifyReturnTypes(left *Type, right *Type) *Type {
 	return Simple(Unknown)
 }
 
+func (c *Checker) unifyTypesOrError(context string, left *Type, right *Type) *Type {
+	if left == nil {
+		return right
+	}
+	if right == nil {
+		return left
+	}
+	if left.Kind == Unknown || right.Kind == Unknown {
+		return Simple(Unknown)
+	}
+	if Same(left, right) {
+		return left
+	}
+
+	c.addError(fmt.Errorf("%s has incompatible types: %s and %s", context, left.Kind, right.Kind))
+	return Simple(Unknown)
+}
+
 func (c *Checker) constrainIdentifier(expr ast.Expression, wanted *Type) {
 	id, ok := isIdentifierUnknownParam(expr)
 	if !ok || wanted == nil {
@@ -284,6 +302,13 @@ func (c *Checker) inferBlockReturnType(block *ast.BlockStatement) *Type {
 	}
 
 	return inferred
+}
+
+func (c *Checker) inferHandlerBlockType(block *ast.BlockStatement) *Type {
+	if block == nil {
+		return Simple(Null)
+	}
+	return c.inferBlockReturnType(block)
 }
 
 func (c *Checker) checkBuiltinCall(name string, args []ast.Expression) *Type {
@@ -745,6 +770,24 @@ func (c *Checker) inferExpression(exp ast.Expression) *Type {
 			return c.inferExpression(e.Value)
 		}
 		return Simple(Unknown)
+
+	case *ast.ErrorHandlerExpression:
+		leftType := Simple(Unknown)
+		if e.Left != nil {
+			leftType = c.inferExpression(e.Left)
+		}
+
+		handlerType := Simple(Null)
+		c.pushScope()
+		if e.ErrorIdent != nil {
+			c.scope.define(e.ErrorIdent.Value, Simple(Unknown))
+		}
+		if e.Handler != nil {
+			handlerType = c.inferHandlerBlockType(e.Handler)
+		}
+		c.popScope()
+
+		return c.unifyTypesOrError("or handler", leftType, handlerType)
 
 	case *ast.AttributeAccess:
 		return Simple(Unknown)
