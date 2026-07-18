@@ -68,6 +68,10 @@ func (c *Checker) installBuiltins() {
 		"toBool",
 		"first",
 		"last",
+		"u8", "u16", "u32", "u64", "i8", "i16", "i32", "i64",
+		"wrapAdd", "wrapSub", "wrapMul",
+		"checkedAdd", "checkedSub", "checkedMul",
+		"satAdd", "satSub", "satMul",
 	}
 
 	for _, name := range names {
@@ -374,6 +378,37 @@ func (c *Checker) checkBuiltinCall(name string, args []ast.Expression) *Type {
 		c.inferExpression(args[0])
 		return Simple(Bool)
 
+	case "u8", "u16", "u32", "u64", "i8", "i16", "i32", "i64":
+		if len(args) != 1 {
+			c.addError(fmt.Errorf("%s expects 1 argument, got %d", name, len(args)))
+			if kind, ok := FixedIntegerKind(name); ok {
+				return Simple(kind)
+			}
+			return Simple(Unknown)
+		}
+		argType := c.inferExpression(args[0])
+		if argType.Kind != Unknown && !IsInteger(argType) {
+			c.addError(fmt.Errorf("%s expects an integer, got %s", name, argType.Kind))
+		}
+		kind, _ := FixedIntegerKind(name)
+		return Simple(kind)
+
+	case "wrapAdd", "wrapSub", "wrapMul",
+		"checkedAdd", "checkedSub", "checkedMul",
+		"satAdd", "satSub", "satMul":
+		if len(args) != 2 {
+			c.addError(fmt.Errorf("%s expects 2 arguments, got %d", name, len(args)))
+			return Simple(Unknown)
+		}
+		left := c.inferExpression(args[0])
+		right := c.inferExpression(args[1])
+		result, err := fixedIntegerResultType(left, right)
+		if err != nil {
+			c.addError(fmt.Errorf("%s: %w", name, err))
+			return Simple(Unknown)
+		}
+		return result
+
 	case "first", "last":
 		if len(args) != 1 {
 			c.addError(fmt.Errorf("%s expects 1 argument, got %d", name, len(args)))
@@ -487,12 +522,39 @@ func (c *Checker) inferIfReturnType(e *ast.IfExpression) *Type {
 	return unified
 }
 
+func fixedIntegerResultType(left, right *Type) (*Type, error) {
+	if left == nil || right == nil {
+		return Simple(Unknown), nil
+	}
+	if left.Kind == Unknown || right.Kind == Unknown {
+		return Simple(Unknown), nil
+	}
+	if !IsInteger(left) || !IsInteger(right) {
+		return nil, fmt.Errorf("fixed integer operations require integer operands, got %s and %s", left.Kind, right.Kind)
+	}
+	if IsFixedInteger(left) && IsFixedInteger(right) && left.Kind != right.Kind {
+		return nil, fmt.Errorf("fixed integer types must match: %s and %s", left.Kind, right.Kind)
+	}
+	if IsFixedInteger(left) {
+		return left, nil
+	}
+	if IsFixedInteger(right) {
+		return right, nil
+	}
+	return Simple(Int), nil
+}
+
 func (c *Checker) inferExpression(exp ast.Expression) *Type {
 	switch e := exp.(type) {
 	case nil:
 		return Simple(Unknown)
 
 	case *ast.IntegerLiteral:
+		if e.FixedType != "" {
+			if kind, ok := FixedIntegerKind(e.FixedType); ok {
+				return Simple(kind)
+			}
+		}
 		return Simple(Int)
 
 	case *ast.FloatLiteral:
@@ -549,13 +611,13 @@ func (c *Checker) inferExpression(exp ast.Expression) *Type {
 			return Simple(Unknown)
 		}
 		right := c.inferExpression(e.Right)
-		if e.Operator == "bnot" {
+		if e.Operator == "bnot" || e.Operator == "-" {
 			if right.Kind == Unknown {
 				c.constrainIdentifier(e.Right, Simple(Int))
 				return Simple(Int)
 			}
-			if right.Kind != Int {
-				c.addError(fmt.Errorf("bnot expects int, got %s", right.Kind))
+			if !IsInteger(right) {
+				c.addError(fmt.Errorf("%s expects int, got %s", e.Operator, right.Kind))
 				return Simple(Unknown)
 			}
 		}
@@ -566,7 +628,16 @@ func (c *Checker) inferExpression(exp ast.Expression) *Type {
 		right := c.inferExpression(e.Right)
 
 		switch e.Operator {
-		case "+", "-", "*", "/":
+		case "+", "-", "*", "/", "%", "**":
+			if IsFixedInteger(left) || IsFixedInteger(right) {
+				result, err := fixedIntegerResultType(left, right)
+				if err != nil {
+					c.addError(fmt.Errorf("invalid operands for %s: %w", e.Operator, err))
+					return Simple(Unknown)
+				}
+				return result
+			}
+
 			if e.Operator == "+" {
 				if left.Kind == String && right.Kind == Unknown {
 					c.constrainIdentifier(e.Right, Simple(String))
@@ -618,13 +689,31 @@ func (c *Checker) inferExpression(exp ast.Expression) *Type {
 			if left.Kind == Unknown || right.Kind == Unknown {
 				return Simple(Int)
 			}
-			if left.Kind != Int || right.Kind != Int {
+			if !IsInteger(left) || !IsInteger(right) {
 				c.addError(fmt.Errorf("%s expects int operands, got %s and %s", e.Operator, left.Kind, right.Kind))
 				return Simple(Unknown)
+			}
+			if e.Operator == "shl" || e.Operator == "shr" {
+				return left
+			}
+			if IsFixedInteger(left) || IsFixedInteger(right) {
+				result, err := fixedIntegerResultType(left, right)
+				if err != nil {
+					c.addError(fmt.Errorf("%s: %w", e.Operator, err))
+					return Simple(Unknown)
+				}
+				return result
 			}
 			return Simple(Int)
 
 		case "==", "!=", "<", ">", "<=", ">=":
+			if IsFixedInteger(left) || IsFixedInteger(right) {
+				if _, err := fixedIntegerResultType(left, right); err != nil {
+					c.addError(fmt.Errorf("cannot compare: %w", err))
+				}
+				return Simple(Bool)
+			}
+
 			if left.Kind == Unknown && right.Kind != Unknown {
 				c.constrainIdentifier(e.Left, right)
 				left = c.inferExpression(e.Left)
@@ -735,7 +824,7 @@ func (c *Checker) inferExpression(exp ast.Expression) *Type {
 		index := c.inferExpression(e.Index)
 
 		if left.Kind == Array {
-			if index.Kind != Unknown && index.Kind != Int {
+			if index.Kind != Unknown && !IsInteger(index) {
 				c.addError(fmt.Errorf("array index must be int, got %s", index.Kind))
 			}
 			if left.Elem != nil {
@@ -754,7 +843,7 @@ func (c *Checker) inferExpression(exp ast.Expression) *Type {
 			return Simple(Unknown)
 		}
 
-		if index.Kind != Unknown && index.Kind != Int {
+		if index.Kind != Unknown && !IsInteger(index) {
 			c.addError(fmt.Errorf("array index must be int, got %s", index.Kind))
 		}
 		return Simple(Unknown)

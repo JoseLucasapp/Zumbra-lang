@@ -303,7 +303,30 @@ func (l *Lexer) readNumber() (string, token.TokenType) {
 		}
 	}
 
+	if tokenType == token.INT {
+		l.readFixedIntegerSuffix()
+	}
+
 	return l.input[position:l.position], tokenType
+}
+
+func (l *Lexer) readFixedIntegerSuffix() {
+	remaining := l.input[l.position:]
+	for _, suffix := range []string{"u16", "u32", "u64", "i16", "i32", "i64", "u8", "i8"} {
+		if len(remaining) < len(suffix) || remaining[:len(suffix)] != suffix {
+			continue
+		}
+
+		next := l.position + len(suffix)
+		if next < len(l.input) && isIdentChar(l.input[next]) {
+			return
+		}
+
+		for range suffix {
+			l.readChar()
+		}
+		return
+	}
 }
 
 func (l *Lexer) readString() string {

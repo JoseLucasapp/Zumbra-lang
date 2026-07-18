@@ -1,139 +1,208 @@
-# Alterações — primitivas de sistemas v1
+# Alterações — inteiros de tamanho fixo v1
 
 ## Objetivo
 
-Adicionar os primeiros recursos necessários para emulação e games, preservando o principal pilar do Zumbra: simplicidade.
+Adicionar inteiros de largura explícita para programação de sistemas, games e emulação, preservando o principal pilar do Zumbra: simplicidade.
 
-A atribuição continua usando `<<`. Para evitar quebra de compatibilidade e conflito visual, operações bit a bit usam palavras legíveis.
+A linguagem continua usando `int` como padrão. O tipo fixo aparece somente quando o programador precisa dele, usando um sufixo ou uma conversão:
+
+```zumbra
+var opcode << 0xA9u8;
+var address << u16(0x8000);
+```
 
 ## O que foi implementado
 
-- literais hexadecimais: `0xFF`;
-- literais binários: `0b1010`;
-- literais octais: `0o755`;
-- separadores numéricos: `1_000_000`;
-- separadores em floats decimais: `10_000.25`;
-- `band`, `bor`, `bxor`;
-- `bnot`;
-- `shl`, `shr`;
-- validação de tipos no type checker;
-- validação de deslocamentos entre 0 e 63;
-- opcodes próprios no bytecode;
-- execução consistente no evaluator e na VM;
-- documentação e exemplo de uso.
+- tipos `u8`, `u16`, `u32`, `u64`;
+- tipos `i8`, `i16`, `i32`, `i64`;
+- literais tipados decimais, hexadecimais, binários e octais;
+- suporte completo ao intervalo de `u64` em literais;
+- conversões explícitas e seguras por meio de `u8(...)`, `i16(...)` e equivalentes;
+- representação própria de inteiros fixos no runtime e na VM;
+- aritmética normal com wrap na largura do tipo, como em registradores de hardware;
+- `wrapAdd`, `wrapSub`, `wrapMul`;
+- `checkedAdd`, `checkedSub`, `checkedMul`;
+- `satAdd`, `satSub`, `satMul`;
+- operações bit a bit preservando o tipo;
+- shifts limitados à largura do operando esquerdo;
+- comparação e validação entre tipos;
+- uso de inteiros fixos como índices de arrays;
+- conversão por `toInt`, `toFloat`, `toString` e `toBool`;
+- suporte no transpiler experimental e no runtime Go;
+- testes de conformidade entre evaluator e VM;
+- documentação e exemplo executável.
+
+## Semântica definida
+
+### Aritmética normal
+
+Inteiros fixos fazem wrap por padrão:
+
+```zumbra
+var value << 255u8 + 1; // 0u8
+```
+
+Isso atende diretamente ao comportamento necessário para registradores e memória de consoles.
+
+### Conversão
+
+Conversões explícitas verificam a faixa e retornam erro quando o valor não cabe:
+
+```zumbra
+var valid << u8(255);
+var invalid << u8(256); // erro
+```
+
+### Compatibilidade
+
+- `int` permanece inalterado;
+- a atribuição continua usando `<<`;
+- nenhum código existente precisa declarar tipos;
+- não foram adicionadas palavras-chave;
+- não foram adicionados novos opcodes: os opcodes aritméticos existentes agora reconhecem valores fixos;
+- evaluator e VM compartilham a mesma implementação de semântica fixa no pacote `numeric`.
 
 ## Arquivos alterados
 
 ### Implementação
 
-- `token/token.go`
-- `lexer/lexer.go`
-- `parser/parser.go`
-- `types/checker.go`
-- `evaluator/evaluator.go`
-- `code/code.go`
+- `ast/integer_literal.go`
 - `compiler/compiler.go`
+- `evaluator/builtins.go`
+- `evaluator/evaluator.go`
+- `lexer/lexer.go`
+- `object/builtins/builtins.go`
+- `object/builtins/parser_types_builtin.go`
+- `parser/parser.go`
+- `runtime/runtime.go`
+- `transpiler/transpiler.go`
+- `types/builtins.go`
+- `types/checker.go`
+- `types/types.go`
 - `vm/vm.go`
 
-### Testes adicionados
+### Documentação existente atualizada
 
-- `lexer/systems_primitives_test.go`
-- `parser/systems_primitives_test.go`
-- `types/systems_primitives_test.go`
-- `evaluator/systems_primitives_test.go`
-- `compiler/systems_primitives_test.go`
-- `vm/systems_primitives_test.go`
-- `conformance/systems_primitives_test.go`
-
-### Documentação e exemplos
-
-- `docs/pt-BR/principios-de-design.md`
-- `docs/pt-BR/primitivas-de-sistemas.md`
-- `docs/pt-BR/processo-de-features.md`
-- `code_examples/core/system_primitives.zum`
-- `scripts/test-systems-primitives.sh`
-- `ALTERACOES.md`
+- `README.MD`
 - `ROADMAP.md`
+- `docs/syntax.MD`
+- `ALTERACOES.md`
+
+## Arquivos criados
+
+### Implementação
+
+- `numeric/fixed_integer.go`
+- `object/fixed_integer.go`
+- `object/builtins/fixed_integer_builtins.go`
+
+### Testes
+
+- `ast/fixed_integer_test.go`
+- `compiler/fixed_integers_test.go`
+- `conformance/fixed_integers_test.go`
+- `evaluator/fixed_integers_test.go`
+- `lexer/fixed_integers_test.go`
+- `numeric/fixed_integer_test.go`
+- `object/fixed_integer_test.go`
+- `object/builtins/fixed_integer_builtins_test.go`
+- `parser/fixed_integers_test.go`
+- `runtime/fixed_integers_test.go`
+- `transpiler/fixed_integers_test.go`
+- `types/fixed_integers_test.go`
+- `vm/fixed_integers_test.go`
+
+### Documentação, exemplo e automação
+
+- `docs/pt-BR/inteiros-de-tamanho-fixo.md`
+- `code_examples/core/fixed_integers.zum`
+- `scripts/test-fixed-integers.sh`
 
 ## Onde colocar
 
-O ZIP já contém o repositório completo com os arquivos nos locais corretos. Para aplicar em outra cópia manualmente, copie cada arquivo mantendo exatamente o mesmo caminho relativo a partir da raiz do projeto.
+O ZIP completo já contém todos os arquivos nas posições corretas.
 
-É recomendado criar uma branch antes:
+Para aplicar somente o patch em outra cópia do rebuild, copie o conteúdo do ZIP de patch para a raiz do repositório, preservando os caminhos relativos.
+
+Branch recomendada:
 
 ```bash
-git checkout -b feature/system-primitives-v1
+git checkout -b feature/fixed-integers-v1
 ```
-
-Depois, substitua os arquivos de implementação e adicione os novos arquivos de testes e documentação.
 
 ## Como testar
 
-A suíte específica desta entrega:
+### Suíte específica
 
 ```bash
-./scripts/test-systems-primitives.sh
+./scripts/test-fixed-integers.sh
 ```
 
-A suíte completa:
+### Suíte completa
 
 ```bash
 go test ./...
 ```
 
-O projeto declara Go `1.24.2` em `go.mod`; use essa versão ou uma compatível com o toolchain automático do Go.
-
-## Teste manual
+### Exemplo manual
 
 ```bash
-go run . run code_examples/core/system_primitives.zum
+go run . run code_examples/core/fixed_integers.zum
 ```
 
-## Comportamento esperado
+Saída esperada:
 
-- `0xFF` produz `255`;
-- `0b1010` produz `10`;
-- `0o755` produz `493`;
-- `0b1100 band 0b1010` produz `8`;
-- `1 shl 8` produz `256`;
-- `bnot 0` produz `-1`;
-- `1 shl 64` retorna erro de faixa;
-- bitwise com float ou string retorna erro de tipo.
+```text
+169
+32768
+0
+0
+255
+169
+-128
+```
+
+## Validação realizada durante a implementação
+
+Passaram diretamente no ambiente de geração:
+
+```text
+ast
+object
+numeric
+lexer
+parser
+types
+runtime
+transpiler
+```
+
+Também passaram em um ambiente isolado das integrações externas:
+
+```text
+compiler
+evaluator
+vm
+conformance
+```
+
+O exemplo executável foi validado com o pipeline compiler + VM e produziu a saída documentada.
+
+A suíte completa `go test ./...` deve ser executada no ambiente do projeto, pois o ambiente de geração não tem acesso à internet para baixar as dependências externas de banco, Redis, JWT e Twilio.
 
 ## Limitações conscientes
 
-- todos os inteiros ainda são `int64`;
-- ainda não existem `u8`, `u16`, `u32` ou aritmética modular tipada;
-- `shr` é aritmético para números negativos;
-- a sintaxe de atribuição `<<` foi preservada;
-- arrays de bytes e mutação indexada ainda não fazem parte desta entrega.
+- ainda não há declaração de variável no formato `var value: u8`; o tipo é definido pelo literal ou conversão para manter a sintaxe simples;
+- para o menor valor assinado, como `-128i8`, use `i8(-128)`;
+- arrays ainda armazenam objetos genéricos;
+- mutação por índice ainda não foi implementada;
+- `ByteArray`, slices e arquivos binários pertencem à próxima etapa;
+- o transpiler continua experimental, embora agora reconheça os inteiros fixos e operadores de sistemas.
 
-## Validação realizada nesta entrega
+## Próxima etapa
 
-Foram executados com sucesso diretamente:
-
-```text
-lexer
-parser
-ast
-token
-code
-types
-```
-
-Os testes específicos de `compiler`, `evaluator` e `vm` também passaram em uma cópia de validação com as integrações externas isoladas, pois o ambiente de geração do ZIP não possui acesso à internet para baixar as dependências opcionais de banco, JWT, Redis e Twilio.
-
-A validação final no repositório completo deve ser feita com:
-
-```bash
-go test ./...
-```
-
-Não considere a suíte completa validada até esse comando passar no seu ambiente.
-
-## Conteúdo dos ZIPs
-
-- O ZIP completo contém o repositório modificado nos caminhos corretos.
-- O ZIP de patch contém somente arquivos novos ou alterados, também mantendo os caminhos corretos.
-- `.env` foi excluído do ZIP completo para evitar redistribuir credenciais locais.
-- `build/zumbra-app` foi excluído porque é um binário gerado e deve ser recompilado no ambiente de destino.
+- arrays tipados;
+- mutação por índice;
+- `ByteArray` compacto;
+- slices;
+- leitura e escrita de arquivos binários.

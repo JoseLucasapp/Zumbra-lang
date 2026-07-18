@@ -48,6 +48,13 @@ func init() {
 		"json_parse", "toBool", "toFloat", "toInt", "toString",
 	}
 
+	fixedIntegers := []string{
+		"u8", "u16", "u32", "u64", "i8", "i16", "i32", "i64",
+		"wrapAdd", "wrapSub", "wrapMul",
+		"checkedAdd", "checkedSub", "checkedMul",
+		"satAdd", "satSub", "satMul",
+	}
+
 	stringUtils := []string{
 		"capitalize", "removeWhiteSpaces", "replace", "toLowercase", "toUppercase",
 	}
@@ -55,6 +62,7 @@ func init() {
 	allBuiltins := append(arrays, dicts...)
 	allBuiltins = append(allBuiltins, http...)
 	allBuiltins = append(allBuiltins, parsers...)
+	allBuiltins = append(allBuiltins, fixedIntegers...)
 	allBuiltins = append(allBuiltins, stringUtils...)
 	allBuiltins = append(allBuiltins, numbersUtils...)
 	allBuiltins = append(allBuiltins, ioUtils...)

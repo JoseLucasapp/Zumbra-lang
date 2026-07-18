@@ -5,6 +5,7 @@ import (
 	"math"
 	"zumbra/code"
 	"zumbra/compiler"
+	"zumbra/numeric"
 	"zumbra/object"
 	"zumbra/object/builtins"
 )
@@ -489,6 +490,15 @@ func (vm *VM) executeBinaryOperation(op code.Opcode) error {
 	right := vm.pop()
 	left := vm.pop()
 
+	if operator, ok := fixedBinaryOperator(op); ok {
+		if result, handled, err := numeric.Binary(operator, left, right); handled {
+			if err != nil {
+				return err
+			}
+			return vm.push(result)
+		}
+	}
+
 	leftType := left.Type()
 	rightType := right.Type()
 
@@ -642,6 +652,15 @@ func (vm *VM) executeComparison(op code.Opcode) error {
 	right := vm.pop()
 	left := vm.pop()
 
+	if operator, ok := fixedComparisonOperator(op); ok {
+		if result, handled, err := numeric.Binary(operator, left, right); handled {
+			if err != nil {
+				return err
+			}
+			return vm.push(result)
+		}
+	}
+
 	if left.Type() == object.INTEGER_OBJ && right.Type() == object.INTEGER_OBJ {
 		return vm.executeIntegerComparison(op, left, right)
 	}
@@ -774,6 +793,54 @@ func (vm *VM) executeIntegerComparison(op code.Opcode, left, right object.Object
 	}
 }
 
+func fixedBinaryOperator(op code.Opcode) (string, bool) {
+	switch op {
+	case code.OpAdd:
+		return "+", true
+	case code.OpSub:
+		return "-", true
+	case code.OpMul:
+		return "*", true
+	case code.OpDiv:
+		return "/", true
+	case code.OpMod:
+		return "%", true
+	case code.OpPower:
+		return "**", true
+	case code.OpBitAnd:
+		return "band", true
+	case code.OpBitOr:
+		return "bor", true
+	case code.OpBitXor:
+		return "bxor", true
+	case code.OpShiftLeft:
+		return "shl", true
+	case code.OpShiftRight:
+		return "shr", true
+	default:
+		return "", false
+	}
+}
+
+func fixedComparisonOperator(op code.Opcode) (string, bool) {
+	switch op {
+	case code.OpEqual:
+		return "==", true
+	case code.OpNotEqual:
+		return "!=", true
+	case code.OpGreaterThan:
+		return ">", true
+	case code.OpLessThan:
+		return "<", true
+	case code.OpGreaterThanOrEqual:
+		return ">=", true
+	case code.OpLessThanOrEqual:
+		return "<=", true
+	default:
+		return "", false
+	}
+}
+
 func nativeBoolToBooleanObject(input bool) *object.Boolean {
 	if input {
 		return True
@@ -799,6 +866,13 @@ func (vm *VM) executeBangOperator() error {
 func (vm *VM) executeMinusOperator() error {
 	val := vm.pop()
 
+	if result, handled, err := numeric.Unary("-", val); handled {
+		if err != nil {
+			return err
+		}
+		return vm.push(result)
+	}
+
 	if val.Type() != object.INTEGER_OBJ {
 		return fmt.Errorf("unsupported type for negation: %s", val.Type())
 	}
@@ -809,6 +883,13 @@ func (vm *VM) executeMinusOperator() error {
 
 func (vm *VM) executeBitNotOperator() error {
 	value := vm.pop()
+
+	if result, handled, err := numeric.Unary("bnot", value); handled {
+		if err != nil {
+			return err
+		}
+		return vm.push(result)
+	}
 
 	if value.Type() != object.INTEGER_OBJ {
 		return fmt.Errorf("unsupported type for bnot: %s", value.Type())
@@ -832,6 +913,8 @@ func isTruthy(obj object.Object) bool {
 		return v.Value != ""
 	case *object.Integer:
 		return v.Value != 0
+	case *object.FixedInteger:
+		return v.UnsignedValue() != 0
 	case *object.Float:
 		return v.Value != 0
 	case *object.Array:
@@ -881,7 +964,7 @@ func (vm *VM) buildDict(startIndex, endIndex int) (object.Object, error) {
 
 func (vm *VM) executeIndexExpression(left, index object.Object) error {
 	switch {
-	case left.Type() == object.ARRAY_OBJ && index.Type() == object.INTEGER_OBJ:
+	case left.Type() == object.ARRAY_OBJ:
 		return vm.executeArrayIndex(left, index)
 	case left.Type() == object.DICT_OBJ:
 		return vm.executeDictIndex(left, index)
@@ -892,7 +975,10 @@ func (vm *VM) executeIndexExpression(left, index object.Object) error {
 
 func (vm *VM) executeArrayIndex(array, index object.Object) error {
 	arrayObject := array.(*object.Array)
-	i := index.(*object.Integer).Value
+	i, ok := vmIntegerIndex(index)
+	if !ok {
+		return fmt.Errorf("array index must be an integer, got %s", index.Type())
+	}
 	max := int64(len(arrayObject.Elements) - 1)
 
 	if i < 0 || i > max {
@@ -900,6 +986,23 @@ func (vm *VM) executeArrayIndex(array, index object.Object) error {
 	}
 
 	return vm.push(arrayObject.Elements[i])
+}
+
+func vmIntegerIndex(value object.Object) (int64, bool) {
+	switch value := value.(type) {
+	case *object.Integer:
+		return value.Value, true
+	case *object.FixedInteger:
+		if value.Kind.Signed() {
+			return value.SignedValue(), true
+		}
+		if value.UnsignedValue() > uint64(^uint64(0)>>1) {
+			return 0, false
+		}
+		return int64(value.UnsignedValue()), true
+	default:
+		return 0, false
+	}
 }
 
 func (vm *VM) executeDictIndex(dict, index object.Object) error {

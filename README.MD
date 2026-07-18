@@ -21,6 +21,8 @@ Designed for clarity, simplicity, and extensibility, Zumbra is the perfect playg
 
 The rebuild now follows a clear direction: systems, emulation, and game development without abandoning Zumbra's simplicity. See the Portuguese design and feature documentation in [`docs/pt-BR/`](./docs/pt-BR/).
 
+Current systems features include readable bitwise operators and fixed-width integers (`u8` through `u64`, `i8` through `i64`). See [`docs/pt-BR/inteiros-de-tamanho-fixo.md`](./docs/pt-BR/inteiros-de-tamanho-fixo.md).
+
 <br />
 <a href="./code_examples/"><p style="font-size: 30px; font-weight: 600;">🛠 Code_examples</p></a>
 <br />

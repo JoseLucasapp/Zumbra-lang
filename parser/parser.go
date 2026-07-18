@@ -424,15 +424,60 @@ func (p *Parser) parseIntegerLiteral() ast.Expression {
 	lit := &ast.IntegerLiteral{Token: p.curToken}
 
 	normalized := strings.ReplaceAll(p.curToken.Literal, "_", "")
-	value, err := strconv.ParseInt(normalized, 0, 64)
-	if err != nil {
-		msg := fmt.Sprintf("could not parse %q as integer", p.curToken.Literal)
-		p.errors = append(p.errors, msg)
-		return nil
+	number, fixedType, bits, signed := splitFixedIntegerSuffix(normalized)
+
+	if fixedType == "" {
+		value, err := strconv.ParseInt(number, 0, 64)
+		if err != nil {
+			p.addIntegerLiteralError(p.curToken.Literal)
+			return nil
+		}
+		lit.Value = value
+		return lit
 	}
 
-	lit.Value = value
+	lit.FixedType = fixedType
+	if signed {
+		value, err := strconv.ParseInt(number, 0, bits)
+		if err != nil {
+			p.addIntegerLiteralError(p.curToken.Literal)
+			return nil
+		}
+		lit.RawValue = uint64(value)
+		return lit
+	}
+
+	value, err := strconv.ParseUint(number, 0, bits)
+	if err != nil {
+		p.addIntegerLiteralError(p.curToken.Literal)
+		return nil
+	}
+	lit.RawValue = value
 	return lit
+}
+
+func splitFixedIntegerSuffix(literal string) (number string, fixedType string, bits int, signed bool) {
+	types := []struct {
+		suffix string
+		bits   int
+		signed bool
+	}{
+		{"u16", 16, false}, {"u32", 32, false}, {"u64", 64, false},
+		{"i16", 16, true}, {"i32", 32, true}, {"i64", 64, true},
+		{"u8", 8, false}, {"i8", 8, true},
+	}
+
+	for _, candidate := range types {
+		if strings.HasSuffix(literal, candidate.suffix) {
+			return strings.TrimSuffix(literal, candidate.suffix), candidate.suffix, candidate.bits, candidate.signed
+		}
+	}
+
+	return literal, "", 64, true
+}
+
+func (p *Parser) addIntegerLiteralError(literal string) {
+	p.errors = append(p.errors, fmt.Sprintf("could not parse %q as integer", literal))
 }
 
 func (p *Parser) noPrefixParseFctError(t token.TokenType) {

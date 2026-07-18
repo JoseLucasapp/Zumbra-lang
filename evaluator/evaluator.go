@@ -8,6 +8,7 @@ import (
 	"strings"
 	"zumbra/ast"
 	"zumbra/lexer"
+	"zumbra/numeric"
 	"zumbra/object"
 	"zumbra/parser"
 )
@@ -90,6 +91,13 @@ func Eval(node ast.Node, env *object.Environment) object.Object {
 		return &object.String{Value: node.Value}
 
 	case *ast.IntegerLiteral:
+		if node.FixedType != "" {
+			kind, ok := object.ParseFixedIntegerKind(node.FixedType)
+			if !ok {
+				return newError("unknown fixed integer type %s", node.FixedType)
+			}
+			return object.NewFixedIntegerRaw(kind, node.RawValue)
+		}
 		return &object.Integer{Value: node.Value}
 
 	case *ast.Boolean:
@@ -231,6 +239,13 @@ func nativeBoolToBooleanObject(input bool) object.Object {
 }
 
 func evalPrefixExpression(operator string, right object.Object) object.Object {
+	if result, handled, err := numeric.Unary(operator, right); handled {
+		if err != nil {
+			return newError("%s", err)
+		}
+		return result
+	}
+
 	switch operator {
 	case "!":
 		return evalBangOperatorExpression(right)
@@ -275,6 +290,13 @@ func evalBitNotPrefixOperatorExpression(right object.Object) object.Object {
 }
 
 func evalInfixExpression(operator string, left, right object.Object) object.Object {
+	if result, handled, err := numeric.Binary(operator, left, right); handled {
+		if err != nil {
+			return newError("%s", err)
+		}
+		return result
+	}
+
 	switch {
 	case operator == "and" || operator == "or":
 		return evalLogicalInfixExpression(operator, left, right)
@@ -307,6 +329,9 @@ func objectEquals(left, right object.Object) bool {
 	switch left := left.(type) {
 	case *object.Integer:
 		return left.Value == right.(*object.Integer).Value
+	case *object.FixedInteger:
+		rightValue, ok := right.(*object.FixedInteger)
+		return ok && left.Kind == rightValue.Kind && left.UnsignedValue() == rightValue.UnsignedValue()
 	case *object.Float:
 		return left.Value == right.(*object.Float).Value
 	case *object.Boolean:
@@ -493,6 +518,8 @@ func isTruthy(obj object.Object) bool {
 		return v.Value != ""
 	case *object.Integer:
 		return v.Value != 0
+	case *object.FixedInteger:
+		return v.UnsignedValue() != 0
 	case *object.Float:
 		return v.Value != 0
 	case *object.Array:
@@ -614,7 +641,10 @@ func evalStringInfixExpression(operator string, left, right object.Object) objec
 
 func evalArrayIndexExpression(left, index object.Object) object.Object {
 	arrayObj := left.(*object.Array)
-	idx := index.(*object.Integer).Value
+	idx, ok := integerIndex(index)
+	if !ok {
+		return newError("array index must be an integer, got %s", index.Type())
+	}
 	max := int64(len(arrayObj.Elements) - 1)
 
 	if idx < 0 || idx > max {
@@ -622,6 +652,23 @@ func evalArrayIndexExpression(left, index object.Object) object.Object {
 	}
 
 	return arrayObj.Elements[idx]
+}
+
+func integerIndex(value object.Object) (int64, bool) {
+	switch value := value.(type) {
+	case *object.Integer:
+		return value.Value, true
+	case *object.FixedInteger:
+		if value.Kind.Signed() {
+			return value.SignedValue(), true
+		}
+		if value.UnsignedValue() > uint64(^uint64(0)>>1) {
+			return 0, false
+		}
+		return int64(value.UnsignedValue()), true
+	default:
+		return 0, false
+	}
 }
 
 func evalDictLiteral(node *ast.DictLiteral, env *object.Environment) object.Object {
@@ -647,7 +694,7 @@ func evalDictLiteral(node *ast.DictLiteral, env *object.Environment) object.Obje
 
 func evalIndexExpression(left, index object.Object) object.Object {
 	switch {
-	case left.Type() == object.ARRAY_OBJ && index.Type() == object.INTEGER_OBJ:
+	case left.Type() == object.ARRAY_OBJ:
 		return evalArrayIndexExpression(left, index)
 	case left.Type() == object.DICT_OBJ:
 		return evalDictIndexExpression(left, index)

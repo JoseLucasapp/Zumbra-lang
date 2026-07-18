@@ -219,6 +219,15 @@ func (c *Compiler) Compile(node ast.Node) error {
 			return fmt.Errorf("unknown operator %s", node.Operator)
 		}
 	case *ast.IntegerLiteral:
+		if node.FixedType != "" {
+			kind, ok := object.ParseFixedIntegerKind(node.FixedType)
+			if !ok {
+				return fmt.Errorf("unknown fixed integer type %s", node.FixedType)
+			}
+			integer := object.NewFixedIntegerRaw(kind, node.RawValue)
+			c.emit(code.OpConstant, c.addConstant(integer))
+			break
+		}
 		integer := &object.Integer{Value: node.Value}
 		c.emit(code.OpConstant, c.addConstant(integer))
 

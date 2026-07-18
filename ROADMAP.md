@@ -21,10 +21,10 @@
 - [x] Opcodes e execução na VM
 - [x] Execução equivalente no evaluator
 - [x] Documentação e exemplo executável
-- [ ] Tipos `u8`, `u16`, `u32`, `u64`
-- [ ] Tipos `i8`, `i16`, `i32`, `i64`
-- [ ] Conversões explícitas e seguras
-- [ ] Aritmética wrapping, checked e saturating
+- [x] Tipos `u8`, `u16`, `u32`, `u64`
+- [x] Tipos `i8`, `i16`, `i32`, `i64`
+- [x] Conversões explícitas e seguras
+- [x] Aritmética wrapping, checked e saturating
 
 ## Memória e dados binários
 
@@ -73,4 +73,4 @@
 
 ## Próximo passo recomendado
 
-**Tipos inteiros de tamanho fixo**, começando por `u8`, `u16`, `u32`, `i8`, `i16` e `i32`, mantendo `int` como tipo simples padrão.
+**Arrays tipados, mutação por índice e `ByteArray`**, usando os inteiros de tamanho fixo como base.

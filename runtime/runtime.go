@@ -3,6 +3,123 @@ package runtime
 func Runtime() string {
 	return `
 
+type zAnyInteger interface {
+	~int | ~int8 | ~int16 | ~int32 | ~int64 |
+		~uint | ~uint8 | ~uint16 | ~uint32 | ~uint64
+}
+
+func zIntegerBig[T zAnyInteger](value T) *big.Int {
+	reflected := reflect.ValueOf(value)
+	switch reflected.Kind() {
+	case reflect.Int, reflect.Int8, reflect.Int16, reflect.Int32, reflect.Int64:
+		return big.NewInt(reflected.Int())
+	default:
+		return new(big.Int).SetUint64(reflected.Uint())
+	}
+}
+
+func zIntegerBounds(signed bool, bits uint) (*big.Int, *big.Int) {
+	if signed {
+		max := new(big.Int).Sub(new(big.Int).Lsh(big.NewInt(1), bits-1), big.NewInt(1))
+		min := new(big.Int).Neg(new(big.Int).Lsh(big.NewInt(1), bits-1))
+		return min, max
+	}
+	return big.NewInt(0), new(big.Int).Sub(new(big.Int).Lsh(big.NewInt(1), bits), big.NewInt(1))
+}
+
+func zRequireIntegerRange[T zAnyInteger](value T, name string, signed bool, bits uint) *big.Int {
+	number := zIntegerBig(value)
+	min, max := zIntegerBounds(signed, bits)
+	if number.Cmp(min) < 0 || number.Cmp(max) > 0 {
+		panic(fmt.Sprintf("value %s is outside %s range", number.String(), name))
+	}
+	return number
+}
+
+func zU8[T zAnyInteger](value T) uint8 { return uint8(zRequireIntegerRange(value, "u8", false, 8).Uint64()) }
+func zU16[T zAnyInteger](value T) uint16 { return uint16(zRequireIntegerRange(value, "u16", false, 16).Uint64()) }
+func zU32[T zAnyInteger](value T) uint32 { return uint32(zRequireIntegerRange(value, "u32", false, 32).Uint64()) }
+func zU64[T zAnyInteger](value T) uint64 { return zRequireIntegerRange(value, "u64", false, 64).Uint64() }
+func zI8[T zAnyInteger](value T) int8 { return int8(zRequireIntegerRange(value, "i8", true, 8).Int64()) }
+func zI16[T zAnyInteger](value T) int16 { return int16(zRequireIntegerRange(value, "i16", true, 16).Int64()) }
+func zI32[T zAnyInteger](value T) int32 { return int32(zRequireIntegerRange(value, "i32", true, 32).Int64()) }
+func zI64[T zAnyInteger](value T) int64 { return zRequireIntegerRange(value, "i64", true, 64).Int64() }
+
+func wrapAdd[T zAnyInteger](left, right T) T { return left + right }
+func wrapSub[T zAnyInteger](left, right T) T { return left - right }
+func wrapMul[T zAnyInteger](left, right T) T { return left * right }
+
+func zFixedTypeInfo[T zAnyInteger]() (bool, uint) {
+	var zero T
+	typeOf := reflect.TypeOf(zero)
+	switch typeOf.Kind() {
+	case reflect.Int8:
+		return true, 8
+	case reflect.Int16:
+		return true, 16
+	case reflect.Int32:
+		return true, 32
+	case reflect.Int64, reflect.Int:
+		return true, uint(typeOf.Bits())
+	case reflect.Uint8:
+		return false, 8
+	case reflect.Uint16:
+		return false, 16
+	case reflect.Uint32:
+		return false, 32
+	case reflect.Uint64, reflect.Uint:
+		return false, uint(typeOf.Bits())
+	default:
+		panic("unsupported fixed integer type")
+	}
+}
+
+func zFixedFromBig[T zAnyInteger](value *big.Int) T {
+	var zero T
+	if reflect.TypeOf(zero).Kind() >= reflect.Uint && reflect.TypeOf(zero).Kind() <= reflect.Uint64 {
+		return T(value.Uint64())
+	}
+	return T(value.Int64())
+}
+
+func zFixedArithmetic[T zAnyInteger](left, right T, operator string, mode string) T {
+	leftBig := zIntegerBig(left)
+	rightBig := zIntegerBig(right)
+	result := new(big.Int)
+	switch operator {
+	case "+":
+		result.Add(leftBig, rightBig)
+	case "-":
+		result.Sub(leftBig, rightBig)
+	case "*":
+		result.Mul(leftBig, rightBig)
+	}
+
+	signed, bits := zFixedTypeInfo[T]()
+	min, max := zIntegerBounds(signed, bits)
+	switch mode {
+	case "checked":
+		if result.Cmp(min) < 0 || result.Cmp(max) > 0 {
+			panic("fixed integer overflow")
+		}
+	case "saturating":
+		if result.Cmp(min) < 0 { result.Set(min) }
+		if result.Cmp(max) > 0 { result.Set(max) }
+	case "wrapping":
+		modulus := new(big.Int).Lsh(big.NewInt(1), bits)
+		result.Mod(result, modulus)
+		if result.Sign() < 0 { result.Add(result, modulus) }
+	}
+	return zFixedFromBig[T](result)
+}
+
+func checkedAdd[T zAnyInteger](left, right T) T { return zFixedArithmetic(left, right, "+", "checked") }
+func checkedSub[T zAnyInteger](left, right T) T { return zFixedArithmetic(left, right, "-", "checked") }
+func checkedMul[T zAnyInteger](left, right T) T { return zFixedArithmetic(left, right, "*", "checked") }
+func satAdd[T zAnyInteger](left, right T) T { return zFixedArithmetic(left, right, "+", "saturating") }
+func satSub[T zAnyInteger](left, right T) T { return zFixedArithmetic(left, right, "-", "saturating") }
+func satMul[T zAnyInteger](left, right T) T { return zFixedArithmetic(left, right, "*", "saturating") }
+
 func sizeOf(value interface{}) int {
 	switch v := value.(type) {
 	case []interface{}:

@@ -5,6 +5,14 @@ type Kind string
 const (
 	Unknown Kind = "unknown"
 	Int     Kind = "int"
+	U8      Kind = "u8"
+	U16     Kind = "u16"
+	U32     Kind = "u32"
+	U64     Kind = "u64"
+	I8      Kind = "i8"
+	I16     Kind = "i16"
+	I32     Kind = "i32"
+	I64     Kind = "i64"
 	Float   Kind = "float"
 	Bool    Kind = "bool"
 	String  Kind = "string"
@@ -94,5 +102,30 @@ func IsNumeric(t *Type) bool {
 	if t == nil {
 		return false
 	}
-	return t.Kind == Int || t.Kind == Float
+	return IsInteger(t) || t.Kind == Float
+}
+
+func IsInteger(t *Type) bool {
+	if t == nil {
+		return false
+	}
+	switch t.Kind {
+	case Int, U8, U16, U32, U64, I8, I16, I32, I64:
+		return true
+	default:
+		return false
+	}
+}
+
+func IsFixedInteger(t *Type) bool {
+	return IsInteger(t) && t.Kind != Int
+}
+
+func FixedIntegerKind(name string) (Kind, bool) {
+	switch Kind(name) {
+	case U8, U16, U32, U64, I8, I16, I32, I64:
+		return Kind(name), true
+	default:
+		return Unknown, false
+	}
 }

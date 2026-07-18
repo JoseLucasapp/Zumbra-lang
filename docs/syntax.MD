@@ -312,3 +312,31 @@ while (x < 5) {
 ## Practical note
 
 The repository examples under `code_examples/` should be treated as the practical reference for currently supported constructs.
+---
+
+## Fixed-width integers
+
+Zumbra supports compact fixed-width integer literals for systems, games, and emulation:
+
+```zumbra
+var opcode << 0xA9u8;
+var address << 0x8000u16;
+var signedOffset << i8(-10);
+```
+
+Available types:
+
+```text
+u8 u16 u32 u64
+i8 i16 i32 i64
+```
+
+Type names are also safe conversion functions:
+
+```zumbra
+var byte << u8(200);
+```
+
+Normal fixed-width arithmetic wraps like hardware. Use `checkedAdd`, `checkedSub`, and `checkedMul` for overflow errors, or `satAdd`, `satSub`, and `satMul` for saturating arithmetic.
+
+Complete documentation: [`docs/pt-BR/inteiros-de-tamanho-fixo.md`](./pt-BR/inteiros-de-tamanho-fixo.md).

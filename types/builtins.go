@@ -23,6 +23,28 @@ func builtinType(name string) (*Type, bool) {
 	case "toBool":
 		return FuncOf([]*Type{Simple(Unknown)}, Simple(Bool)), true
 
+	case "u8":
+		return FuncOf([]*Type{Simple(Unknown)}, Simple(U8)), true
+	case "u16":
+		return FuncOf([]*Type{Simple(Unknown)}, Simple(U16)), true
+	case "u32":
+		return FuncOf([]*Type{Simple(Unknown)}, Simple(U32)), true
+	case "u64":
+		return FuncOf([]*Type{Simple(Unknown)}, Simple(U64)), true
+	case "i8":
+		return FuncOf([]*Type{Simple(Unknown)}, Simple(I8)), true
+	case "i16":
+		return FuncOf([]*Type{Simple(Unknown)}, Simple(I16)), true
+	case "i32":
+		return FuncOf([]*Type{Simple(Unknown)}, Simple(I32)), true
+	case "i64":
+		return FuncOf([]*Type{Simple(Unknown)}, Simple(I64)), true
+
+	case "wrapAdd", "wrapSub", "wrapMul",
+		"checkedAdd", "checkedSub", "checkedMul",
+		"satAdd", "satSub", "satMul":
+		return FuncOf([]*Type{Simple(Unknown), Simple(Unknown)}, Simple(Unknown)), true
+
 	case "first":
 		return FuncOf([]*Type{ArrayOf(Simple(Unknown))}, Simple(Unknown)), true
 

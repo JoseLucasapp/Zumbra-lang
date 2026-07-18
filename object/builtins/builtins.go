@@ -2,6 +2,7 @@ package builtins
 
 import (
 	"fmt"
+	"zumbra/numeric"
 	"zumbra/object"
 )
 
@@ -288,6 +289,59 @@ var Builtins = []struct {
 	},
 	{"error", &ErrorBuiltin},
 	{"panic", &PanicBuiltin},
+
+	// fixed-width integers
+	{
+		"u8", FixedIntegerConversionBuiltin(object.FixedU8),
+	},
+	{
+		"u16", FixedIntegerConversionBuiltin(object.FixedU16),
+	},
+	{
+		"u32", FixedIntegerConversionBuiltin(object.FixedU32),
+	},
+	{
+		"u64", FixedIntegerConversionBuiltin(object.FixedU64),
+	},
+	{
+		"i8", FixedIntegerConversionBuiltin(object.FixedI8),
+	},
+	{
+		"i16", FixedIntegerConversionBuiltin(object.FixedI16),
+	},
+	{
+		"i32", FixedIntegerConversionBuiltin(object.FixedI32),
+	},
+	{
+		"i64", FixedIntegerConversionBuiltin(object.FixedI64),
+	},
+	{
+		"wrapAdd", FixedArithmeticBuiltin(numeric.Wrapping, "+", "wrapAdd"),
+	},
+	{
+		"wrapSub", FixedArithmeticBuiltin(numeric.Wrapping, "-", "wrapSub"),
+	},
+	{
+		"wrapMul", FixedArithmeticBuiltin(numeric.Wrapping, "*", "wrapMul"),
+	},
+	{
+		"checkedAdd", FixedArithmeticBuiltin(numeric.Checked, "+", "checkedAdd"),
+	},
+	{
+		"checkedSub", FixedArithmeticBuiltin(numeric.Checked, "-", "checkedSub"),
+	},
+	{
+		"checkedMul", FixedArithmeticBuiltin(numeric.Checked, "*", "checkedMul"),
+	},
+	{
+		"satAdd", FixedArithmeticBuiltin(numeric.Saturating, "+", "satAdd"),
+	},
+	{
+		"satSub", FixedArithmeticBuiltin(numeric.Saturating, "-", "satSub"),
+	},
+	{
+		"satMul", FixedArithmeticBuiltin(numeric.Saturating, "*", "satMul"),
+	},
 }
 
 func NewBoolean(value bool) *object.Boolean {

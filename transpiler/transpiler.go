@@ -2,6 +2,7 @@ package transpiler
 
 import (
 	"fmt"
+	"regexp"
 	"strings"
 	"zumbra/runtime"
 )
@@ -95,12 +96,14 @@ import (
 	"fmt"
 	"io"
 	"math"
+	"math/big"
 	"math/rand"
 	"net"
 	"net/http"
 	neturl "net/url"
 	"os"
 	"path/filepath"
+	"reflect"
 	"sort"
 	"strconv"
 	"strings"
@@ -174,6 +177,7 @@ func translateProgramLines(lines []string, blockStack *[]string) []string {
 		line = translateRequestFields(line)
 		line = translateResponseCalls(line)
 		line = translateAsyncErrorSyntax(line)
+		line = translateFixedIntegerSyntax(line)
 
 		if strings.HasSuffix(line, ".json({") || strings.HasSuffix(line, ".json(map[string]interface{}{") {
 			dot := strings.Index(line, ".")
@@ -254,7 +258,7 @@ func translateProgramLines(lines []string, blockStack *[]string) []string {
 		}
 
 		if strings.HasPrefix(line, "var ") {
-			line = strings.ReplaceAll(line, "<<", "=")
+			line = strings.Replace(line, "<<", "=", 1)
 			line = translateLogicalExpression(line)
 			line = translateRequestFields(line)
 			line = translateResponseCalls(line)
@@ -279,7 +283,7 @@ func translateProgramLines(lines []string, blockStack *[]string) []string {
 		}
 
 		if strings.Contains(line, "<<") {
-			line = strings.ReplaceAll(line, "<<", "=")
+			line = strings.Replace(line, "<<", "=", 1)
 			line = translateLogicalExpression(line)
 			line = translateRequestFields(line)
 			line = translateResponseCalls(line)
@@ -396,6 +400,7 @@ func translateAsyncErrorSyntax(line string) string {
 
 func translateLogicalExpression(expr string) string {
 	expr = strings.TrimSpace(expr)
+	expr = translateFixedIntegerSyntax(expr)
 
 	if expr == "" {
 		return expr
@@ -458,6 +463,68 @@ func findTopLevelLogical(input string, op string) int {
 	}
 
 	return -1
+}
+
+var fixedIntegerLiteralPattern = regexp.MustCompile(`(?i)\b(0x[0-9a-f_]+|0b[01_]+|0o[0-7_]+|[0-9][0-9_]*)(u8|u16|u32|u64|i8|i16|i32|i64)\b`)
+
+func translateFixedIntegerSyntax(input string) string {
+	input = fixedIntegerLiteralPattern.ReplaceAllStringFunc(input, func(literal string) string {
+		lower := strings.ToLower(literal)
+		for _, suffix := range []string{"u16", "u32", "u64", "i16", "i32", "i64", "u8", "i8"} {
+			if !strings.HasSuffix(lower, suffix) {
+				continue
+			}
+			number := literal[:len(literal)-len(suffix)]
+			if suffix == "u64" {
+				return fmt.Sprintf("zU64(uint64(%s))", number)
+			}
+			return fmt.Sprintf("%s(%s)", goFixedIntegerType(suffix), number)
+		}
+		return literal
+	})
+
+	for zumbraType, goType := range map[string]string{
+		"u8": "zU8", "u16": "zU16", "u32": "zU32", "u64": "zU64",
+		"i8": "zI8", "i16": "zI16", "i32": "zI32", "i64": "zI64",
+	} {
+		input = regexp.MustCompile(`\b`+zumbraType+`\s*\(`).ReplaceAllString(input, goType+"(")
+	}
+
+	replacements := []struct{ old, new string }{
+		{" band ", " & "},
+		{" bor ", " | "},
+		{" bxor ", " ^ "},
+		{" shl ", " << "},
+		{" shr ", " >> "},
+		{"bnot ", "^"},
+	}
+	for _, replacement := range replacements {
+		input = strings.ReplaceAll(input, replacement.old, replacement.new)
+	}
+	return input
+}
+
+func goFixedIntegerType(kind string) string {
+	switch kind {
+	case "u8":
+		return "zU8"
+	case "u16":
+		return "zU16"
+	case "u32":
+		return "zU32"
+	case "u64":
+		return "zU64"
+	case "i8":
+		return "zI8"
+	case "i16":
+		return "zI16"
+	case "i32":
+		return "zI32"
+	case "i64":
+		return "zI64"
+	default:
+		return kind
+	}
 }
 
 func indentLines(input string, level int) string {
