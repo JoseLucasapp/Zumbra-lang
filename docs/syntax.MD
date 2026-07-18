@@ -140,6 +140,18 @@ for i in 1..10 {
 
 ---
 
+## Number literals
+
+Zumbra supports decimal, hexadecimal, binary and octal integers. `_` can be used as a visual separator.
+
+```zumbra
+var decimal << 255;
+var hexadecimal << 0xFF;
+var binary << 0b1111_0000;
+var octal << 0o755;
+var readable << 1_000_000;
+```
+
 ## Operators
 
 ### Arithmetic
@@ -165,6 +177,17 @@ for i in 1..10 {
 - `and`
 - `or`
 - `!`
+
+### Bitwise
+
+- `band` — bitwise AND
+- `bor` — bitwise OR
+- `bxor` — bitwise XOR
+- `bnot` — bitwise NOT
+- `shl` — shift left
+- `shr` — shift right
+
+Bitwise operators currently accept integers only. Shift counts must be between `0` and `63`.
 
 ---
 

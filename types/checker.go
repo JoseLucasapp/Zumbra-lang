@@ -548,7 +548,18 @@ func (c *Checker) inferExpression(exp ast.Expression) *Type {
 		if e.Right == nil {
 			return Simple(Unknown)
 		}
-		return c.inferExpression(e.Right)
+		right := c.inferExpression(e.Right)
+		if e.Operator == "bnot" {
+			if right.Kind == Unknown {
+				c.constrainIdentifier(e.Right, Simple(Int))
+				return Simple(Int)
+			}
+			if right.Kind != Int {
+				c.addError(fmt.Errorf("bnot expects int, got %s", right.Kind))
+				return Simple(Unknown)
+			}
+		}
+		return right
 
 	case *ast.InfixExpression:
 		left := c.inferExpression(e.Left)
@@ -593,6 +604,25 @@ func (c *Checker) inferExpression(exp ast.Expression) *Type {
 
 			c.addError(fmt.Errorf("invalid operands for %s: %s and %s", e.Operator, left.Kind, right.Kind))
 			return Simple(Unknown)
+
+		case "band", "bor", "bxor", "shl", "shr":
+			if left.Kind == Unknown {
+				c.constrainIdentifier(e.Left, Simple(Int))
+				left = c.inferExpression(e.Left)
+			}
+			if right.Kind == Unknown {
+				c.constrainIdentifier(e.Right, Simple(Int))
+				right = c.inferExpression(e.Right)
+			}
+
+			if left.Kind == Unknown || right.Kind == Unknown {
+				return Simple(Int)
+			}
+			if left.Kind != Int || right.Kind != Int {
+				c.addError(fmt.Errorf("%s expects int operands, got %s and %s", e.Operator, left.Kind, right.Kind))
+				return Simple(Unknown)
+			}
+			return Simple(Int)
 
 		case "==", "!=", "<", ">", "<=", ">=":
 			if left.Kind == Unknown && right.Kind != Unknown {

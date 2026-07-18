@@ -55,6 +55,15 @@ const (
 	OR  = "or"
 	AND = "and"
 
+	// Bitwise. Word operators keep Zumbra readable and avoid conflicting
+	// with the existing << assignment syntax during the rebuild.
+	BIT_AND = "band"
+	BIT_OR  = "bor"
+	BIT_XOR = "bxor"
+	BIT_NOT = "bnot"
+	SHIFT_L = "shl"
+	SHIFT_R = "shr"
+
 	// Delimiters
 	COMMA     = ","
 	COLON     = ":"
@@ -88,6 +97,12 @@ var keywords = map[string]TokenType{
 	"try":      TRY,
 	"and":      AND,
 	"or":       OR,
+	"band":     BIT_AND,
+	"bor":      BIT_OR,
+	"bxor":     BIT_XOR,
+	"bnot":     BIT_NOT,
+	"shl":      SHIFT_L,
+	"shr":      SHIFT_R,
 	"for":      FOR,
 	"in":       IN,
 	"where":    WHERE,

@@ -52,6 +52,12 @@ const (
 	OpGetAttr
 	OpIsError
 	OpDup
+	OpBitAnd
+	OpBitOr
+	OpBitXor
+	OpBitNot
+	OpShiftLeft
+	OpShiftRight
 )
 
 type Definition struct {
@@ -101,6 +107,12 @@ var definitions = map[Opcode]*Definition{
 	OpGetAttr:            {"OpGetAttr", []int{}},
 	OpIsError:            {"OpIsError", []int{}},
 	OpDup:                {"OpDup", []int{}},
+	OpBitAnd:             {"OpBitAnd", []int{}},
+	OpBitOr:              {"OpBitOr", []int{}},
+	OpBitXor:             {"OpBitXor", []int{}},
+	OpBitNot:             {"OpBitNot", []int{}},
+	OpShiftLeft:          {"OpShiftLeft", []int{}},
+	OpShiftRight:         {"OpShiftRight", []int{}},
 }
 
 func Lookup(op byte) (*Definition, error) {

@@ -236,6 +236,8 @@ func evalPrefixExpression(operator string, right object.Object) object.Object {
 		return evalBangOperatorExpression(right)
 	case "-":
 		return evalMinusPrefixOperatorExpression(right)
+	case "bnot":
+		return evalBitNotPrefixOperatorExpression(right)
 	default:
 		return newError("unknown operator: %s%s", operator, right.Type())
 	}
@@ -261,6 +263,15 @@ func evalMinusPrefixOperatorExpression(right object.Object) object.Object {
 
 	value := right.(*object.Integer).Value
 	return &object.Integer{Value: -value}
+}
+
+func evalBitNotPrefixOperatorExpression(right object.Object) object.Object {
+	if right.Type() != object.INTEGER_OBJ {
+		return newError("unknown operator: bnot %s", right.Type())
+	}
+
+	value := right.(*object.Integer).Value
+	return &object.Integer{Value: ^value}
 }
 
 func evalInfixExpression(operator string, left, right object.Object) object.Object {
@@ -351,6 +362,20 @@ func evalIntegerInfixExpression(operator string, left, right object.Object) obje
 		return nativeBoolToBooleanObject(leftVal >= rightVal)
 	case "%":
 		return &object.Integer{Value: int64(math.Mod(float64(leftVal), float64(rightVal)))}
+	case "band":
+		return &object.Integer{Value: leftVal & rightVal}
+	case "bor":
+		return &object.Integer{Value: leftVal | rightVal}
+	case "bxor":
+		return &object.Integer{Value: leftVal ^ rightVal}
+	case "shl", "shr":
+		if rightVal < 0 || rightVal > 63 {
+			return newError("shift count must be between 0 and 63, got %d", rightVal)
+		}
+		if operator == "shl" {
+			return &object.Integer{Value: leftVal << uint(rightVal)}
+		}
+		return &object.Integer{Value: leftVal >> uint(rightVal)}
 	default:
 		return newError("unknown operator: %s %s %s", left.Type(), operator, right.Type())
 	}

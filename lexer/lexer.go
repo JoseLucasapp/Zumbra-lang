@@ -1,6 +1,8 @@
 package lexer
 
-import "zumbra/token"
+import (
+	"zumbra/token"
+)
 
 type Lexer struct {
 	input        string
@@ -257,7 +259,36 @@ func (l *Lexer) readIdentifier() string {
 func (l *Lexer) readNumber() (string, token.TokenType) {
 	position := l.position
 
-	for isDigit(l.ch) {
+	// Base-prefixed integers are intentionally simple: 0x for hexadecimal,
+	// 0b for binary and 0o for octal. Invalid digits are left for the parser
+	// to report with a precise integer-literal error.
+	if l.ch == '0' {
+		switch l.peekChar() {
+		case 'x', 'X':
+			l.readChar()
+			l.readChar()
+			for isNumberLiteralChar(l.ch) {
+				l.readChar()
+			}
+			return l.input[position:l.position], token.INT
+		case 'b', 'B':
+			l.readChar()
+			l.readChar()
+			for isNumberLiteralChar(l.ch) {
+				l.readChar()
+			}
+			return l.input[position:l.position], token.INT
+		case 'o', 'O':
+			l.readChar()
+			l.readChar()
+			for isNumberLiteralChar(l.ch) {
+				l.readChar()
+			}
+			return l.input[position:l.position], token.INT
+		}
+	}
+
+	for isDigit(l.ch) || l.ch == '_' {
 		l.readChar()
 	}
 
@@ -267,7 +298,7 @@ func (l *Lexer) readNumber() (string, token.TokenType) {
 		tokenType = token.TokenType(token.FLOAT)
 		l.readChar()
 
-		for isDigit(l.ch) {
+		for isDigit(l.ch) || l.ch == '_' {
 			l.readChar()
 		}
 	}
@@ -303,6 +334,10 @@ func (l *Lexer) skipWhitespace() {
 
 func isDigit(ch byte) bool {
 	return '0' <= ch && ch <= '9'
+}
+
+func isNumberLiteralChar(ch byte) bool {
+	return isIdentChar(ch)
 }
 
 func isLetter(ch byte) bool {

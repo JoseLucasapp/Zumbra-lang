@@ -93,7 +93,8 @@ func (vm *VM) Run() error {
 				return err
 			}
 
-		case code.OpAdd, code.OpSub, code.OpMul, code.OpDiv, code.OpMod, code.OpPower:
+		case code.OpAdd, code.OpSub, code.OpMul, code.OpDiv, code.OpMod, code.OpPower,
+			code.OpBitAnd, code.OpBitOr, code.OpBitXor, code.OpShiftLeft, code.OpShiftRight:
 			err := vm.executeBinaryOperation(op)
 			if err != nil {
 				return err
@@ -153,6 +154,12 @@ func (vm *VM) Run() error {
 
 		case code.OpMinus:
 			err := vm.executeMinusOperator()
+			if err != nil {
+				return err
+			}
+
+		case code.OpBitNot:
+			err := vm.executeBitNotOperator()
 			if err != nil {
 				return err
 			}
@@ -526,6 +533,21 @@ func (vm *VM) executeBinaryIntegerOperation(op code.Opcode, left, right object.O
 		result = leftValue % rightValue
 	case code.OpPower:
 		result = int64(math.Pow(float64(leftValue), float64(rightValue)))
+	case code.OpBitAnd:
+		result = leftValue & rightValue
+	case code.OpBitOr:
+		result = leftValue | rightValue
+	case code.OpBitXor:
+		result = leftValue ^ rightValue
+	case code.OpShiftLeft, code.OpShiftRight:
+		if rightValue < 0 || rightValue > 63 {
+			return fmt.Errorf("shift count must be between 0 and 63, got %d", rightValue)
+		}
+		if op == code.OpShiftLeft {
+			result = leftValue << uint(rightValue)
+		} else {
+			result = leftValue >> uint(rightValue)
+		}
 	default:
 		return fmt.Errorf("unknown integer operator: %d", op)
 	}
@@ -783,6 +805,17 @@ func (vm *VM) executeMinusOperator() error {
 
 	value := val.(*object.Integer).Value
 	return vm.push(&object.Integer{Value: -value})
+}
+
+func (vm *VM) executeBitNotOperator() error {
+	value := vm.pop()
+
+	if value.Type() != object.INTEGER_OBJ {
+		return fmt.Errorf("unsupported type for bnot: %s", value.Type())
+	}
+
+	integer := value.(*object.Integer).Value
+	return vm.push(&object.Integer{Value: ^integer})
 }
 
 func isTruthy(obj object.Object) bool {

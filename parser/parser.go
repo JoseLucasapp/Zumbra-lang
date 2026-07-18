@@ -3,6 +3,7 @@ package parser
 import (
 	"fmt"
 	"strconv"
+	"strings"
 
 	"zumbra/ast"
 	"zumbra/lexer"
@@ -12,12 +13,17 @@ import (
 var precedences = map[token.TokenType]int{
 	token.OR:        OR,
 	token.AND:       AND,
+	token.BIT_OR:    BIT_OR,
+	token.BIT_XOR:   BIT_XOR,
+	token.BIT_AND:   BIT_AND,
 	token.EQUAL:     EQUALS,
 	token.NOT_EQUAL: EQUALS,
 	token.LT:        LESSGREATER,
 	token.GT:        LESSGREATER,
 	token.LTE:       LESSGREATER,
 	token.GTE:       LESSGREATER,
+	token.SHIFT_L:   SHIFT,
+	token.SHIFT_R:   SHIFT,
 	token.DOTDOT:    RANGE,
 	token.PLUS:      SUM,
 	token.MINUS:     SUM,
@@ -37,6 +43,10 @@ const (
 	AND
 	EQUALS
 	LESSGREATER
+	BIT_OR
+	BIT_XOR
+	BIT_AND
+	SHIFT
 	RANGE
 	SUM
 	PRODUCT
@@ -76,6 +86,7 @@ func New(l *lexer.Lexer) *Parser {
 	p.registerPrefix(token.FLOAT, p.parseFloatLiteral)
 	p.registerPrefix(token.BANG, p.parsePrefixExpression)
 	p.registerPrefix(token.MINUS, p.parsePrefixExpression)
+	p.registerPrefix(token.BIT_NOT, p.parsePrefixExpression)
 	p.registerPrefix(token.TRUE, p.parseBoolean)
 	p.registerPrefix(token.FALSE, p.parseBoolean)
 	p.registerPrefix(token.LPAREN, p.parseGroupedExpression)
@@ -106,6 +117,11 @@ func New(l *lexer.Lexer) *Parser {
 	p.registerInfix(token.GTE, p.parseInfixExpression)
 	p.registerInfix(token.AND, p.parseInfixExpression)
 	p.registerInfix(token.OR, p.parseOrExpression)
+	p.registerInfix(token.BIT_AND, p.parseInfixExpression)
+	p.registerInfix(token.BIT_OR, p.parseInfixExpression)
+	p.registerInfix(token.BIT_XOR, p.parseInfixExpression)
+	p.registerInfix(token.SHIFT_L, p.parseInfixExpression)
+	p.registerInfix(token.SHIFT_R, p.parseInfixExpression)
 	p.registerInfix(token.LPAREN, p.parseCallExpression)
 	p.registerInfix(token.LBRACKET, p.parseIndexExpression)
 	p.registerInfix(token.DOT, p.parseAttributeAccess)
@@ -407,7 +423,8 @@ func (p *Parser) parseIdentifier() ast.Expression {
 func (p *Parser) parseIntegerLiteral() ast.Expression {
 	lit := &ast.IntegerLiteral{Token: p.curToken}
 
-	value, err := strconv.ParseInt(p.curToken.Literal, 0, 64)
+	normalized := strings.ReplaceAll(p.curToken.Literal, "_", "")
+	value, err := strconv.ParseInt(normalized, 0, 64)
 	if err != nil {
 		msg := fmt.Sprintf("could not parse %q as integer", p.curToken.Literal)
 		p.errors = append(p.errors, msg)
@@ -676,7 +693,8 @@ func (p *Parser) parseDictLiteral() ast.Expression {
 func (p *Parser) parseFloatLiteral() ast.Expression {
 	float := &ast.FloatLiteral{Token: p.curToken}
 
-	value, err := strconv.ParseFloat(p.curToken.Literal, 64)
+	normalized := strings.ReplaceAll(p.curToken.Literal, "_", "")
+	value, err := strconv.ParseFloat(normalized, 64)
 	if err != nil {
 		msg := fmt.Sprintf("could not parse %q as float", p.curToken.Literal)
 		p.errors = append(p.errors, msg)
