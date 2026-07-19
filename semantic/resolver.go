@@ -241,6 +241,14 @@ func (r *Resolver) resolveStatement(stmt ast.Statement) {
 	case *ast.AssignStatement:
 		r.resolveAssignStatement(s)
 
+	case *ast.IndexAssignStatement:
+		if s.Target != nil {
+			r.resolveExpression(s.Target)
+		}
+		if s.Value != nil {
+			r.resolveExpression(s.Value)
+		}
+
 	case *ast.ReturnStatement:
 		if s.ReturnValue != nil {
 			r.resolveExpression(s.ReturnValue)

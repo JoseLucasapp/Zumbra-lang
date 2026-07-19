@@ -516,6 +516,18 @@ func (c *Compiler) Compile(node ast.Node) error {
 			return err
 		}
 
+	case *ast.IndexAssignStatement:
+		if err := c.Compile(node.Target.Left); err != nil {
+			return err
+		}
+		if err := c.Compile(node.Target.Index); err != nil {
+			return err
+		}
+		if err := c.Compile(node.Value); err != nil {
+			return err
+		}
+		c.emit(code.OpSetIndex)
+
 	case *ast.ImportStatement:
 		return c.compileImport(node)
 
@@ -1449,6 +1461,14 @@ func rewriteErrorIdentInNode(node ast.Node, from, to string) {
 		}
 
 	case *ast.AssignStatement:
+		if n.Value != nil {
+			rewriteErrorIdentInNode(n.Value, from, to)
+		}
+
+	case *ast.IndexAssignStatement:
+		if n.Target != nil {
+			rewriteErrorIdentInNode(n.Target, from, to)
+		}
 		if n.Value != nil {
 			rewriteErrorIdentInNode(n.Value, from, to)
 		}

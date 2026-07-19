@@ -29,7 +29,7 @@
 ## Memória e dados binários
 
 - [ ] Arrays tipados
-- [ ] Mutação por índice
+- [x] Mutação por índice
 - [ ] `ByteArray`
 - [ ] Slices
 - [ ] Leitura e escrita de arquivos binários
@@ -73,4 +73,4 @@
 
 ## Próximo passo recomendado
 
-**Arrays tipados, mutação por índice e `ByteArray`**, usando os inteiros de tamanho fixo como base.
+**`ByteArray` compacto**, reutilizando a mutação por índice já implementada e os inteiros de tamanho fixo como base.

@@ -240,6 +240,15 @@ func (vm *VM) Run() error {
 				return err
 			}
 
+		case code.OpSetIndex:
+			value := vm.pop()
+			index := vm.pop()
+			left := vm.pop()
+
+			if err := vm.executeIndexAssignment(left, index, value); err != nil {
+				return err
+			}
+
 		case code.OpCall:
 
 			numArgs := code.ReadUint8(ins[ip+1:])
@@ -1002,6 +1011,34 @@ func vmIntegerIndex(value object.Object) (int64, bool) {
 		return int64(value.UnsignedValue()), true
 	default:
 		return 0, false
+	}
+}
+
+func (vm *VM) executeIndexAssignment(left, index, value object.Object) error {
+	switch left.Type() {
+	case object.ARRAY_OBJ:
+		array := left.(*object.Array)
+		i, ok := vmIntegerIndex(index)
+		if !ok {
+			return fmt.Errorf("array index must be an integer, got %s", index.Type())
+		}
+		if i < 0 || i >= int64(len(array.Elements)) {
+			return fmt.Errorf("array index out of bounds: %d (length %d)", i, len(array.Elements))
+		}
+		array.Elements[i] = value
+		return nil
+
+	case object.DICT_OBJ:
+		dict := left.(*object.Dict)
+		key, ok := index.(object.Dictable)
+		if !ok {
+			return fmt.Errorf("unusable as dict key: %s", index.Type())
+		}
+		dict.Pairs[key.DictKey()] = object.DictPair{Key: index, Value: value}
+		return nil
+
+	default:
+		return fmt.Errorf("index assignment not supported: %s", left.Type())
 	}
 }
 

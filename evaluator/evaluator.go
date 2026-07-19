@@ -87,6 +87,32 @@ func Eval(node ast.Node, env *object.Environment) object.Object {
 		}
 		env.Set(node.Name.Value, value)
 
+	case *ast.AssignStatement:
+		value := Eval(node.Value, env)
+		if isError(value) {
+			return value
+		}
+		if _, ok := env.Get(node.Name.Value); !ok {
+			return newError("identifier not found: %s", node.Name.Value)
+		}
+		env.Set(node.Name.Value, value)
+		return value
+
+	case *ast.IndexAssignStatement:
+		left := Eval(node.Target.Left, env)
+		if isError(left) {
+			return left
+		}
+		index := Eval(node.Target.Index, env)
+		if isError(index) {
+			return index
+		}
+		value := Eval(node.Value, env)
+		if isError(value) {
+			return value
+		}
+		return evalIndexAssignment(left, index, value)
+
 	case *ast.StringLiteral:
 		return &object.String{Value: node.Value}
 
@@ -715,6 +741,34 @@ func evalDictIndexExpression(left, index object.Object) object.Object {
 		return NULL
 	}
 	return pair.Value
+}
+
+func evalIndexAssignment(left, index, value object.Object) object.Object {
+	switch left.Type() {
+	case object.ARRAY_OBJ:
+		array := left.(*object.Array)
+		i, ok := integerIndex(index)
+		if !ok {
+			return newError("array index must be an integer, got %s", index.Type())
+		}
+		if i < 0 || i >= int64(len(array.Elements)) {
+			return newError("array index out of bounds: %d (length %d)", i, len(array.Elements))
+		}
+		array.Elements[i] = value
+		return value
+
+	case object.DICT_OBJ:
+		dict := left.(*object.Dict)
+		key, ok := index.(object.Dictable)
+		if !ok {
+			return newError("unusable as dict key: %s", index.Type())
+		}
+		dict.Pairs[key.DictKey()] = object.DictPair{Key: index, Value: value}
+		return value
+
+	default:
+		return newError("index assignment not supported: %s", left.Type())
+	}
 }
 
 func evalWhileStatement(ws *ast.WhileStatement, env *object.Environment) object.Object {

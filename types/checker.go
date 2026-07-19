@@ -208,6 +208,9 @@ func (c *Checker) checkStatement(stmt ast.Statement) {
 			}
 		}
 
+	case *ast.IndexAssignStatement:
+		c.checkIndexAssignment(s)
+
 	case *ast.ExpressionStatement:
 		if s.Expression != nil {
 			c.inferExpression(s.Expression)
@@ -220,6 +223,40 @@ func (c *Checker) checkStatement(stmt ast.Statement) {
 
 	case *ast.WhileStatement:
 		c.checkWhileStatement(s)
+	}
+}
+
+func (c *Checker) checkIndexAssignment(stmt *ast.IndexAssignStatement) {
+	if stmt == nil || stmt.Target == nil {
+		return
+	}
+
+	containerType := c.inferExpression(stmt.Target.Left)
+	indexType := c.inferExpression(stmt.Target.Index)
+	valueType := c.inferExpression(stmt.Value)
+
+	switch containerType.Kind {
+	case Array:
+		if indexType.Kind != Unknown && !IsInteger(indexType) {
+			c.addError(fmt.Errorf("array index must be int, got %s", indexType.Kind))
+		}
+		if containerType.Elem != nil && containerType.Elem.Kind != Unknown && valueType.Kind != Unknown && !Same(containerType.Elem, valueType) {
+			c.addError(fmt.Errorf("array element expects %s, got %s", containerType.Elem.Kind, valueType.Kind))
+		}
+
+	case Dict:
+		if containerType.Key != nil && containerType.Key.Kind != Unknown && indexType.Kind != Unknown && !Same(containerType.Key, indexType) {
+			c.addError(fmt.Errorf("dict key expects %s, got %s", containerType.Key.Kind, indexType.Kind))
+		}
+		if containerType.Value != nil && containerType.Value.Kind != Unknown && valueType.Kind != Unknown && !Same(containerType.Value, valueType) {
+			c.addError(fmt.Errorf("dict value expects %s, got %s", containerType.Value.Kind, valueType.Kind))
+		}
+
+	case Unknown:
+		return
+
+	default:
+		c.addError(fmt.Errorf("index assignment not supported for %s", containerType.Kind))
 	}
 }
 

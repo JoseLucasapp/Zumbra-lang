@@ -1,0 +1,18 @@
+// Mutação de arrays
+var memory << [0u8, 0u8, 0u8, 0u8];
+memory[0x02] << 0xA9u8;
+show(memory[2]);
+
+// Mutação e inserção em dicionários
+var player << {
+    "score": 10,
+};
+player["score"] << 25;
+player["lives"] << 3;
+show(player["score"]);
+show(player["lives"]);
+
+// Mutação em arrays aninhados
+var matrix << [[0, 0], [0, 0]];
+matrix[1][0] << 7;
+show(matrix[1][0]);

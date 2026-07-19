@@ -77,6 +77,14 @@ func (v *ArityValidator) visitStatement(stmt ast.Statement) {
 			v.visitExpression(node.Value)
 		}
 
+	case *ast.IndexAssignStatement:
+		if node.Target != nil {
+			v.visitExpression(node.Target)
+		}
+		if node.Value != nil {
+			v.visitExpression(node.Value)
+		}
+
 	case *ast.ReturnStatement:
 		if node.ReturnValue != nil {
 			v.visitExpression(node.ReturnValue)

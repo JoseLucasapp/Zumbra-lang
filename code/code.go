@@ -58,6 +58,7 @@ const (
 	OpBitNot
 	OpShiftLeft
 	OpShiftRight
+	OpSetIndex
 )
 
 type Definition struct {
@@ -113,6 +114,7 @@ var definitions = map[Opcode]*Definition{
 	OpBitNot:             {"OpBitNot", []int{}},
 	OpShiftLeft:          {"OpShiftLeft", []int{}},
 	OpShiftRight:         {"OpShiftRight", []int{}},
+	OpSetIndex:           {"OpSetIndex", []int{}},
 }
 
 func Lookup(op byte) (*Definition, error) {

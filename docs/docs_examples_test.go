@@ -19,7 +19,9 @@ func TestCoreSyntaxSnippetsParseAndCompile(t *testing.T) {
 		`while (false) { 1; }`,
 		`for i in 1..3 { i; }`,
 		`var arr << [1, 2, 3]; arr[0];`,
+		`var arr << [1, 2, 3]; arr[0] << 9; arr[0];`,
 		`var dict << {"name": "z"}; dict["name"];`,
+		`var dict << {"score": 1}; dict["score"] << 2; dict["score"];`,
 		`var task << async fct() { 10; }; await task();`,
 		`var run << fct() { 1; }; try run() or err { err; };`,
 	}

@@ -340,3 +340,30 @@ var byte << u8(200);
 Normal fixed-width arithmetic wraps like hardware. Use `checkedAdd`, `checkedSub`, and `checkedMul` for overflow errors, or `satAdd`, `satSub`, and `satMul` for saturating arithmetic.
 
 Complete documentation: [`docs/pt-BR/inteiros-de-tamanho-fixo.md`](./pt-BR/inteiros-de-tamanho-fixo.md).
+
+
+---
+
+## Indexed assignment
+
+Arrays and dictionaries can be changed with the same readable assignment operator used by variables:
+
+```zumbra
+var memory << [0u8, 0u8, 0u8];
+memory[1] << 0xA9u8;
+
+var player << {"score": 10};
+player["score"] << 25;
+player["lives"] << 3;
+```
+
+Nested arrays are supported:
+
+```zumbra
+var matrix << [[0, 0], [0, 0]];
+matrix[1][0] << 7;
+```
+
+Array writes must stay inside the existing bounds. Dictionary writes may update or insert a key. Strings are immutable.
+
+Complete documentation: [`docs/pt-BR/mutacao-por-indice.md`](./pt-BR/mutacao-por-indice.md).

@@ -178,6 +178,14 @@ func (a *Analyzer) visitStatement(stmt ast.Statement) {
 			a.visitExpression(node.Value)
 		}
 
+	case *ast.IndexAssignStatement:
+		if node.Target != nil {
+			a.visitExpression(node.Target)
+		}
+		if node.Value != nil {
+			a.visitExpression(node.Value)
+		}
+
 	case *ast.ReturnStatement:
 		if node.ReturnValue != nil {
 			a.visitExpression(node.ReturnValue)

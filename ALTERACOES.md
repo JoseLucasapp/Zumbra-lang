@@ -206,3 +206,51 @@ A suíte completa `go test ./...` deve ser executada no ambiente do projeto, poi
 - `ByteArray` compacto;
 - slices;
 - leitura e escrita de arquivos binários.
+
+
+# Z3.1 - Mutação por índice
+
+## O que foi implementado
+
+- atribuição em arrays com `array[index] << value`;
+- atualização e inserção de chaves em dicionários;
+- mutação em arrays aninhados;
+- novo nó `IndexAssignStatement` na AST;
+- novo opcode `OpSetIndex`;
+- validação semântica e de tipos;
+- execução equivalente no evaluator e na VM;
+- tradução para atribuição indexada no backend Go experimental;
+- erros claros para índices inválidos, fora da faixa e strings imutáveis;
+- testes de conformidade evaluator versus VM;
+- documentação e exemplo executável.
+
+## Como usar
+
+```zumbra
+var memory << [0u8, 0u8, 0u8];
+memory[1] << 0xA9u8;
+
+var player << {"score": 10};
+player["score"] << 25;
+```
+
+## Como testar
+
+```bash
+./scripts/test-index-assignment.sh
+go test ./...
+go run . run code_examples/core/index_assignment.zum
+```
+
+Saída esperada do exemplo:
+
+```text
+169
+25
+3
+7
+```
+
+## Próxima etapa
+
+Implementar `ByteArray` compacto, preservando a mesma sintaxe de leitura e escrita por índice.

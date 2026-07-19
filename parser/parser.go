@@ -383,14 +383,37 @@ func (p *Parser) registerInfix(tokenType token.TokenType, fct infixParseFct) {
 	p.infixParseFcts[tokenType] = fct
 }
 
-func (p *Parser) parseExpressionStatement() *ast.ExpressionStatement {
-	stmt := &ast.ExpressionStatement{Token: p.curToken}
-	stmt.Expression = p.parseExpression(LOWEST)
+func (p *Parser) parseExpressionStatement() ast.Statement {
+	startToken := p.curToken
+	expression := p.parseExpression(LOWEST)
 
+	if p.peekTokenIs(token.ASSIGN) {
+		target, ok := expression.(*ast.IndexExpression)
+		if !ok {
+			p.errors = append(p.errors, fmt.Sprintf("invalid assignment target %T: only identifiers and indexed values can be assigned", expression))
+			return &ast.ExpressionStatement{Token: startToken, Expression: expression}
+		}
+
+		p.nextToken()
+		assignToken := p.curToken
+		p.nextToken()
+
+		stmt := &ast.IndexAssignStatement{
+			Token:  assignToken,
+			Target: target,
+			Value:  p.parseExpression(LOWEST),
+		}
+
+		if p.peekTokenIs(token.SEMICOLON) {
+			p.nextToken()
+		}
+		return stmt
+	}
+
+	stmt := &ast.ExpressionStatement{Token: startToken, Expression: expression}
 	if p.peekTokenIs(token.SEMICOLON) {
 		p.nextToken()
 	}
-
 	return stmt
 }
 
