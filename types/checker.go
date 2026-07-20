@@ -244,6 +244,16 @@ func (c *Checker) checkIndexAssignment(stmt *ast.IndexAssignStatement) {
 			c.addError(fmt.Errorf("array element expects %s, got %s", containerType.Elem.Kind, valueType.Kind))
 		}
 
+	case ByteArray, TypedArray, Slice:
+		if indexType.Kind != Unknown && !IsInteger(indexType) {
+			c.addError(fmt.Errorf("collection index must be int, got %s", indexType.Kind))
+		}
+		if containerType.Elem != nil && containerType.Elem.Kind != Unknown && valueType.Kind != Unknown && !Same(containerType.Elem, valueType) {
+			if !(IsInteger(containerType.Elem) && IsInteger(valueType)) {
+				c.addError(fmt.Errorf("collection element expects %s, got %s", containerType.Elem.Kind, valueType.Kind))
+			}
+		}
+
 	case Dict:
 		if containerType.Key != nil && containerType.Key.Kind != Unknown && indexType.Kind != Unknown && !Same(containerType.Key, indexType) {
 			c.addError(fmt.Errorf("dict key expects %s, got %s", containerType.Key.Kind, indexType.Kind))
@@ -378,7 +388,7 @@ func (c *Checker) checkBuiltinCall(name string, args []ast.Expression) *Type {
 			return Simple(Int)
 		}
 		argType := c.inferExpression(args[0])
-		if argType.Kind != Unknown && argType.Kind != Array && argType.Kind != String && argType.Kind != Dict {
+		if argType.Kind != Unknown && argType.Kind != Array && argType.Kind != ByteArray && argType.Kind != TypedArray && argType.Kind != Slice && argType.Kind != String && argType.Kind != Dict {
 			c.addError(fmt.Errorf("sizeOf expects array, string or dict, got %s", argType.Kind))
 		}
 		return Simple(Int)
@@ -445,6 +455,87 @@ func (c *Checker) checkBuiltinCall(name string, args []ast.Expression) *Type {
 			return Simple(Unknown)
 		}
 		return result
+
+	case "bytes":
+		if len(args) != 1 {
+			c.addError(fmt.Errorf("bytes expects 1 argument, got %d", len(args)))
+			return ByteArrayOf()
+		}
+		sizeType := c.inferExpression(args[0])
+		if sizeType.Kind != Unknown && !IsInteger(sizeType) {
+			c.addError(fmt.Errorf("bytes size must be integer, got %s", sizeType.Kind))
+		}
+		return ByteArrayOf()
+
+	case "arrayOf":
+		if len(args) != 2 {
+			c.addError(fmt.Errorf("arrayOf expects 2 arguments, got %d", len(args)))
+			return TypedArrayOf(Simple(Unknown))
+		}
+		typeArg := c.inferExpression(args[0])
+		if typeArg.Kind != Unknown && typeArg.Kind != String {
+			c.addError(fmt.Errorf("arrayOf type must be string, got %s", typeArg.Kind))
+		}
+		sizeType := c.inferExpression(args[1])
+		if sizeType.Kind != Unknown && !IsInteger(sizeType) {
+			c.addError(fmt.Errorf("arrayOf size must be integer, got %s", sizeType.Kind))
+		}
+		elem := Simple(Unknown)
+		if literal, ok := args[0].(*ast.StringLiteral); ok {
+			if kind, ok := FixedIntegerKind(literal.Value); ok {
+				elem = Simple(kind)
+			} else {
+				c.addError(fmt.Errorf("arrayOf unsupported element type %q", literal.Value))
+			}
+		}
+		return TypedArrayOf(elem)
+
+	case "slice":
+		if len(args) != 3 {
+			c.addError(fmt.Errorf("slice expects 3 arguments, got %d", len(args)))
+			return SliceOf(Simple(Unknown))
+		}
+		container := c.inferExpression(args[0])
+		for _, arg := range args[1:] {
+			indexType := c.inferExpression(arg)
+			if indexType.Kind != Unknown && !IsInteger(indexType) {
+				c.addError(fmt.Errorf("slice bounds must be integer, got %s", indexType.Kind))
+			}
+		}
+		switch container.Kind {
+		case Array, ByteArray, TypedArray, Slice:
+			if container.Elem != nil {
+				return SliceOf(container.Elem)
+			}
+			return SliceOf(Simple(Unknown))
+		case Unknown:
+			return SliceOf(Simple(Unknown))
+		default:
+			c.addError(fmt.Errorf("slice expects array-like value, got %s", container.Kind))
+			return SliceOf(Simple(Unknown))
+		}
+
+	case "fill":
+		if len(args) != 2 {
+			c.addError(fmt.Errorf("fill expects 2 arguments, got %d", len(args)))
+			return Simple(Unknown)
+		}
+		container := c.inferExpression(args[0])
+		value := c.inferExpression(args[1])
+		switch container.Kind {
+		case Array, ByteArray, TypedArray, Slice:
+			if container.Elem != nil && container.Elem.Kind != Unknown && value.Kind != Unknown && !Same(container.Elem, value) {
+				if !(IsInteger(container.Elem) && IsInteger(value)) {
+					c.addError(fmt.Errorf("fill expects %s value, got %s", container.Elem.Kind, value.Kind))
+				}
+			}
+			return container
+		case Unknown:
+			return Simple(Unknown)
+		default:
+			c.addError(fmt.Errorf("fill expects array-like value, got %s", container.Kind))
+			return Simple(Unknown)
+		}
 
 	case "first", "last":
 		if len(args) != 1 {
@@ -860,7 +951,7 @@ func (c *Checker) inferExpression(exp ast.Expression) *Type {
 		left := c.inferExpression(e.Left)
 		index := c.inferExpression(e.Index)
 
-		if left.Kind == Array {
+		if left.Kind == Array || left.Kind == ByteArray || left.Kind == TypedArray || left.Kind == Slice {
 			if index.Kind != Unknown && !IsInteger(index) {
 				c.addError(fmt.Errorf("array index must be int, got %s", index.Kind))
 			}

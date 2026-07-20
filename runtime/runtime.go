@@ -18,6 +18,18 @@ func zIntegerBig[T zAnyInteger](value T) *big.Int {
 	}
 }
 
+func zIntegerBigDynamic(value interface{}) *big.Int {
+	reflected := reflect.ValueOf(value)
+	switch reflected.Kind() {
+	case reflect.Int, reflect.Int8, reflect.Int16, reflect.Int32, reflect.Int64:
+		return big.NewInt(reflected.Int())
+	case reflect.Uint, reflect.Uint8, reflect.Uint16, reflect.Uint32, reflect.Uint64:
+		return new(big.Int).SetUint64(reflected.Uint())
+	default:
+		panic(fmt.Sprintf("expected integer, got %T", value))
+	}
+}
+
 func zIntegerBounds(signed bool, bits uint) (*big.Int, *big.Int) {
 	if signed {
 		max := new(big.Int).Sub(new(big.Int).Lsh(big.NewInt(1), bits-1), big.NewInt(1))
@@ -120,12 +132,115 @@ func satAdd[T zAnyInteger](left, right T) T { return zFixedArithmetic(left, righ
 func satSub[T zAnyInteger](left, right T) T { return zFixedArithmetic(left, right, "-", "saturating") }
 func satMul[T zAnyInteger](left, right T) T { return zFixedArithmetic(left, right, "*", "saturating") }
 
+func zIndex(value interface{}) int {
+	reflected := reflect.ValueOf(value)
+	switch reflected.Kind() {
+	case reflect.Int, reflect.Int8, reflect.Int16, reflect.Int32, reflect.Int64:
+		index := reflected.Int()
+		if index < 0 { panic(fmt.Sprintf("index must be non-negative, got %d", index)) }
+		return int(index)
+	case reflect.Uint, reflect.Uint8, reflect.Uint16, reflect.Uint32, reflect.Uint64:
+		return int(reflected.Uint())
+	default:
+		panic(fmt.Sprintf("index must be integer, got %T", value))
+	}
+}
+
+func zBytes(size interface{}) []uint8 {
+	return make([]uint8, zIndex(size))
+}
+
+func zArrayOf(kind string, size interface{}) interface{} {
+	length := zIndex(size)
+	switch kind {
+	case "u8": return make([]uint8, length)
+	case "u16": return make([]uint16, length)
+	case "u32": return make([]uint32, length)
+	case "u64": return make([]uint64, length)
+	case "i8": return make([]int8, length)
+	case "i16": return make([]int16, length)
+	case "i32": return make([]int32, length)
+	case "i64": return make([]int64, length)
+	default: panic(fmt.Sprintf("unsupported arrayOf type %q", kind))
+	}
+}
+
+func zGet(container interface{}, index interface{}) interface{} {
+	value := reflect.ValueOf(container)
+	i := zIndex(index)
+	if value.Kind() == reflect.Map {
+		key := reflect.ValueOf(index)
+		result := value.MapIndex(key)
+		if !result.IsValid() { return nil }
+		return result.Interface()
+	}
+	if value.Kind() != reflect.Array && value.Kind() != reflect.Slice && value.Kind() != reflect.String {
+		panic(fmt.Sprintf("value of type %T cannot be indexed", container))
+	}
+	if i < 0 || i >= value.Len() { panic(fmt.Sprintf("index out of bounds: %d (length %d)", i, value.Len())) }
+	return value.Index(i).Interface()
+}
+
+func zConvertElement(value interface{}, target reflect.Type) reflect.Value {
+	input := reflect.ValueOf(value)
+	if input.IsValid() && input.Type().AssignableTo(target) { return input }
+	if input.IsValid() && input.Type().ConvertibleTo(target) {
+		converted := input.Convert(target)
+		if target.Kind() >= reflect.Int && target.Kind() <= reflect.Int64 {
+			original := zIntegerBigDynamic(value)
+			if original.Cmp(big.NewInt(converted.Int())) != 0 { panic("integer value is outside typed array range") }
+		}
+		if target.Kind() >= reflect.Uint && target.Kind() <= reflect.Uint64 {
+			original := zIntegerBigDynamic(value)
+			convertedBig := new(big.Int).SetUint64(converted.Uint())
+			if original.Sign() < 0 || original.Cmp(convertedBig) != 0 { panic("integer value is outside typed array range") }
+		}
+		return converted
+	}
+	panic(fmt.Sprintf("cannot store %T in %s", value, target))
+}
+
+func zSet(container interface{}, index interface{}, newValue interface{}) interface{} {
+	value := reflect.ValueOf(container)
+	i := zIndex(index)
+	if value.Kind() == reflect.Map {
+		value.SetMapIndex(reflect.ValueOf(index), reflect.ValueOf(newValue))
+		return newValue
+	}
+	if value.Kind() != reflect.Array && value.Kind() != reflect.Slice {
+		panic(fmt.Sprintf("value of type %T cannot be changed by index", container))
+	}
+	if i < 0 || i >= value.Len() { panic(fmt.Sprintf("index out of bounds: %d (length %d)", i, value.Len())) }
+	value.Index(i).Set(zConvertElement(newValue, value.Type().Elem()))
+	return newValue
+}
+
+func zSlice(container interface{}, start interface{}, end interface{}) interface{} {
+	value := reflect.ValueOf(container)
+	from := zIndex(start)
+	to := zIndex(end)
+	if value.Kind() != reflect.Array && value.Kind() != reflect.Slice {
+		panic(fmt.Sprintf("value of type %T cannot be sliced", container))
+	}
+	if from < 0 || to < from || to > value.Len() { panic(fmt.Sprintf("invalid slice range [%d:%d] for length %d", from, to, value.Len())) }
+	return value.Slice(from, to).Interface()
+}
+
+func zFill(container interface{}, newValue interface{}) interface{} {
+	value := reflect.ValueOf(container)
+	if value.Kind() != reflect.Array && value.Kind() != reflect.Slice {
+		panic(fmt.Sprintf("value of type %T cannot be filled", container))
+	}
+	for i := 0; i < value.Len(); i++ { value.Index(i).Set(zConvertElement(newValue, value.Type().Elem())) }
+	return container
+}
+
 func sizeOf(value interface{}) int {
-	switch v := value.(type) {
-	case []interface{}:
-		return len(v)
-	case string:
-		return len(v)
+	if value == nil { return 0 }
+	reflected := reflect.ValueOf(value)
+	switch reflected.Kind() {
+	case reflect.Array, reflect.Slice, reflect.Map, reflect.String:
+		return reflected.Len()
 	default:
 		return 0
 	}

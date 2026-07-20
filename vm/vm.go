@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"math"
 	"zumbra/code"
+	"zumbra/collections"
 	"zumbra/compiler"
 	"zumbra/numeric"
 	"zumbra/object"
@@ -972,11 +973,17 @@ func (vm *VM) buildDict(startIndex, endIndex int) (object.Object, error) {
 }
 
 func (vm *VM) executeIndexExpression(left, index object.Object) error {
-	switch {
-	case left.Type() == object.ARRAY_OBJ:
+	switch left.Type() {
+	case object.ARRAY_OBJ:
 		return vm.executeArrayIndex(left, index)
-	case left.Type() == object.DICT_OBJ:
+	case object.DICT_OBJ:
 		return vm.executeDictIndex(left, index)
+	case object.BYTE_ARRAY_OBJ, object.TYPED_ARRAY_OBJ, object.SLICE_OBJ:
+		value, _, err := collections.Get(left, index)
+		if err != nil {
+			return err
+		}
+		return vm.push(value)
 	default:
 		return fmt.Errorf("index operator not supported: %s", left.Type())
 	}
@@ -1027,6 +1034,10 @@ func (vm *VM) executeIndexAssignment(left, index, value object.Object) error {
 		}
 		array.Elements[i] = value
 		return nil
+
+	case object.BYTE_ARRAY_OBJ, object.TYPED_ARRAY_OBJ, object.SLICE_OBJ:
+		_, err := collections.Set(left, index, value)
+		return err
 
 	case object.DICT_OBJ:
 		dict := left.(*object.Dict)

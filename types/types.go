@@ -3,23 +3,26 @@ package types
 type Kind string
 
 const (
-	Unknown Kind = "unknown"
-	Int     Kind = "int"
-	U8      Kind = "u8"
-	U16     Kind = "u16"
-	U32     Kind = "u32"
-	U64     Kind = "u64"
-	I8      Kind = "i8"
-	I16     Kind = "i16"
-	I32     Kind = "i32"
-	I64     Kind = "i64"
-	Float   Kind = "float"
-	Bool    Kind = "bool"
-	String  Kind = "string"
-	Null    Kind = "null"
-	Array   Kind = "array"
-	Dict    Kind = "dict"
-	Func    Kind = "function"
+	Unknown    Kind = "unknown"
+	Int        Kind = "int"
+	U8         Kind = "u8"
+	U16        Kind = "u16"
+	U32        Kind = "u32"
+	U64        Kind = "u64"
+	I8         Kind = "i8"
+	I16        Kind = "i16"
+	I32        Kind = "i32"
+	I64        Kind = "i64"
+	Float      Kind = "float"
+	Bool       Kind = "bool"
+	String     Kind = "string"
+	Null       Kind = "null"
+	Array      Kind = "array"
+	ByteArray  Kind = "byte_array"
+	TypedArray Kind = "typed_array"
+	Slice      Kind = "slice"
+	Dict       Kind = "dict"
+	Func       Kind = "function"
 )
 
 type Type struct {
@@ -36,10 +39,19 @@ func Simple(kind Kind) *Type {
 }
 
 func ArrayOf(elem *Type) *Type {
-	return &Type{
-		Kind: Array,
-		Elem: elem,
-	}
+	return &Type{Kind: Array, Elem: elem}
+}
+
+func ByteArrayOf() *Type {
+	return &Type{Kind: ByteArray, Elem: Simple(U8)}
+}
+
+func TypedArrayOf(elem *Type) *Type {
+	return &Type{Kind: TypedArray, Elem: elem}
+}
+
+func SliceOf(elem *Type) *Type {
+	return &Type{Kind: Slice, Elem: elem}
 }
 
 func DictOf(key *Type, value *Type) *Type {
@@ -68,7 +80,7 @@ func Same(a, b *Type) bool {
 	}
 
 	switch a.Kind {
-	case Array:
+	case Array, ByteArray, TypedArray, Slice:
 		if a.Elem == nil || b.Elem == nil {
 			return a.Elem == b.Elem
 		}

@@ -22,6 +22,9 @@ func TestCoreSyntaxSnippetsParseAndCompile(t *testing.T) {
 		`var arr << [1, 2, 3]; arr[0] << 9; arr[0];`,
 		`var dict << {"name": "z"}; dict["name"];`,
 		`var dict << {"score": 1}; dict["score"] << 2; dict["score"];`,
+		`var memory << bytes(16); memory[0] << 0xA9u8; memory[0];`,
+		`var values << arrayOf("u16", 4); values[1] << 0x1234u16; values[1];`,
+		`var memory << bytes(8); var view << slice(memory, 2, 6); fill(view, 0u8);`,
 		`var task << async fct() { 10; }; await task();`,
 		`var run << fct() { 1; }; try run() or err { err; };`,
 	}

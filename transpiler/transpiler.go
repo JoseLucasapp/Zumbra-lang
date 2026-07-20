@@ -178,6 +178,7 @@ func translateProgramLines(lines []string, blockStack *[]string) []string {
 		line = translateResponseCalls(line)
 		line = translateAsyncErrorSyntax(line)
 		line = translateFixedIntegerSyntax(line)
+		line = translateMemoryCalls(line)
 
 		if strings.HasSuffix(line, ".json({") || strings.HasSuffix(line, ".json(map[string]interface{}{") {
 			dot := strings.Index(line, ".")
@@ -230,6 +231,7 @@ func translateProgramLines(lines []string, blockStack *[]string) []string {
 		if strings.HasPrefix(line, "show(") {
 			content := strings.TrimPrefix(line, "show(")
 			content = strings.TrimSuffix(content, ")")
+			content = translateIndexReads(content)
 			args := splitArgs(content)
 
 			if len(args) == 0 {
@@ -263,6 +265,7 @@ func translateProgramLines(lines []string, blockStack *[]string) []string {
 			line = translateRequestFields(line)
 			line = translateResponseCalls(line)
 			line = translateInlineDictAssignment(line)
+			line = translateIndexReads(line)
 
 			if strings.Contains(line, "jsonParse(") {
 				parts := strings.SplitN(line, "=", 2)
@@ -283,10 +286,18 @@ func translateProgramLines(lines []string, blockStack *[]string) []string {
 		}
 
 		if strings.Contains(line, "<<") {
+			if target, index, value, ok := splitIndexAssignment(line); ok {
+				target = translateIndexReads(target)
+				index = translateIndexReads(translateLogicalExpression(index))
+				value = translateIndexReads(translateLogicalExpression(value))
+				out = append(out, fmt.Sprintf("zSet(%s, %s, %s)", target, index, value))
+				continue
+			}
 			line = strings.Replace(line, "<<", "=", 1)
 			line = translateLogicalExpression(line)
 			line = translateRequestFields(line)
 			line = translateResponseCalls(line)
+			line = translateIndexReads(line)
 			out = append(out, line)
 			continue
 		}
@@ -306,6 +317,7 @@ func translateProgramLines(lines []string, blockStack *[]string) []string {
 				continue
 			}
 
+			line = translateIndexReads(line)
 			out = append(out, line)
 			continue
 		}
@@ -525,6 +537,65 @@ func goFixedIntegerType(kind string) string {
 	default:
 		return kind
 	}
+}
+
+func translateMemoryCalls(input string) string {
+	for name, replacement := range map[string]string{
+		"bytes":   "zBytes",
+		"arrayOf": "zArrayOf",
+		"slice":   "zSlice",
+		"fill":    "zFill",
+	} {
+		input = regexp.MustCompile(`\b`+name+`\s*\(`).ReplaceAllString(input, replacement+"(")
+	}
+	return input
+}
+
+var simpleIndexPattern = regexp.MustCompile(`(\bzGet\([^()]*\)|\b[A-Za-z_][A-Za-z0-9_]*)\s*\[([^\[\]]+)\]`)
+
+func translateIndexReads(input string) string {
+	for {
+		updated := simpleIndexPattern.ReplaceAllString(input, `zGet($1, $2)`)
+		if updated == input {
+			return input
+		}
+		input = updated
+	}
+}
+
+func splitIndexAssignment(line string) (string, string, string, bool) {
+	assignment := findTopLevelLogical(line, " << ")
+	separatorLength := 4
+	if assignment == -1 {
+		assignment = strings.Index(line, "<<")
+		separatorLength = 2
+	}
+	if assignment == -1 {
+		return "", "", "", false
+	}
+	left := strings.TrimSpace(line[:assignment])
+	value := strings.TrimSpace(line[assignment+separatorLength:])
+	if !strings.HasSuffix(left, "]") {
+		return "", "", "", false
+	}
+	depth := 0
+	open := -1
+	for i := len(left) - 1; i >= 0; i-- {
+		switch left[i] {
+		case ']':
+			depth++
+		case '[':
+			depth--
+			if depth == 0 {
+				open = i
+				i = -1
+			}
+		}
+	}
+	if open <= 0 {
+		return "", "", "", false
+	}
+	return strings.TrimSpace(left[:open]), strings.TrimSpace(left[open+1 : len(left)-1]), value, true
 }
 
 func indentLines(input string, level int) string {

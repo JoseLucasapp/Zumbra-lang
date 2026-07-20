@@ -7,6 +7,7 @@ import (
 	"path/filepath"
 	"strings"
 	"zumbra/ast"
+	"zumbra/collections"
 	"zumbra/lexer"
 	"zumbra/numeric"
 	"zumbra/object"
@@ -719,11 +720,17 @@ func evalDictLiteral(node *ast.DictLiteral, env *object.Environment) object.Obje
 }
 
 func evalIndexExpression(left, index object.Object) object.Object {
-	switch {
-	case left.Type() == object.ARRAY_OBJ:
+	switch left.Type() {
+	case object.ARRAY_OBJ:
 		return evalArrayIndexExpression(left, index)
-	case left.Type() == object.DICT_OBJ:
+	case object.DICT_OBJ:
 		return evalDictIndexExpression(left, index)
+	case object.BYTE_ARRAY_OBJ, object.TYPED_ARRAY_OBJ, object.SLICE_OBJ:
+		value, _, err := collections.Get(left, index)
+		if err != nil {
+			return newError("%s", err)
+		}
+		return value
 	default:
 		return newError("index operator not supported: %s", left.Type())
 	}
@@ -755,6 +762,13 @@ func evalIndexAssignment(left, index, value object.Object) object.Object {
 			return newError("array index out of bounds: %d (length %d)", i, len(array.Elements))
 		}
 		array.Elements[i] = value
+		return value
+
+	case object.BYTE_ARRAY_OBJ, object.TYPED_ARRAY_OBJ, object.SLICE_OBJ:
+		_, err := collections.Set(left, index, value)
+		if err != nil {
+			return newError("%s", err)
+		}
 		return value
 
 	case object.DICT_OBJ:

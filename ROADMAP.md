@@ -28,10 +28,10 @@
 
 ## Memória e dados binários
 
-- [ ] Arrays tipados
+- [x] Arrays tipados
 - [x] Mutação por índice
-- [ ] `ByteArray`
-- [ ] Slices
+- [x] `ByteArray`
+- [x] Slices
 - [ ] Leitura e escrita de arquivos binários
 - [ ] Leitura little-endian e big-endian
 
@@ -73,4 +73,4 @@
 
 ## Próximo passo recomendado
 
-**`ByteArray` compacto**, reutilizando a mutação por índice já implementada e os inteiros de tamanho fixo como base.
+**Arquivos binários e endianness**, usando as estruturas compactas concluídas no Z3 como base.

@@ -45,6 +45,18 @@ func builtinType(name string) (*Type, bool) {
 		"satAdd", "satSub", "satMul":
 		return FuncOf([]*Type{Simple(Unknown), Simple(Unknown)}, Simple(Unknown)), true
 
+	case "bytes":
+		return FuncOf([]*Type{Simple(Int)}, ByteArrayOf()), true
+
+	case "arrayOf":
+		return FuncOf([]*Type{Simple(String), Simple(Int)}, TypedArrayOf(Simple(Unknown))), true
+
+	case "slice":
+		return FuncOf([]*Type{Simple(Unknown), Simple(Int), Simple(Int)}, SliceOf(Simple(Unknown))), true
+
+	case "fill":
+		return FuncOf([]*Type{Simple(Unknown), Simple(Unknown)}, Simple(Unknown)), true
+
 	case "first":
 		return FuncOf([]*Type{ArrayOf(Simple(Unknown))}, Simple(Unknown)), true
 

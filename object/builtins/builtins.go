@@ -342,6 +342,20 @@ var Builtins = []struct {
 	{
 		"satMul", FixedArithmeticBuiltin(numeric.Saturating, "*", "satMul"),
 	},
+
+	// compact memory collections
+	{
+		"bytes", BytesBuiltin(),
+	},
+	{
+		"arrayOf", ArrayOfBuiltin(),
+	},
+	{
+		"slice", SliceBuiltin(),
+	},
+	{
+		"fill", FillBuiltin(),
+	},
 }
 
 func NewBoolean(value bool) *object.Boolean {

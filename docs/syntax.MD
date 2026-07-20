@@ -367,3 +367,37 @@ matrix[1][0] << 7;
 Array writes must stay inside the existing bounds. Dictionary writes may update or insert a key. Strings are immutable.
 
 Complete documentation: [`docs/pt-BR/mutacao-por-indice.md`](./pt-BR/mutacao-por-indice.md).
+
+
+---
+
+## Compact memory, typed arrays, and slices
+
+Create compact byte memory with `bytes(size)`:
+
+```zumbra
+var memory << bytes(4096);
+memory[0x200] << 0xA9u8;
+```
+
+Create compact fixed-integer arrays with `arrayOf(type, size)`:
+
+```zumbra
+var registers << arrayOf("u16", 16);
+registers[0] << 0x8000u16;
+```
+
+Create a mutable view without copying data:
+
+```zumbra
+var page << slice(memory, 0x200, 0x300);
+page[0] << 0x42u8;
+```
+
+Fill a whole collection or view:
+
+```zumbra
+fill(page, 0u8);
+```
+
+Complete documentation: [`docs/pt-BR/memoria-compacta.md`](./pt-BR/memoria-compacta.md).
