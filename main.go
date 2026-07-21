@@ -8,18 +8,15 @@ import (
 	"path/filepath"
 
 	"zumbra/compiler"
-	"zumbra/lexer"
 	"zumbra/object"
 	"zumbra/object/builtins"
-	"zumbra/parser"
+	"zumbra/pipeline"
 	"zumbra/repl"
-	"zumbra/semantic"
 	"zumbra/transpiler"
-	"zumbra/types"
 	"zumbra/vm"
 )
 
-const version = "0.1.4"
+const version = "0.1.6"
 
 func main() {
 	currentUser, err := user.Current()
@@ -51,6 +48,26 @@ func main() {
 			runFile(args[1])
 			return
 
+		case "ir":
+			if len(args) < 2 {
+				printUsage()
+				os.Exit(1)
+			}
+			mode := "optimized"
+			if len(args) > 2 {
+				mode = args[2]
+			}
+			dumpIR(args[1], mode)
+			return
+
+		case "check":
+			if len(args) < 2 {
+				printUsage()
+				os.Exit(1)
+			}
+			checkFile(args[1])
+			return
+
 		case "version", "--version", "-v":
 			fmt.Println(version)
 			return
@@ -76,111 +93,97 @@ func printUsage() {
 	fmt.Println("  zumbra <file.zum>")
 	fmt.Println("  zumbra run <file.zum>")
 	fmt.Println("  zumbra build <file.zum>")
+	fmt.Println("  zumbra check <file.zum>")
+	fmt.Println("  zumbra ir <file.zum> [hir|mir|optimized]")
 	fmt.Println("  zumbra version")
 }
 
 func runFile(filename string) {
-	data, err := os.ReadFile(filename)
-	if err != nil {
-		fmt.Printf("Error when trying to read the file: %s\n", err)
-		os.Exit(1)
+	result, diagnostics := pipeline.BuildFile(filename, pipeline.Options{Optimize: true})
+	if len(diagnostics) > 0 {
+		printPipelineDiagnostics(filename, diagnostics)
+		return
+	}
+	for _, warning := range result.Warnings {
+		fmt.Printf("%s warning in %s: %s\n", warning.Stage, filename, warning.Message)
 	}
 
-	source := string(data)
 	constants := []object.Object{}
 	globals := make([]object.Object, vm.GlobalSize)
 	symbolTable := compiler.NewSymbolTable()
-
 	for i, v := range builtins.Builtins {
 		symbolTable.DefineBuiltin(i, v.Name)
 	}
-
 	builtins.SetRouteInvoker(func(handler object.Object, args ...object.Object) (object.Object, error) {
 		return vm.InvokeFunction(handler, args, constants, globals)
 	})
-
-	l := lexer.New(source)
-	p := parser.New(l)
-	program := p.ParseProgram()
-
-	if len(p.Errors()) != 0 {
-		fmt.Printf("Parsing errors in %s:\n", filename)
-		for _, msg := range p.Errors() {
-			fmt.Println("\t" + msg)
-		}
-		return
-	}
-
-	semResult, semErrs := semantic.AnalyzeModule(filename, program)
-	if len(semErrs) != 0 {
-		fmt.Printf("Semantic errors in %s:\n", filename)
-		for _, err := range semErrs {
-			fmt.Println("\t" + err.Error())
-		}
-		return
-	}
-
-	if semResult != nil && len(semResult.Warnings) > 0 {
-		fmt.Printf("Semantic warnings in %s:\n", filename)
-		for _, w := range semResult.Warnings {
-			fmt.Println("\t" + w.Message)
-		}
-	}
-
-	typeErrs := types.AnalyzeModule(filename, program)
-	if len(typeErrs) != 0 {
-		fmt.Printf("Type errors in %s:\n", filename)
-		for _, err := range typeErrs {
-			fmt.Println("\t" + err.Error())
-		}
-		return
-	}
 
 	absPath, err := filepath.Abs(filename)
 	if err != nil {
 		fmt.Printf("Path error: %s\n", err)
 		return
 	}
-
-	dir := filepath.Dir(absPath)
-
-	comp := compiler.NewWithStateAndDir(symbolTable, constants, dir)
-
-	if diagProvider, ok := any(comp).(interface {
-		Diagnostics() []error
-	}); ok {
-		diags := diagProvider.Diagnostics()
-		if len(diags) > 0 {
-			fmt.Printf("Compiler diagnostics in %s:\n", filename)
-			for _, d := range diags {
-				fmt.Println("\t" + d.Error())
-			}
-		}
-	}
-
-	if err := comp.Compile(program); err != nil {
+	comp := compiler.NewWithStateAndDir(symbolTable, constants, filepath.Dir(absPath))
+	if err := comp.CompilePipeline(result); err != nil {
 		fmt.Printf("Compilation error: %s\n", err)
 		return
 	}
+	if diags := comp.Warnings(); len(diags) > 0 {
+		fmt.Printf("Compiler diagnostics in %s:\n", filename)
+		for _, d := range diags {
+			fmt.Println("\t" + d.Message)
+		}
+	}
 
 	code := comp.Bytecode()
-	constants = code.Constants
-
 	machine := vm.NewWithGlobalsStore(code, globals)
 	if err := machine.Run(); err != nil {
 		fmt.Printf("Error on VM execution: %s\n", err)
+	}
+}
+
+func checkFile(filename string) {
+	result, diagnostics := pipeline.BuildFile(filename, pipeline.Options{Optimize: true})
+	if len(diagnostics) > 0 {
+		printPipelineDiagnostics(filename, diagnostics)
 		return
+	}
+	for _, warning := range result.Warnings {
+		fmt.Printf("%s warning: %s\n", warning.Stage, warning.Message)
+	}
+	fmt.Printf("OK: %s\n", filename)
+}
+
+func dumpIR(filename, mode string) {
+	optimize := mode == "optimized"
+	result, diagnostics := pipeline.BuildFile(filename, pipeline.Options{Optimize: optimize})
+	if len(diagnostics) > 0 {
+		printPipelineDiagnostics(filename, diagnostics)
+		return
+	}
+	switch mode {
+	case "hir":
+		fmt.Print(result.DumpHIR())
+	case "mir", "optimized":
+		fmt.Print(result.DumpMIR())
+	default:
+		fmt.Printf("Unknown IR mode %q. Use hir, mir or optimized.\n", mode)
+	}
+}
+
+func printPipelineDiagnostics(filename string, diagnostics []pipeline.Diagnostic) {
+	fmt.Printf("Pipeline errors in %s:\n", filename)
+	for _, diagnostic := range diagnostics {
+		fmt.Println("\t" + diagnostic.Error())
 	}
 }
 
 func buildZumbra(filename string) error {
-	data, err := os.ReadFile(filename)
-	if err != nil {
-		return fmt.Errorf("error when trying to read the file: %w", err)
+	result, diagnostics := pipeline.BuildFile(filename, pipeline.Options{Optimize: true})
+	if len(diagnostics) > 0 {
+		return fmt.Errorf("pipeline failed:\n%s", pipeline.FormatDiagnostics(diagnostics))
 	}
-
-	source := string(data)
-	goCode, err := transpiler.ZumbraTranspiler(source)
+	goCode, err := transpiler.ZumbraTranspilerPipeline(result)
 	if err != nil {
 		return fmt.Errorf("error when transpiling: %w", err)
 	}

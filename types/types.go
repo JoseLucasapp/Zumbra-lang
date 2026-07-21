@@ -162,3 +162,43 @@ func EnumOf(name string, members []string) *Type {
 	}
 	return &Type{Kind: Enum, Name: name, Members: set}
 }
+
+func (t *Type) String() string {
+	if t == nil {
+		return string(Unknown)
+	}
+	switch t.Kind {
+	case Array, ByteArray, TypedArray, Slice:
+		if t.Elem == nil {
+			return string(t.Kind)
+		}
+		return string(t.Kind) + "<" + t.Elem.String() + ">"
+	case Dict:
+		key, value := string(Unknown), string(Unknown)
+		if t.Key != nil {
+			key = t.Key.String()
+		}
+		if t.Value != nil {
+			value = t.Value.String()
+		}
+		return "dict<" + key + "," + value + ">"
+	case Func:
+		text := "fct("
+		for i, param := range t.Params {
+			if i > 0 {
+				text += ","
+			}
+			text += param.String()
+		}
+		text += ")"
+		if t.Return != nil {
+			text += " -> " + t.Return.String()
+		}
+		return text
+	case Struct, Enum:
+		if t.Name != "" {
+			return t.Name
+		}
+	}
+	return string(t.Kind)
+}

@@ -5,10 +5,9 @@ import (
 	"testing"
 
 	"zumbra/compiler"
-	"zumbra/lexer"
 	"zumbra/object"
 	"zumbra/object/builtins"
-	"zumbra/parser"
+	"zumbra/pipeline"
 )
 
 func TestCoreSyntaxSnippetsParseAndCompile(t *testing.T) {
@@ -37,12 +36,9 @@ func TestCoreSyntaxSnippetsParseAndCompile(t *testing.T) {
 
 	for i, source := range snippets {
 		t.Run(strings.Join([]string{"snippet", string(rune('0' + i))}, "_"), func(t *testing.T) {
-			l := lexer.New(source)
-			p := parser.New(l)
-			program := p.ParseProgram()
-
-			if len(p.Errors()) > 0 {
-				t.Fatalf("parser errors:\n\t%s", strings.Join(p.Errors(), "\n\t"))
+			result, diagnostics := pipeline.Build("docs-snippet.zum", source, pipeline.Options{Optimize: true})
+			if len(diagnostics) > 0 {
+				t.Fatalf("pipeline errors:\n\t%s", pipeline.FormatDiagnostics(diagnostics))
 			}
 
 			symbolTable := compiler.NewSymbolTable()
@@ -51,7 +47,7 @@ func TestCoreSyntaxSnippetsParseAndCompile(t *testing.T) {
 			}
 
 			comp := compiler.NewWithStateAndDir(symbolTable, []object.Object{}, ".")
-			if err := comp.Compile(program); err != nil {
+			if err := comp.CompilePipeline(result); err != nil {
 				t.Fatalf("compiler error: %s", err)
 			}
 		})

@@ -6,9 +6,8 @@ import (
 	"time"
 	"zumbra/compiler"
 	"zumbra/evaluator"
-	"zumbra/lexer"
 	"zumbra/object"
-	"zumbra/parser"
+	"zumbra/pipeline"
 	"zumbra/vm"
 )
 
@@ -35,13 +34,15 @@ func main() {
 	var duration time.Duration
 	var result object.Object
 
-	l := lexer.New(input)
-	p := parser.New(l)
-	program := p.ParseProgram()
+	frontEnd, diagnostics := pipeline.Build("benchmark.zum", input, pipeline.Options{Optimize: true})
+	if len(diagnostics) != 0 {
+		fmt.Printf("pipeline error: %s", pipeline.FormatDiagnostics(diagnostics))
+		return
+	}
 
 	if *engine == "vm" {
 		comp := compiler.New()
-		err := comp.Compile(program)
+		err := comp.CompilePipeline(frontEnd)
 		if err != nil {
 			fmt.Printf("compiler error: %s", err)
 			return
@@ -62,7 +63,7 @@ func main() {
 
 		env := object.NewEnvironment()
 		start := time.Now()
-		result = evaluator.Eval(program, env)
+		result = evaluator.EvalPipeline(frontEnd, env)
 		duration = time.Since(start)
 	}
 	fmt.Printf(

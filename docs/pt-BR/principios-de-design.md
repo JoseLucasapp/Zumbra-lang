@@ -46,3 +46,17 @@ O principal pilar do Zumbra é ser simples. A linguagem pode se tornar mais pote
 - [ ] Precedência ou semântica documentada?
 - [ ] Exemplo em `code_examples/` adicionado?
 - [ ] Registro em `ALTERACOES.md` atualizado?
+
+## Regras do pipeline a partir do Z6
+
+8. **Uma única análise para todos os backends**  
+   Arquivos devem passar pelo pipeline canônico antes de compiler, evaluator, transpiler ou futuros backends nativos.
+
+9. **Otimização não pode mudar semântica**  
+   Toda transformação de HIR ou MIR deve ser validada por testes de conformidade e pelo verifier.
+
+10. **Performance deve ser mensurável**  
+    Novos passes devem incluir benchmarks quando afetarem compilação, alocação ou execução. Simplicidade não pode esconder regressões.
+
+11. **IR é interna, mas inspecionável**  
+    O usuário comum não precisa conhecer HIR ou MIR. Desenvolvedores da linguagem devem poder examiná-las com comandos oficiais e saída determinística.

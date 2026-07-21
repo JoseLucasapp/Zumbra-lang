@@ -58,23 +58,25 @@ func (s *scope) resolve(name string) (*Type, bool) {
 }
 
 type Checker struct {
-	global  *scope
-	scope   *scope
-	errors  []error
-	aliases map[string]*Type
-	structs map[string]*Type
-	enums   map[string]*Type
+	global    *scope
+	scope     *scope
+	errors    []error
+	aliases   map[string]*Type
+	structs   map[string]*Type
+	enums     map[string]*Type
+	nodeTypes map[ast.Node]*Type
 }
 
 func NewChecker() *Checker {
 	global := newScope(nil)
 	c := &Checker{
-		global:  global,
-		scope:   global,
-		errors:  []error{},
-		aliases: map[string]*Type{},
-		structs: map[string]*Type{},
-		enums:   map[string]*Type{},
+		global:    global,
+		scope:     global,
+		errors:    []error{},
+		aliases:   map[string]*Type{},
+		structs:   map[string]*Type{},
+		enums:     map[string]*Type{},
+		nodeTypes: map[ast.Node]*Type{},
 	}
 	c.installBuiltins()
 	return c
@@ -115,6 +117,7 @@ func (c *Checker) ResetForNextRun() {
 	c.aliases = map[string]*Type{}
 	c.structs = map[string]*Type{}
 	c.enums = map[string]*Type{}
+	c.nodeTypes = map[ast.Node]*Type{}
 }
 
 func (c *Checker) Check(program *ast.Program) []error {
@@ -391,34 +394,139 @@ func (c *Checker) inferBlockReturnType(block *ast.BlockStatement) *Type {
 		return Simple(Unknown)
 	}
 
-	var inferred *Type
+	// First validate every statement in the block. Return inference is kept as a
+	// separate pass so unreachable expressions do not accidentally become an
+	// implicit return when the function already has explicit returns.
 	for _, stmt := range block.Statements {
-		current := c.inferSingleStatementReturnType(stmt)
-		if current == nil {
-			continue
-		}
-
-		if inferred == nil {
-			inferred = current
-			continue
-		}
-
-		if inferred.Kind == Unknown || current.Kind == Unknown {
-			inferred = Simple(Unknown)
-			continue
-		}
-
-		if !Same(inferred, current) {
-			c.addError(fmt.Errorf("function has conflicting return types: %s and %s", inferred.Kind, current.Kind))
-			inferred = Simple(Unknown)
-		}
+		c.checkStatementWithoutReturnUnification(stmt)
 	}
 
-	if inferred == nil {
-		return Simple(Null)
+	explicit := c.collectExplicitReturnTypes(block)
+	if len(explicit) > 0 {
+		result := explicit[0]
+		for _, current := range explicit[1:] {
+			if result.Kind == Unknown || current.Kind == Unknown {
+				result = Simple(Unknown)
+				continue
+			}
+			if !Same(result, current) {
+				c.addError(fmt.Errorf("function has conflicting return types: %s and %s", result.Kind, current.Kind))
+				result = Simple(Unknown)
+			}
+		}
+		return result
 	}
 
-	return inferred
+	// Without explicit return statements, a block evaluates to its final
+	// expression. This is used by functions, match cases and expression blocks.
+	if len(block.Statements) > 0 {
+		if expression, ok := block.Statements[len(block.Statements)-1].(*ast.ExpressionStatement); ok && expression.Expression != nil {
+			return c.inferExpression(expression.Expression)
+		}
+	}
+	return Simple(Null)
+}
+
+func (c *Checker) checkStatementWithoutReturnUnification(stmt ast.Statement) {
+	expressionStmt, ok := stmt.(*ast.ExpressionStatement)
+	if !ok || expressionStmt.Expression == nil {
+		c.checkStatement(stmt)
+		return
+	}
+
+	switch expression := expressionStmt.Expression.(type) {
+	case *ast.IfExpression:
+		if expression.Condition != nil {
+			condition := c.inferExpression(expression.Condition)
+			if condition.Kind != Unknown && condition.Kind != Bool {
+				c.addError(fmt.Errorf("if condition must be bool, got %s", condition.Kind))
+			}
+		}
+		for _, branch := range []*ast.BlockStatement{expression.Consequence, expression.Alternative} {
+			if branch == nil {
+				continue
+			}
+			c.pushScope()
+			for _, inner := range branch.Statements {
+				c.checkStatementWithoutReturnUnification(inner)
+			}
+			c.popScope()
+		}
+	case *ast.MatchExpression:
+		valueType := c.inferExpression(expression.Value)
+		for _, candidate := range expression.Cases {
+			pattern := c.inferExpression(candidate.Pattern)
+			if valueType.Kind != Unknown && pattern.Kind != Unknown && !Same(valueType, pattern) {
+				c.addError(fmt.Errorf("match compares %s with %s", valueType.Kind, pattern.Kind))
+			}
+			c.pushScope()
+			for _, inner := range candidate.Body.Statements {
+				c.checkStatementWithoutReturnUnification(inner)
+			}
+			c.popScope()
+		}
+		if expression.Default != nil {
+			c.pushScope()
+			for _, inner := range expression.Default.Statements {
+				c.checkStatementWithoutReturnUnification(inner)
+			}
+			c.popScope()
+		}
+	default:
+		c.checkStatement(stmt)
+	}
+}
+
+func (c *Checker) collectExplicitReturnTypes(block *ast.BlockStatement) []*Type {
+	if block == nil {
+		return nil
+	}
+	result := []*Type{}
+	for _, stmt := range block.Statements {
+		switch value := stmt.(type) {
+		case *ast.ReturnStatement:
+			if value.ReturnValue == nil {
+				result = append(result, Simple(Null))
+			} else {
+				result = append(result, c.inferExpression(value.ReturnValue))
+			}
+		case *ast.WhileStatement:
+			result = append(result, c.collectExplicitReturnTypes(value.Body)...)
+		case *ast.ExpressionStatement:
+			result = append(result, c.collectExpressionReturnTypes(value.Expression)...)
+		}
+	}
+	return result
+}
+
+func (c *Checker) collectExpressionReturnTypes(expression ast.Expression) []*Type {
+	switch value := expression.(type) {
+	case *ast.IfExpression:
+		result := c.collectExplicitReturnTypes(value.Consequence)
+		result = append(result, c.collectExplicitReturnTypes(value.Alternative)...)
+		return result
+	case *ast.MatchExpression:
+		result := []*Type{}
+		for _, candidate := range value.Cases {
+			result = append(result, c.collectExplicitReturnTypes(candidate.Body)...)
+		}
+		result = append(result, c.collectExplicitReturnTypes(value.Default)...)
+		return result
+	case *ast.ForLoop:
+		return c.collectExplicitReturnTypes(value.Block)
+	case *ast.ForEachArrayLoop:
+		return c.collectExplicitReturnTypes(value.Block)
+	case *ast.ForEachMapLoop:
+		return c.collectExplicitReturnTypes(value.Block)
+	case *ast.ForEachDotRange:
+		return c.collectExplicitReturnTypes(value.Block)
+	case *ast.ForEverLoop:
+		return c.collectExplicitReturnTypes(value.Block)
+	case *ast.ErrorHandlerExpression:
+		return c.collectExplicitReturnTypes(value.Handler)
+	default:
+		return nil
+	}
 }
 
 func (c *Checker) inferHandlerBlockType(block *ast.BlockStatement) *Type {
@@ -813,6 +921,14 @@ func fixedIntegerResultType(left, right *Type) (*Type, error) {
 }
 
 func (c *Checker) inferExpression(exp ast.Expression) *Type {
+	value := c.inferExpressionImpl(exp)
+	if exp != nil {
+		c.nodeTypes[exp] = Clone(value)
+	}
+	return value
+}
+
+func (c *Checker) inferExpressionImpl(exp ast.Expression) *Type {
 	switch e := exp.(type) {
 	case nil:
 		return Simple(Unknown)
@@ -1319,7 +1435,9 @@ func (c *Checker) checkStructStatement(stmt *ast.StructStatement) {
 			}
 		}
 		c.popScope()
-		structType.Methods[method.Name.Value] = FuncOf(refined, ret)
+		methodType := FuncOf(refined, ret)
+		structType.Methods[method.Name.Value] = methodType
+		c.nodeTypes[method.Function] = Clone(methodType)
 	}
 }
 

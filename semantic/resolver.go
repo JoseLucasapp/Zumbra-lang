@@ -3,7 +3,7 @@ package semantic
 import (
 	"fmt"
 	"zumbra/ast"
-	objbuiltins "zumbra/object/builtins"
+	"zumbra/builtinspec"
 )
 
 type functionContext struct {
@@ -78,9 +78,9 @@ func (r *Resolver) Resolve(program *ast.Program) []error {
 }
 
 func (r *Resolver) installBuiltins() {
-	for _, b := range objbuiltins.Builtins {
+	for _, name := range builtinspec.Names {
 		_ = r.global.Define(Symbol{
-			Name:        b.Name,
+			Name:        name,
 			Kind:        SymbolBuiltin,
 			Depth:       r.global.Depth,
 			Mutable:     false,

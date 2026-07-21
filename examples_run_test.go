@@ -7,10 +7,9 @@ import (
 	"testing"
 
 	"zumbra/compiler"
-	"zumbra/lexer"
 	"zumbra/object"
 	"zumbra/object/builtins"
-	"zumbra/parser"
+	"zumbra/pipeline"
 	"zumbra/vm"
 )
 
@@ -38,6 +37,7 @@ func TestRunnableCodeExamplesParseCompileAndRun(t *testing.T) {
 		"show.zum":             true,
 		"switch_case.zum":      true,
 		"structured_types.zum": true,
+		"typed_ir.zum":         true,
 		"types.zum":            true,
 		"var_names.zum":        true,
 		"vars.zum":             true,
@@ -82,12 +82,9 @@ func TestRunnableCodeExamplesParseCompileAndRun(t *testing.T) {
 				t.Fatalf("failed to read example %s: %s", path, err)
 			}
 
-			l := lexer.New(string(sourceBytes))
-			p := parser.New(l)
-			program := p.ParseProgram()
-
-			if len(p.Errors()) > 0 {
-				t.Fatalf("parser errors in %s:\n\t%s", path, strings.Join(p.Errors(), "\n\t"))
+			result, diagnostics := pipeline.Build(path, string(sourceBytes), pipeline.Options{Optimize: true})
+			if len(diagnostics) > 0 {
+				t.Fatalf("pipeline errors in %s:\n\t%s", path, pipeline.FormatDiagnostics(diagnostics))
 			}
 
 			symbolTable := compiler.NewSymbolTable()
@@ -96,7 +93,7 @@ func TestRunnableCodeExamplesParseCompileAndRun(t *testing.T) {
 			}
 
 			comp := compiler.NewWithStateAndDir(symbolTable, []object.Object{}, filepath.Dir(path))
-			if err := comp.Compile(program); err != nil {
+			if err := comp.CompilePipeline(result); err != nil {
 				t.Fatalf("compiler error in %s: %s", path, err)
 			}
 

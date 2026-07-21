@@ -504,3 +504,20 @@ var label << match(direction) {
 ```
 
 Complete documentation: [`docs/pt-BR/tipos-estruturados.md`](./pt-BR/tipos-estruturados.md).
+
+---
+
+## Typed IR and pipeline tools
+
+Z6 does not change source syntax. It adds validation and inspection commands:
+
+```bash
+zumbra check app.zum
+zumbra ir app.zum hir
+zumbra ir app.zum mir
+zumbra ir app.zum optimized
+```
+
+`hir` shows the typed high-level representation. `mir` shows explicit virtual values without optimization. `optimized` applies constant folding, dead-value elimination, and unreachable-code elimination.
+
+Complete documentation: [`docs/pt-BR/ir-tipada-e-pipeline.md`](./pt-BR/ir-tipada-e-pipeline.md).
