@@ -2,6 +2,7 @@ package builtins
 
 import (
 	"fmt"
+	"zumbra/binarydata"
 	"zumbra/numeric"
 	"zumbra/object"
 )
@@ -355,6 +356,59 @@ var Builtins = []struct {
 	},
 	{
 		"fill", FillBuiltin(),
+	},
+
+	// binary files, endian access and hashing
+	{
+		"readBytes", ReadBytesBuiltin(),
+	},
+	{
+		"writeBytes", WriteBytesBuiltin(),
+	},
+	{
+		"readU16LE", ReadUnsignedBuiltin(2, binarydata.LittleEndian, "readU16LE"),
+	},
+	{
+		"readU16BE", ReadUnsignedBuiltin(2, binarydata.BigEndian, "readU16BE"),
+	},
+	{
+		"readU32LE", ReadUnsignedBuiltin(4, binarydata.LittleEndian, "readU32LE"),
+	},
+	{
+		"readU32BE", ReadUnsignedBuiltin(4, binarydata.BigEndian, "readU32BE"),
+	},
+	{
+		"readU64LE", ReadUnsignedBuiltin(8, binarydata.LittleEndian, "readU64LE"),
+	},
+	{
+		"readU64BE", ReadUnsignedBuiltin(8, binarydata.BigEndian, "readU64BE"),
+	},
+	{
+		"writeU16LE", WriteUnsignedBuiltin(2, binarydata.LittleEndian, "writeU16LE"),
+	},
+	{
+		"writeU16BE", WriteUnsignedBuiltin(2, binarydata.BigEndian, "writeU16BE"),
+	},
+	{
+		"writeU32LE", WriteUnsignedBuiltin(4, binarydata.LittleEndian, "writeU32LE"),
+	},
+	{
+		"writeU32BE", WriteUnsignedBuiltin(4, binarydata.BigEndian, "writeU32BE"),
+	},
+	{
+		"writeU64LE", WriteUnsignedBuiltin(8, binarydata.LittleEndian, "writeU64LE"),
+	},
+	{
+		"writeU64BE", WriteUnsignedBuiltin(8, binarydata.BigEndian, "writeU64BE"),
+	},
+	{
+		"copyBytes", CopyBytesBuiltin(),
+	},
+	{
+		"bytesEqual", BytesEqualBuiltin(),
+	},
+	{
+		"sha256", SHA256Builtin(),
 	},
 }
 

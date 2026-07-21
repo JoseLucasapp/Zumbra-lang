@@ -401,3 +401,50 @@ fill(page, 0u8);
 ```
 
 Complete documentation: [`docs/pt-BR/memoria-compacta.md`](./pt-BR/memoria-compacta.md).
+
+
+---
+
+## Binary files and endianness
+
+Read a file as compact bytes:
+
+```zumbra
+var rom << readBytes("game.nes");
+```
+
+Write a byte-compatible buffer and receive the number of bytes written:
+
+```zumbra
+var written << writeBytes("copy.nes", rom);
+```
+
+Read and write unsigned integers with explicit byte order:
+
+```zumbra
+var data << bytes(16);
+writeU16LE(data, 0, 0x1234u16);
+writeU32BE(data, 2, 0x89ABCDEFu32);
+
+var first << readU16LE(data, 0);
+var second << readU32BE(data, 2);
+```
+
+Available endian functions:
+
+```text
+readU16LE  readU16BE  writeU16LE  writeU16BE
+readU32LE  readU32BE  writeU32LE  writeU32BE
+readU64LE  readU64BE  writeU64LE  writeU64BE
+```
+
+Copy, compare, and hash buffers:
+
+```zumbra
+var target << bytes(sizeOf(rom));
+copyBytes(target, 0, rom, 0, sizeOf(rom));
+show(bytesEqual(rom, target));
+show(sha256(rom));
+```
+
+Complete documentation: [`docs/pt-BR/arquivos-binarios-e-endianness.md`](./pt-BR/arquivos-binarios-e-endianness.md).

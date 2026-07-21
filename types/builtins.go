@@ -57,6 +57,25 @@ func builtinType(name string) (*Type, bool) {
 	case "fill":
 		return FuncOf([]*Type{Simple(Unknown), Simple(Unknown)}, Simple(Unknown)), true
 
+	case "readBytes":
+		return FuncOf([]*Type{Simple(String)}, ByteArrayOf()), true
+	case "writeBytes":
+		return FuncOf([]*Type{Simple(String), Simple(Unknown)}, Simple(Int)), true
+	case "readU16LE", "readU16BE":
+		return FuncOf([]*Type{Simple(Unknown), Simple(Int)}, Simple(U16)), true
+	case "readU32LE", "readU32BE":
+		return FuncOf([]*Type{Simple(Unknown), Simple(Int)}, Simple(U32)), true
+	case "readU64LE", "readU64BE":
+		return FuncOf([]*Type{Simple(Unknown), Simple(Int)}, Simple(U64)), true
+	case "writeU16LE", "writeU16BE", "writeU32LE", "writeU32BE", "writeU64LE", "writeU64BE":
+		return FuncOf([]*Type{Simple(Unknown), Simple(Int), Simple(Unknown)}, Simple(Unknown)), true
+	case "copyBytes":
+		return FuncOf([]*Type{Simple(Unknown), Simple(Int), Simple(Unknown), Simple(Int), Simple(Int)}, Simple(Unknown)), true
+	case "bytesEqual":
+		return FuncOf([]*Type{Simple(Unknown), Simple(Unknown)}, Simple(Bool)), true
+	case "sha256":
+		return FuncOf([]*Type{Simple(Unknown)}, Simple(String)), true
+
 	case "first":
 		return FuncOf([]*Type{ArrayOf(Simple(Unknown))}, Simple(Unknown)), true
 

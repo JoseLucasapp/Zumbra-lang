@@ -235,6 +235,131 @@ func zFill(container interface{}, newValue interface{}) interface{} {
 	return container
 }
 
+func zByteReflect(buffer interface{}) reflect.Value {
+	value := reflect.ValueOf(buffer)
+	if value.Kind() != reflect.Array && value.Kind() != reflect.Slice {
+		panic(fmt.Sprintf("expected byte-compatible buffer, got %T", buffer))
+	}
+	kind := value.Type().Elem().Kind()
+	if kind != reflect.Uint8 && kind != reflect.Int8 {
+		panic(fmt.Sprintf("expected byte-compatible buffer, got %T", buffer))
+	}
+	return value
+}
+
+func zByteData(buffer interface{}) []byte {
+	value := zByteReflect(buffer)
+	data := make([]byte, value.Len())
+	for i := 0; i < value.Len(); i++ {
+		if value.Type().Elem().Kind() == reflect.Uint8 {
+			data[i] = byte(value.Index(i).Uint())
+		} else {
+			data[i] = byte(int8(value.Index(i).Int()))
+		}
+	}
+	return data
+}
+
+func zSetByte(buffer interface{}, index int, value byte) {
+	reflected := zByteReflect(buffer)
+	if index < 0 || index >= reflected.Len() {
+		panic(fmt.Sprintf("byte index out of bounds: %d (length %d)", index, reflected.Len()))
+	}
+	if reflected.Type().Elem().Kind() == reflect.Uint8 {
+		reflected.Index(index).SetUint(uint64(value))
+	} else {
+		reflected.Index(index).SetInt(int64(int8(value)))
+	}
+}
+
+func zReadBytes(path string) []uint8 {
+	data, err := os.ReadFile(path)
+	if err != nil { panic(fmt.Sprintf("readBytes %q: %v", path, err)) }
+	return []uint8(data)
+}
+
+func zWriteBytes(path string, buffer interface{}) int {
+	data := zByteData(buffer)
+	if err := os.WriteFile(path, data, 0644); err != nil {
+		panic(fmt.Sprintf("writeBytes %q: %v", path, err))
+	}
+	return len(data)
+}
+
+func zReadUnsigned(buffer interface{}, offset interface{}, width int, order binary.ByteOrder) uint64 {
+	data := zByteData(buffer)
+	start := zIndex(offset)
+	if start > len(data) || width > len(data)-start {
+		panic(fmt.Sprintf("byte range [%d:%d] is outside buffer length %d", start, start+width, len(data)))
+	}
+	window := data[start:start+width]
+	switch width {
+	case 2: return uint64(order.Uint16(window))
+	case 4: return uint64(order.Uint32(window))
+	case 8: return order.Uint64(window)
+	default: panic(fmt.Sprintf("unsupported integer width %d", width))
+	}
+}
+
+func zReadU16LE(buffer interface{}, offset interface{}) uint16 { return uint16(zReadUnsigned(buffer, offset, 2, binary.LittleEndian)) }
+func zReadU16BE(buffer interface{}, offset interface{}) uint16 { return uint16(zReadUnsigned(buffer, offset, 2, binary.BigEndian)) }
+func zReadU32LE(buffer interface{}, offset interface{}) uint32 { return uint32(zReadUnsigned(buffer, offset, 4, binary.LittleEndian)) }
+func zReadU32BE(buffer interface{}, offset interface{}) uint32 { return uint32(zReadUnsigned(buffer, offset, 4, binary.BigEndian)) }
+func zReadU64LE(buffer interface{}, offset interface{}) uint64 { return zReadUnsigned(buffer, offset, 8, binary.LittleEndian) }
+func zReadU64BE(buffer interface{}, offset interface{}) uint64 { return zReadUnsigned(buffer, offset, 8, binary.BigEndian) }
+
+func zWriteUnsigned(buffer interface{}, offset interface{}, input interface{}, width int, order binary.ByteOrder) interface{} {
+	start := zIndex(offset)
+	reflected := zByteReflect(buffer)
+	if start > reflected.Len() || width > reflected.Len()-start {
+		panic(fmt.Sprintf("byte range [%d:%d] is outside buffer length %d", start, start+width, reflected.Len()))
+	}
+	number := zIntegerBigDynamic(input)
+	_, max := zIntegerBounds(false, uint(width*8))
+	if number.Sign() < 0 || number.Cmp(max) > 0 {
+		panic(fmt.Sprintf("value %s is outside u%d range", number.String(), width*8))
+	}
+	temp := make([]byte, width)
+	raw := number.Uint64()
+	switch width {
+	case 2: order.PutUint16(temp, uint16(raw))
+	case 4: order.PutUint32(temp, uint32(raw))
+	case 8: order.PutUint64(temp, raw)
+	default: panic(fmt.Sprintf("unsupported integer width %d", width))
+	}
+	for i, value := range temp { zSetByte(buffer, start+i, value) }
+	return buffer
+}
+
+func zWriteU16LE(buffer interface{}, offset interface{}, value interface{}) interface{} { return zWriteUnsigned(buffer, offset, value, 2, binary.LittleEndian) }
+func zWriteU16BE(buffer interface{}, offset interface{}, value interface{}) interface{} { return zWriteUnsigned(buffer, offset, value, 2, binary.BigEndian) }
+func zWriteU32LE(buffer interface{}, offset interface{}, value interface{}) interface{} { return zWriteUnsigned(buffer, offset, value, 4, binary.LittleEndian) }
+func zWriteU32BE(buffer interface{}, offset interface{}, value interface{}) interface{} { return zWriteUnsigned(buffer, offset, value, 4, binary.BigEndian) }
+func zWriteU64LE(buffer interface{}, offset interface{}, value interface{}) interface{} { return zWriteUnsigned(buffer, offset, value, 8, binary.LittleEndian) }
+func zWriteU64BE(buffer interface{}, offset interface{}, value interface{}) interface{} { return zWriteUnsigned(buffer, offset, value, 8, binary.BigEndian) }
+
+func zCopyBytes(destination interface{}, destinationStart interface{}, source interface{}, sourceStart interface{}, length interface{}) interface{} {
+	dst := zByteReflect(destination)
+	src := zByteData(source)
+	dstStart := zIndex(destinationStart)
+	srcStart := zIndex(sourceStart)
+	count := zIndex(length)
+	if dstStart > dst.Len() || count > dst.Len()-dstStart { panic("copyBytes destination range is outside buffer") }
+	if srcStart > len(src) || count > len(src)-srcStart { panic("copyBytes source range is outside buffer") }
+	temp := append([]byte(nil), src[srcStart:srcStart+count]...)
+	for i, value := range temp { zSetByte(destination, dstStart+i, value) }
+	return destination
+}
+
+func zBytesEqual(first interface{}, second interface{}) bool {
+	return bytes.Equal(zByteData(first), zByteData(second))
+}
+
+func zSHA256(buffer interface{}) string {
+	sum := sha256.Sum256(zByteData(buffer))
+	return fmt.Sprintf("%x", sum)
+}
+
 func sizeOf(value interface{}) int {
 	if value == nil { return 0 }
 	reflected := reflect.ValueOf(value)

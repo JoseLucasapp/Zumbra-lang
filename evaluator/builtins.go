@@ -52,6 +52,13 @@ func init() {
 		"bytes", "arrayOf", "slice", "fill",
 	}
 
+	binaryIO := []string{
+		"readBytes", "writeBytes",
+		"readU16LE", "readU16BE", "readU32LE", "readU32BE", "readU64LE", "readU64BE",
+		"writeU16LE", "writeU16BE", "writeU32LE", "writeU32BE", "writeU64LE", "writeU64BE",
+		"copyBytes", "bytesEqual", "sha256",
+	}
+
 	fixedIntegers := []string{
 		"u8", "u16", "u32", "u64", "i8", "i16", "i32", "i64",
 		"wrapAdd", "wrapSub", "wrapMul",
@@ -68,6 +75,7 @@ func init() {
 	allBuiltins = append(allBuiltins, parsers...)
 	allBuiltins = append(allBuiltins, fixedIntegers...)
 	allBuiltins = append(allBuiltins, memoryCollections...)
+	allBuiltins = append(allBuiltins, binaryIO...)
 	allBuiltins = append(allBuiltins, stringUtils...)
 	allBuiltins = append(allBuiltins, numbersUtils...)
 	allBuiltins = append(allBuiltins, ioUtils...)

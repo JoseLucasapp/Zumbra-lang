@@ -91,6 +91,7 @@ import (
 	"crypto/sha256"
 	"database/sql"
 	"encoding/base64"
+	"encoding/binary"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -541,10 +542,27 @@ func goFixedIntegerType(kind string) string {
 
 func translateMemoryCalls(input string) string {
 	for name, replacement := range map[string]string{
-		"bytes":   "zBytes",
-		"arrayOf": "zArrayOf",
-		"slice":   "zSlice",
-		"fill":    "zFill",
+		"bytes":      "zBytes",
+		"arrayOf":    "zArrayOf",
+		"slice":      "zSlice",
+		"fill":       "zFill",
+		"readBytes":  "zReadBytes",
+		"writeBytes": "zWriteBytes",
+		"readU16LE":  "zReadU16LE",
+		"readU16BE":  "zReadU16BE",
+		"readU32LE":  "zReadU32LE",
+		"readU32BE":  "zReadU32BE",
+		"readU64LE":  "zReadU64LE",
+		"readU64BE":  "zReadU64BE",
+		"writeU16LE": "zWriteU16LE",
+		"writeU16BE": "zWriteU16BE",
+		"writeU32LE": "zWriteU32LE",
+		"writeU32BE": "zWriteU32BE",
+		"writeU64LE": "zWriteU64LE",
+		"writeU64BE": "zWriteU64BE",
+		"copyBytes":  "zCopyBytes",
+		"bytesEqual": "zBytesEqual",
+		"sha256":     "zSHA256",
 	} {
 		input = regexp.MustCompile(`\b`+name+`\s*\(`).ReplaceAllString(input, replacement+"(")
 	}

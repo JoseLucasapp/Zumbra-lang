@@ -72,6 +72,11 @@ func (c *Checker) installBuiltins() {
 		"wrapAdd", "wrapSub", "wrapMul",
 		"checkedAdd", "checkedSub", "checkedMul",
 		"satAdd", "satSub", "satMul",
+		"bytes", "arrayOf", "slice", "fill",
+		"readBytes", "writeBytes",
+		"readU16LE", "readU16BE", "readU32LE", "readU32BE", "readU64LE", "readU64BE",
+		"writeU16LE", "writeU16BE", "writeU32LE", "writeU32BE", "writeU64LE", "writeU64BE",
+		"copyBytes", "bytesEqual", "sha256",
 	}
 
 	for _, name := range names {
@@ -536,6 +541,80 @@ func (c *Checker) checkBuiltinCall(name string, args []ast.Expression) *Type {
 			c.addError(fmt.Errorf("fill expects array-like value, got %s", container.Kind))
 			return Simple(Unknown)
 		}
+
+	case "readBytes":
+		if len(args) != 1 {
+			c.addError(fmt.Errorf("readBytes expects 1 argument, got %d", len(args)))
+			return ByteArrayOf()
+		}
+		pathType := c.inferExpression(args[0])
+		if pathType.Kind != Unknown && pathType.Kind != String {
+			c.addError(fmt.Errorf("readBytes path must be string, got %s", pathType.Kind))
+		}
+		return ByteArrayOf()
+
+	case "writeBytes":
+		if len(args) != 2 {
+			c.addError(fmt.Errorf("writeBytes expects 2 arguments, got %d", len(args)))
+			return Simple(Int)
+		}
+		pathType := c.inferExpression(args[0])
+		if pathType.Kind != Unknown && pathType.Kind != String {
+			c.addError(fmt.Errorf("writeBytes path must be string, got %s", pathType.Kind))
+		}
+		bufferType := c.inferExpression(args[1])
+		c.requireByteBuffer("writeBytes", bufferType)
+		return Simple(Int)
+
+	case "readU16LE", "readU16BE", "readU32LE", "readU32BE", "readU64LE", "readU64BE":
+		if len(args) != 2 {
+			c.addError(fmt.Errorf("%s expects 2 arguments, got %d", name, len(args)))
+			return endianReadType(name)
+		}
+		c.requireByteBuffer(name, c.inferExpression(args[0]))
+		c.requireIntegerArgument(name+" offset", c.inferExpression(args[1]))
+		return endianReadType(name)
+
+	case "writeU16LE", "writeU16BE", "writeU32LE", "writeU32BE", "writeU64LE", "writeU64BE":
+		if len(args) != 3 {
+			c.addError(fmt.Errorf("%s expects 3 arguments, got %d", name, len(args)))
+			return Simple(Unknown)
+		}
+		bufferType := c.inferExpression(args[0])
+		c.requireByteBuffer(name, bufferType)
+		c.requireIntegerArgument(name+" offset", c.inferExpression(args[1]))
+		c.requireIntegerArgument(name+" value", c.inferExpression(args[2]))
+		return bufferType
+
+	case "copyBytes":
+		if len(args) != 5 {
+			c.addError(fmt.Errorf("copyBytes expects 5 arguments, got %d", len(args)))
+			return Simple(Unknown)
+		}
+		destination := c.inferExpression(args[0])
+		c.requireByteBuffer("copyBytes destination", destination)
+		c.requireIntegerArgument("copyBytes destination offset", c.inferExpression(args[1]))
+		c.requireByteBuffer("copyBytes source", c.inferExpression(args[2]))
+		c.requireIntegerArgument("copyBytes source offset", c.inferExpression(args[3]))
+		c.requireIntegerArgument("copyBytes length", c.inferExpression(args[4]))
+		return destination
+
+	case "bytesEqual":
+		if len(args) != 2 {
+			c.addError(fmt.Errorf("bytesEqual expects 2 arguments, got %d", len(args)))
+			return Simple(Bool)
+		}
+		c.requireByteBuffer("bytesEqual", c.inferExpression(args[0]))
+		c.requireByteBuffer("bytesEqual", c.inferExpression(args[1]))
+		return Simple(Bool)
+
+	case "sha256":
+		if len(args) != 1 {
+			c.addError(fmt.Errorf("sha256 expects 1 argument, got %d", len(args)))
+			return Simple(String)
+		}
+		c.requireByteBuffer("sha256", c.inferExpression(args[0]))
+		return Simple(String)
 
 	case "first", "last":
 		if len(args) != 1 {
@@ -1041,4 +1120,38 @@ func (c *Checker) inferExpression(exp ast.Expression) *Type {
 	}
 
 	return Simple(Unknown)
+}
+
+func (c *Checker) requireIntegerArgument(label string, value *Type) {
+	if value != nil && value.Kind != Unknown && !IsInteger(value) {
+		c.addError(fmt.Errorf("%s must be integer, got %s", label, value.Kind))
+	}
+}
+
+func (c *Checker) requireByteBuffer(label string, value *Type) {
+	if value == nil || value.Kind == Unknown {
+		return
+	}
+	switch value.Kind {
+	case ByteArray:
+		return
+	case TypedArray, Slice:
+		if value.Elem != nil && (value.Elem.Kind == U8 || value.Elem.Kind == I8 || value.Elem.Kind == Unknown) {
+			return
+		}
+	}
+	c.addError(fmt.Errorf("%s expects byte-compatible buffer, got %s", label, value.Kind))
+}
+
+func endianReadType(name string) *Type {
+	switch name {
+	case "readU16LE", "readU16BE":
+		return Simple(U16)
+	case "readU32LE", "readU32BE":
+		return Simple(U32)
+	case "readU64LE", "readU64BE":
+		return Simple(U64)
+	default:
+		return Simple(Unknown)
+	}
 }
