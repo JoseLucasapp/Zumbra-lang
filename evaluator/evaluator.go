@@ -76,6 +76,43 @@ func Eval(node ast.Node, env *object.Environment) object.Object {
 		}
 		return value
 
+	case *ast.ConstStatement:
+		if _, ok := env.Get(node.Name.Value); ok {
+			return newError("identifier '%s' already declared", node.Name.Value)
+		}
+		value := Eval(node.Value, env)
+		if isError(value) {
+			return value
+		}
+		env.DefineConst(node.Name.Value, value)
+		return value
+
+	case *ast.StructStatement:
+		definition := &object.StructDefinition{Name: node.Name.Value, Fields: []object.StructFieldDefinition{}, Methods: map[string]object.Object{}}
+		for _, field := range node.Fields {
+			definition.Fields = append(definition.Fields, object.StructFieldDefinition{Name: field.Name.Value, TypeName: field.TypeName})
+		}
+		env.Set(node.Name.Value, definition)
+		for _, method := range node.Methods {
+			methodObject := Eval(method.Function, env)
+			if isError(methodObject) {
+				return methodObject
+			}
+			definition.Methods[method.Name.Value] = methodObject
+		}
+		return definition
+
+	case *ast.EnumStatement:
+		definition := &object.EnumDefinition{Name: node.Name.Value, Members: map[string]*object.EnumValue{}}
+		for ordinal, member := range node.Members {
+			definition.Members[member.Value] = &object.EnumValue{EnumName: node.Name.Value, Name: member.Value, Ordinal: ordinal}
+		}
+		env.Set(node.Name.Value, definition)
+		return definition
+
+	case *ast.TypeAliasStatement:
+		return NULL
+
 	case *ast.VarStatement:
 
 		if _, ok := env.Get(node.Name.Value); ok {
@@ -93,11 +130,22 @@ func Eval(node ast.Node, env *object.Environment) object.Object {
 		if isError(value) {
 			return value
 		}
-		if _, ok := env.Get(node.Name.Value); !ok {
-			return newError("identifier not found: %s", node.Name.Value)
+		assigned, err := env.Assign(node.Name.Value, value)
+		if err != nil {
+			return newError("%s", err)
 		}
-		env.Set(node.Name.Value, value)
-		return value
+		return assigned
+
+	case *ast.AttributeAssignStatement:
+		left := Eval(node.Target.Object, env)
+		if isError(left) {
+			return left
+		}
+		value := Eval(node.Value, env)
+		if isError(value) {
+			return value
+		}
+		return evalAttributeAssignment(left, node.Target.Property.Value, value)
 
 	case *ast.IndexAssignStatement:
 		left := Eval(node.Target.Left, env)
@@ -178,6 +226,16 @@ func Eval(node ast.Node, env *object.Environment) object.Object {
 		params := node.Parameters
 		body := node.Body
 		return &object.Function{Parameters: params, Env: env, Body: body}
+
+	case *ast.MatchExpression:
+		return evalMatchExpression(node, env)
+
+	case *ast.AttributeAccess:
+		left := Eval(node.Object, env)
+		if isError(left) {
+			return left
+		}
+		return evalAttributeAccess(left, node.Property.Value)
 
 	case *ast.CallExpression:
 		function := Eval(node.Function, env)
@@ -365,6 +423,9 @@ func objectEquals(left, right object.Object) bool {
 		return left.Value == right.(*object.Boolean).Value
 	case *object.String:
 		return left.Value == right.(*object.String).Value
+	case *object.EnumValue:
+		rightValue, ok := right.(*object.EnumValue)
+		return ok && left.EnumName == rightValue.EnumName && left.Name == rightValue.Name
 	default:
 		return left == right
 	}
@@ -635,8 +696,16 @@ func applyFunction(fct object.Object, args []object.Object) object.Object {
 		if result := fct.Fn(args...); result != nil {
 			return result
 		}
-
 		return NULL
+
+	case *object.StructDefinition:
+		return instantiateStruct(fct, args)
+
+	case *object.BoundMethod:
+		boundArgs := make([]object.Object, 0, len(args)+1)
+		boundArgs = append(boundArgs, fct.Receiver)
+		boundArgs = append(boundArgs, args...)
+		return applyFunction(fct.Function, boundArgs)
 
 	default:
 		return newError("not a function: %s", fct.Type())
@@ -858,4 +927,124 @@ func evalImportStatement(node *ast.ImportStatement, env *object.Environment) obj
 	}
 
 	return result
+}
+
+func instantiateStruct(definition *object.StructDefinition, args []object.Object) object.Object {
+	instance := &object.StructInstance{Definition: definition, Fields: map[string]object.Object{}}
+	if len(args) == 1 {
+		if named, ok := args[0].(*object.Dict); ok {
+			for _, field := range definition.Fields {
+				key := (&object.String{Value: field.Name}).DictKey()
+				pair, exists := named.Pairs[key]
+				if !exists {
+					return newError("missing field %s for %s", field.Name, definition.Name)
+				}
+				instance.Fields[field.Name] = pair.Value
+			}
+			for _, pair := range named.Pairs {
+				name, ok := pair.Key.(*object.String)
+				if !ok {
+					return newError("named struct fields must use string keys")
+				}
+				known := false
+				for _, field := range definition.Fields {
+					if field.Name == name.Value {
+						known = true
+						break
+					}
+				}
+				if !known {
+					return newError("unknown field %s for %s", name.Value, definition.Name)
+				}
+			}
+			return instance
+		}
+	}
+	if len(args) != len(definition.Fields) {
+		return newError("wrong number of fields for %s: want=%d, got=%d", definition.Name, len(definition.Fields), len(args))
+	}
+	for index, field := range definition.Fields {
+		instance.Fields[field.Name] = args[index]
+	}
+	return instance
+}
+
+func evalAttributeAccess(left object.Object, property string) object.Object {
+	switch value := left.(type) {
+	case *object.StructInstance:
+		if field, ok := value.Fields[property]; ok {
+			return field
+		}
+		if value.Definition != nil {
+			if method, ok := value.Definition.Methods[property]; ok {
+				return &object.BoundMethod{Receiver: value, Function: method}
+			}
+		}
+		return newError("unknown field or method %s", property)
+	case *object.EnumDefinition:
+		if member, ok := value.Members[property]; ok {
+			return member
+		}
+		return newError("unknown enum member %s.%s", value.Name, property)
+	case *object.Dict:
+		key := &object.String{Value: property}
+		if pair, ok := value.Pairs[key.DictKey()]; ok {
+			return pair.Value
+		}
+		return NULL
+	case *object.Date:
+		switch property {
+		case "hour":
+			return &object.Integer{Value: int64(value.Hour)}
+		case "minute":
+			return &object.Integer{Value: int64(value.Minute)}
+		case "day":
+			return &object.Integer{Value: int64(value.Day)}
+		case "second":
+			return &object.Integer{Value: int64(value.Second)}
+		case "month":
+			return &object.Integer{Value: int64(value.Month)}
+		case "year":
+			return &object.Integer{Value: int64(value.Year)}
+		case "fullDate":
+			return &object.String{Value: value.FullDate.String()}
+		}
+	case *object.Error:
+		if property == "message" {
+			return &object.String{Value: value.Message}
+		}
+	}
+	return newError("object type %s has no attribute %s", left.Type(), property)
+}
+
+func evalAttributeAssignment(left object.Object, property string, value object.Object) object.Object {
+	instance, ok := left.(*object.StructInstance)
+	if !ok {
+		return newError("attribute assignment not supported: %s", left.Type())
+	}
+	if _, exists := instance.Fields[property]; !exists {
+		return newError("unknown field %s", property)
+	}
+	instance.Fields[property] = value
+	return value
+}
+
+func evalMatchExpression(node *ast.MatchExpression, env *object.Environment) object.Object {
+	value := Eval(node.Value, env)
+	if isError(value) {
+		return value
+	}
+	for _, candidate := range node.Cases {
+		pattern := Eval(candidate.Pattern, env)
+		if isError(pattern) {
+			return pattern
+		}
+		if objectEquals(value, pattern) {
+			return Eval(candidate.Body, env)
+		}
+	}
+	if node.Default != nil {
+		return Eval(node.Default, env)
+	}
+	return NULL
 }

@@ -178,6 +178,22 @@ func (a *Analyzer) visitStatement(stmt ast.Statement) {
 			a.visitExpression(node.Value)
 		}
 
+	case *ast.ConstStatement:
+		if node.Name != nil {
+			a.markDeclared(node.Name.Value)
+		}
+		if node.Value != nil {
+			a.visitExpression(node.Value)
+		}
+
+	case *ast.AttributeAssignStatement:
+		if node.Target != nil {
+			a.visitExpression(node.Target)
+		}
+		if node.Value != nil {
+			a.visitExpression(node.Value)
+		}
+
 	case *ast.IndexAssignStatement:
 		if node.Target != nil {
 			a.visitExpression(node.Target)
@@ -205,6 +221,25 @@ func (a *Analyzer) visitStatement(stmt ast.Statement) {
 			a.visitStatementList(node.Body.Statements)
 		}
 		a.popScope()
+
+	case *ast.StructStatement:
+		if node.Name != nil {
+			a.markDeclared(node.Name.Value)
+		}
+		for _, method := range node.Methods {
+			if method == nil || method.Function == nil {
+				continue
+			}
+			a.visitExpression(method.Function)
+		}
+
+	case *ast.EnumStatement:
+		if node.Name != nil {
+			a.markDeclared(node.Name.Value)
+		}
+
+	case *ast.TypeAliasStatement:
+		return
 
 	case *ast.ImportStatement:
 		if node.Path != nil {
@@ -301,6 +336,26 @@ func (a *Analyzer) visitExpression(expr ast.Expression) {
 	case *ast.TryExpression:
 		if node.Value != nil {
 			a.visitExpression(node.Value)
+		}
+
+	case *ast.MatchExpression:
+		if node.Value != nil {
+			a.visitExpression(node.Value)
+		}
+		for _, candidate := range node.Cases {
+			if candidate.Pattern != nil {
+				a.visitExpression(candidate.Pattern)
+			}
+			a.pushScope()
+			if candidate.Body != nil {
+				a.visitStatementList(candidate.Body.Statements)
+			}
+			a.popScope()
+		}
+		if node.Default != nil {
+			a.pushScope()
+			a.visitStatementList(node.Default.Statements)
+			a.popScope()
 		}
 
 	case *ast.ErrorHandlerExpression:

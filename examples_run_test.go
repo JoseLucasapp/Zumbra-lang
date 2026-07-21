@@ -37,6 +37,7 @@ func TestRunnableCodeExamplesParseCompileAndRun(t *testing.T) {
 		"parse.zum":            true,
 		"show.zum":             true,
 		"switch_case.zum":      true,
+		"structured_types.zum": true,
 		"types.zum":            true,
 		"var_names.zum":        true,
 		"vars.zum":             true,

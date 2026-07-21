@@ -1,0 +1,47 @@
+type Energy << u8;
+
+const STARTING_ENERGY << 10u8;
+
+struct Player {
+    x: int;
+    y: int;
+    energy: Energy;
+
+    fct move(dx, dy) {
+        self.x << self.x + dx;
+        self.y << self.y + dy;
+    }
+
+    fct damage(amount) {
+        self.energy << self.energy - amount;
+    }
+}
+
+enum Direction {
+    Up;
+    Down;
+    Left;
+    Right;
+}
+
+var player << Player(10, 20, STARTING_ENERGY);
+player.move(5, -2);
+player.damage(3u8);
+
+var direction << Direction.Right;
+var label << match(direction) {
+    case Direction.Left {
+        "left";
+    }
+    case Direction.Right {
+        "right";
+    }
+    else {
+        "other";
+    }
+};
+
+show(player.x);
+show(player.y);
+show(player.energy);
+show(label);

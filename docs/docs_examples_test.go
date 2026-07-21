@@ -27,6 +27,10 @@ func TestCoreSyntaxSnippetsParseAndCompile(t *testing.T) {
 		`var memory << bytes(8); var view << slice(memory, 2, 6); fill(view, 0u8);`,
 		`var data << bytes(16); writeU16LE(data, 0, 0x1234u16); readU16LE(data, 0);`,
 		`var source << bytes(4); var target << bytes(4); copyBytes(target, 0, source, 0, 4); bytesEqual(source, target); sha256(target);`,
+		`const Max << 3; Max;`,
+		`type Byte << u8; struct Cpu { opcode: Byte; pc: u16; } var cpu << Cpu(0xA9u8, 0x8000u16); cpu.pc;`,
+		`struct Point { x: int; y: int; fct move(dx, dy) { self.x << self.x + dx; self.y << self.y + dy; } } var p << Point(1, 2); p.move(3, 4); p.x;`,
+		`enum Direction { Up; Down; } match(Direction.Up) { case Direction.Up { 1; } else { 0; } };`,
 		`var task << async fct() { 10; }; await task();`,
 		`var run << fct() { 1; }; try run() or err { err; };`,
 	}

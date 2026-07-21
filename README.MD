@@ -21,7 +21,7 @@ Designed for clarity, simplicity, and extensibility, Zumbra is the perfect playg
 
 The rebuild now follows a clear direction: systems, emulation, and game development without abandoning Zumbra's simplicity. See the Portuguese design and feature documentation in [`docs/pt-BR/`](./docs/pt-BR/).
 
-Current systems features include readable bitwise operators, fixed-width integers (`u8` through `u64`, `i8` through `i64`), mutable indexes, compact byte memory, typed integer arrays, zero-copy mutable slices, binary file I/O, endian-aware integer access, buffer copying/comparison, and SHA-256 hashing. See [`docs/pt-BR/inteiros-de-tamanho-fixo.md`](./docs/pt-BR/inteiros-de-tamanho-fixo.md), [`docs/pt-BR/mutacao-por-indice.md`](./docs/pt-BR/mutacao-por-indice.md), [`docs/pt-BR/memoria-compacta.md`](./docs/pt-BR/memoria-compacta.md), and [`docs/pt-BR/arquivos-binarios-e-endianness.md`](./docs/pt-BR/arquivos-binarios-e-endianness.md).
+Current systems features include readable bitwise operators, fixed-width integers (`u8` through `u64`, `i8` through `i64`), mutable indexes, compact byte memory, typed integer arrays, zero-copy mutable slices, binary file I/O, endian-aware integer access, buffer copying/comparison, SHA-256 hashing, immutable constants, type aliases, structs with methods, enums, and `match`. See the feature documentation in [`docs/pt-BR/`](./docs/pt-BR/), including [`tipos-estruturados.md`](./docs/pt-BR/tipos-estruturados.md).
 
 <br />
 <a href="./code_examples/"><p style="font-size: 30px; font-weight: 600;">🛠 Code_examples</p></a>

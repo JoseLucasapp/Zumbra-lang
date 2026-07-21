@@ -30,6 +30,12 @@ const (
 	WHERE    = "WHERE"
 	BREAK    = "BREAK"
 	CONTINUE = "CONTINUE"
+	CONST    = "CONST"
+	STRUCT   = "STRUCT"
+	ENUM     = "ENUM"
+	MATCH    = "MATCH"
+	CASE     = "CASE"
+	TYPE     = "TYPE"
 
 	// Operators
 	ASSIGN     = "<<"
@@ -108,6 +114,12 @@ var keywords = map[string]TokenType{
 	"where":    WHERE,
 	"break":    BREAK,
 	"continue": CONTINUE,
+	"const":    CONST,
+	"struct":   STRUCT,
+	"enum":     ENUM,
+	"match":    MATCH,
+	"case":     CASE,
+	"type":     TYPE,
 }
 
 func LookupIdent(ident string) TokenType {

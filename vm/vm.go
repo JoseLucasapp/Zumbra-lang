@@ -216,6 +216,29 @@ func (vm *VM) Run() error {
 				return err
 			}
 
+		case code.OpStructDefinition:
+			fieldCount := int(code.ReadUint8(ins[ip+1:]))
+			methodCount := int(code.ReadUint8(ins[ip+2:]))
+			vm.currentFrame().ip += 2
+			definition, err := vm.buildStructDefinition(fieldCount, methodCount)
+			if err != nil {
+				return err
+			}
+			if err := vm.push(definition); err != nil {
+				return err
+			}
+
+		case code.OpEnumDefinition:
+			memberCount := int(code.ReadUint8(ins[ip+1:]))
+			vm.currentFrame().ip += 1
+			definition, err := vm.buildEnumDefinition(memberCount)
+			if err != nil {
+				return err
+			}
+			if err := vm.push(definition); err != nil {
+				return err
+			}
+
 		case code.OpDict:
 			numElements := int(code.ReadUint16(ins[ip+1:]))
 			vm.currentFrame().ip += 2
@@ -240,6 +263,23 @@ func (vm *VM) Run() error {
 			if err != nil {
 				return err
 			}
+
+		case code.OpSetAttr:
+			value := vm.pop()
+			propertyObject := vm.pop()
+			target := vm.pop()
+			property, ok := propertyObject.(*object.String)
+			if !ok {
+				return fmt.Errorf("attribute name must be a string, got %s", propertyObject.Type())
+			}
+			instance, ok := target.(*object.StructInstance)
+			if !ok {
+				return fmt.Errorf("attribute assignment not supported: %s", target.Type())
+			}
+			if _, exists := instance.Fields[property.Value]; !exists {
+				return fmt.Errorf("unknown field %s", property.Value)
+			}
+			instance.Fields[property.Value] = value
 
 		case code.OpSetIndex:
 			value := vm.pop()
@@ -381,6 +421,32 @@ func (vm *VM) Run() error {
 			obj := vm.pop()
 
 			switch d := obj.(type) {
+			case *object.StructInstance:
+				if field, ok := d.Fields[attrName.Value]; ok {
+					if err := vm.push(field); err != nil {
+						return err
+					}
+					break
+				}
+				if d.Definition != nil {
+					if method, ok := d.Definition.Methods[attrName.Value]; ok {
+						if err := vm.push(&object.BoundMethod{Receiver: d, Function: method}); err != nil {
+							return err
+						}
+						break
+					}
+				}
+				return fmt.Errorf("unknown field or method %s", attrName.Value)
+
+			case *object.EnumDefinition:
+				member, ok := d.Members[attrName.Value]
+				if !ok {
+					return fmt.Errorf("unknown enum member %s.%s", d.Name, attrName.Value)
+				}
+				if err := vm.push(member); err != nil {
+					return err
+				}
+
 			case *object.Date:
 				switch attrName.Value {
 				case "hour":
@@ -689,6 +755,19 @@ func (vm *VM) executeComparison(op code.Opcode) error {
 
 	if left.Type() == object.STRING_OBJ && right.Type() == object.STRING_OBJ {
 		return vm.executeStringComparison(op, left, right)
+	}
+
+	if leftValue, ok := left.(*object.EnumValue); ok {
+		rightValue, same := right.(*object.EnumValue)
+		equal := same && leftValue.EnumName == rightValue.EnumName && leftValue.Name == rightValue.Name
+		switch op {
+		case code.OpEqual:
+			return vm.push(nativeBoolToBooleanObject(equal))
+		case code.OpNotEqual:
+			return vm.push(nativeBoolToBooleanObject(!equal))
+		default:
+			return fmt.Errorf("enum values support only == and !=")
+		}
 	}
 
 	switch op {
@@ -1106,6 +1185,20 @@ func (vm *VM) executeCall(numArgs int) error {
 		return vm.callClosure(callee, numArgs)
 	case *object.Builtin:
 		return vm.callBuiltin(callee, numArgs)
+	case *object.StructDefinition:
+		return vm.callStructDefinition(callee, numArgs)
+	case *object.BoundMethod:
+		calleeIndex := vm.sp - 1 - numArgs
+		if vm.sp >= len(vm.stack) {
+			return fmt.Errorf("stack overflow while binding method")
+		}
+		for index := vm.sp; index > calleeIndex+1; index-- {
+			vm.stack[index] = vm.stack[index-1]
+		}
+		vm.stack[calleeIndex] = callee.Function
+		vm.stack[calleeIndex+1] = callee.Receiver
+		vm.sp++
+		return vm.executeCall(numArgs + 1)
 	default:
 		return fmt.Errorf("calling non-function and non-built-in object: %s", callee.Type())
 	}
@@ -1142,4 +1235,104 @@ func (vm *VM) pushClosure(constIndex int, numFree int) error {
 
 	closure := &object.Closure{Fn: function, Free: free}
 	return vm.push(closure)
+}
+
+func (vm *VM) buildStructDefinition(fieldCount, methodCount int) (*object.StructDefinition, error) {
+	items := 1 + fieldCount*2 + methodCount*2
+	start := vm.sp - items
+	if start < 0 {
+		return nil, fmt.Errorf("invalid struct definition stack")
+	}
+	name, ok := vm.stack[start].(*object.String)
+	if !ok {
+		return nil, fmt.Errorf("struct name must be string")
+	}
+	definition := &object.StructDefinition{Name: name.Value, Fields: []object.StructFieldDefinition{}, Methods: map[string]object.Object{}}
+	cursor := start + 1
+	for index := 0; index < fieldCount; index++ {
+		fieldName, ok := vm.stack[cursor].(*object.String)
+		if !ok {
+			return nil, fmt.Errorf("struct field name must be string")
+		}
+		fieldType, ok := vm.stack[cursor+1].(*object.String)
+		if !ok {
+			return nil, fmt.Errorf("struct field type must be string")
+		}
+		definition.Fields = append(definition.Fields, object.StructFieldDefinition{Name: fieldName.Value, TypeName: fieldType.Value})
+		cursor += 2
+	}
+	for index := 0; index < methodCount; index++ {
+		methodName, ok := vm.stack[cursor].(*object.String)
+		if !ok {
+			return nil, fmt.Errorf("struct method name must be string")
+		}
+		definition.Methods[methodName.Value] = vm.stack[cursor+1]
+		cursor += 2
+	}
+	vm.sp = start
+	return definition, nil
+}
+
+func (vm *VM) buildEnumDefinition(memberCount int) (*object.EnumDefinition, error) {
+	start := vm.sp - 1 - memberCount
+	if start < 0 {
+		return nil, fmt.Errorf("invalid enum definition stack")
+	}
+	name, ok := vm.stack[start].(*object.String)
+	if !ok {
+		return nil, fmt.Errorf("enum name must be string")
+	}
+	definition := &object.EnumDefinition{Name: name.Value, Members: map[string]*object.EnumValue{}}
+	for index := 0; index < memberCount; index++ {
+		member, ok := vm.stack[start+1+index].(*object.String)
+		if !ok {
+			return nil, fmt.Errorf("enum member name must be string")
+		}
+		definition.Members[member.Value] = &object.EnumValue{EnumName: name.Value, Name: member.Value, Ordinal: index}
+	}
+	vm.sp = start
+	return definition, nil
+}
+
+func (vm *VM) callStructDefinition(definition *object.StructDefinition, numArgs int) error {
+	args := vm.stack[vm.sp-numArgs : vm.sp]
+	instance := &object.StructInstance{Definition: definition, Fields: map[string]object.Object{}}
+	if numArgs == 1 {
+		if named, ok := args[0].(*object.Dict); ok {
+			for _, field := range definition.Fields {
+				key := (&object.String{Value: field.Name}).DictKey()
+				pair, exists := named.Pairs[key]
+				if !exists {
+					return fmt.Errorf("missing field %s for %s", field.Name, definition.Name)
+				}
+				instance.Fields[field.Name] = pair.Value
+			}
+			for _, pair := range named.Pairs {
+				name, ok := pair.Key.(*object.String)
+				if !ok {
+					return fmt.Errorf("named struct fields must use string keys")
+				}
+				known := false
+				for _, field := range definition.Fields {
+					if field.Name == name.Value {
+						known = true
+						break
+					}
+				}
+				if !known {
+					return fmt.Errorf("unknown field %s for %s", name.Value, definition.Name)
+				}
+			}
+			vm.sp = vm.sp - numArgs - 1
+			return vm.push(instance)
+		}
+	}
+	if numArgs != len(definition.Fields) {
+		return fmt.Errorf("wrong number of fields for %s: want=%d, got=%d", definition.Name, len(definition.Fields), numArgs)
+	}
+	for index, field := range definition.Fields {
+		instance.Fields[field.Name] = args[index]
+	}
+	vm.sp = vm.sp - numArgs - 1
+	return vm.push(instance)
 }

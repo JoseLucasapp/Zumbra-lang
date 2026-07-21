@@ -9,6 +9,10 @@ const (
 	SymbolParam    SymbolKind = "PARAM"
 	SymbolBuiltin  SymbolKind = "BUILTIN"
 	SymbolImport   SymbolKind = "IMPORT"
+	SymbolConst    SymbolKind = "CONST"
+	SymbolStruct   SymbolKind = "STRUCT"
+	SymbolEnum     SymbolKind = "ENUM"
+	SymbolType     SymbolKind = "TYPE"
 )
 
 const (

@@ -6,19 +6,36 @@ import (
 )
 
 type scope struct {
-	parent *scope
-	values map[string]*Type
+	parent  *scope
+	values  map[string]*Type
+	mutable map[string]bool
 }
 
 func newScope(parent *scope) *scope {
 	return &scope{
-		parent: parent,
-		values: make(map[string]*Type),
+		parent:  parent,
+		values:  make(map[string]*Type),
+		mutable: make(map[string]bool),
 	}
 }
 
 func (s *scope) define(name string, t *Type) {
 	s.values[name] = t
+	s.mutable[name] = true
+}
+
+func (s *scope) defineImmutable(name string, t *Type) {
+	s.values[name] = t
+	s.mutable[name] = false
+}
+
+func (s *scope) canAssign(name string) bool {
+	for cur := s; cur != nil; cur = cur.parent {
+		if _, ok := cur.values[name]; ok {
+			return cur.mutable[name]
+		}
+	}
+	return false
 }
 
 func (s *scope) assign(name string, t *Type) bool {
@@ -41,17 +58,23 @@ func (s *scope) resolve(name string) (*Type, bool) {
 }
 
 type Checker struct {
-	global *scope
-	scope  *scope
-	errors []error
+	global  *scope
+	scope   *scope
+	errors  []error
+	aliases map[string]*Type
+	structs map[string]*Type
+	enums   map[string]*Type
 }
 
 func NewChecker() *Checker {
 	global := newScope(nil)
 	c := &Checker{
-		global: global,
-		scope:  global,
-		errors: []error{},
+		global:  global,
+		scope:   global,
+		errors:  []error{},
+		aliases: map[string]*Type{},
+		structs: map[string]*Type{},
+		enums:   map[string]*Type{},
 	}
 	c.installBuiltins()
 	return c
@@ -89,6 +112,9 @@ func (c *Checker) installBuiltins() {
 func (c *Checker) ResetForNextRun() {
 	c.scope = c.global
 	c.errors = nil
+	c.aliases = map[string]*Type{}
+	c.structs = map[string]*Type{}
+	c.enums = map[string]*Type{}
 }
 
 func (c *Checker) Check(program *ast.Program) []error {
@@ -194,6 +220,30 @@ func (c *Checker) constrainIdentifier(expr ast.Expression, wanted *Type) {
 
 func (c *Checker) checkStatement(stmt ast.Statement) {
 	switch s := stmt.(type) {
+	case *ast.ConstStatement:
+		t := Simple(Unknown)
+		if s.Value != nil {
+			t = c.inferExpression(s.Value)
+		}
+		if s.Name != nil {
+			c.scope.defineImmutable(s.Name.Value, t)
+		}
+
+	case *ast.TypeAliasStatement:
+		if s.Name != nil && s.Target != nil {
+			t := c.typeFromName(s.Target.Value)
+			if t.Kind == Unknown {
+				c.addError(fmt.Errorf("unknown type %s", s.Target.Value))
+			}
+			c.aliases[s.Name.Value] = t
+		}
+
+	case *ast.StructStatement:
+		c.checkStructStatement(s)
+
+	case *ast.EnumStatement:
+		c.checkEnumStatement(s)
+
 	case *ast.VarStatement:
 		var t *Type = Simple(Unknown)
 		if s.Value != nil {
@@ -204,14 +254,25 @@ func (c *Checker) checkStatement(stmt ast.Statement) {
 		}
 
 	case *ast.AssignStatement:
-		if s.Value != nil {
+		if s.Value != nil && s.Name != nil {
 			valueType := c.inferExpression(s.Value)
-			if s.Name != nil {
-				if !c.scope.assign(s.Name.Value, valueType) {
-					c.scope.define(s.Name.Value, valueType)
+			if current, exists := c.scope.resolve(s.Name.Value); exists {
+				if !c.scope.canAssign(s.Name.Value) {
+					c.addError(fmt.Errorf("cannot assign to constant %s", s.Name.Value))
+					break
 				}
+				if current.Kind != Unknown && valueType.Kind != Unknown && !Same(current, valueType) {
+					c.addError(fmt.Errorf("assignment expects %s, got %s", current.Kind, valueType.Kind))
+				} else {
+					_ = c.scope.assign(s.Name.Value, valueType)
+				}
+			} else {
+				c.scope.define(s.Name.Value, valueType)
 			}
 		}
+
+	case *ast.AttributeAssignStatement:
+		c.checkAttributeAssignment(s)
 
 	case *ast.IndexAssignStatement:
 		c.checkIndexAssignment(s)
@@ -934,7 +995,10 @@ func (c *Checker) inferExpression(exp ast.Expression) *Type {
 				return Simple(Bool)
 			}
 
-			if left.Kind == right.Kind {
+			if Same(left, right) {
+				return Simple(Bool)
+			}
+			if left.Kind == right.Kind && left.Kind != Struct && left.Kind != Enum {
 				return Simple(Bool)
 			}
 
@@ -985,6 +1049,9 @@ func (c *Checker) inferExpression(exp ast.Expression) *Type {
 		if ident, ok := e.Function.(*ast.Identifier); ok {
 			if _, builtin := builtinType(ident.Value); builtin {
 				return c.checkBuiltinCall(ident.Value, e.Arguments)
+			}
+			if structType, exists := c.structs[ident.Value]; exists {
+				return c.checkStructConstructor(structType, e.Arguments)
 			}
 		}
 
@@ -1115,7 +1182,26 @@ func (c *Checker) inferExpression(exp ast.Expression) *Type {
 
 		return c.unifyTypesOrError("or handler", leftType, handlerType)
 
+	case *ast.MatchExpression:
+		return c.inferMatchExpression(e)
+
 	case *ast.AttributeAccess:
+		left := c.inferExpression(e.Object)
+		if left.Kind == Struct {
+			if field, ok := left.Fields[e.Property.Value]; ok {
+				return field
+			}
+			if method, ok := left.Methods[e.Property.Value]; ok {
+				return method
+			}
+			c.addError(fmt.Errorf("unknown field or method %s on %s", e.Property.Value, left.Name))
+		}
+		if left.Kind == Enum {
+			if left.Members[e.Property.Value] {
+				return left
+			}
+			c.addError(fmt.Errorf("unknown enum member %s.%s", left.Name, e.Property.Value))
+		}
 		return Simple(Unknown)
 	}
 
@@ -1154,4 +1240,207 @@ func endianReadType(name string) *Type {
 	default:
 		return Simple(Unknown)
 	}
+}
+
+func (c *Checker) typeFromName(name string) *Type {
+	if alias, ok := c.aliases[name]; ok {
+		return alias
+	}
+	if value, ok := c.structs[name]; ok {
+		return value
+	}
+	if value, ok := c.enums[name]; ok {
+		return value
+	}
+	switch Kind(name) {
+	case Int, U8, U16, U32, U64, I8, I16, I32, I64, Float, Bool, String:
+		return Simple(Kind(name))
+	default:
+		return Simple(Unknown)
+	}
+}
+
+func (c *Checker) checkStructStatement(stmt *ast.StructStatement) {
+	if stmt == nil || stmt.Name == nil {
+		return
+	}
+	fields := map[string]*Type{}
+	for _, field := range stmt.Fields {
+		if _, exists := fields[field.Name.Value]; exists {
+			c.addError(fmt.Errorf("duplicate field %s in %s", field.Name.Value, stmt.Name.Value))
+			continue
+		}
+		t := Simple(Unknown)
+		if field.TypeName != "" {
+			t = c.typeFromName(field.TypeName)
+			if t.Kind == Unknown {
+				c.addError(fmt.Errorf("unknown field type %s", field.TypeName))
+			}
+		}
+		fields[field.Name.Value] = t
+	}
+	structType := StructOf(stmt.Name.Value, fields, map[string]*Type{})
+	c.structs[stmt.Name.Value] = structType
+	params := make([]*Type, 0, len(stmt.Fields))
+	for _, field := range stmt.Fields {
+		params = append(params, fields[field.Name.Value])
+	}
+	c.scope.defineImmutable(stmt.Name.Value, FuncOf(params, structType))
+
+	for _, method := range stmt.Methods {
+		if method == nil || method.Name == nil || method.Function == nil {
+			continue
+		}
+		if _, exists := structType.Methods[method.Name.Value]; exists {
+			c.addError(fmt.Errorf("duplicate method %s in %s", method.Name.Value, stmt.Name.Value))
+			continue
+		}
+		c.pushScope()
+		methodParams := []*Type{}
+		for index, param := range method.Function.Parameters {
+			pt := Simple(Unknown)
+			if index == 0 && param.Value == "self" {
+				pt = structType
+			} else {
+				methodParams = append(methodParams, pt)
+			}
+			c.scope.define(param.Value, pt)
+		}
+		ret := c.inferBlockReturnType(method.Function.Body)
+		refined := []*Type{}
+		for index, param := range method.Function.Parameters {
+			if index == 0 && param.Value == "self" {
+				continue
+			}
+			if pt, ok := c.scope.resolve(param.Value); ok {
+				refined = append(refined, pt)
+			} else {
+				refined = append(refined, Simple(Unknown))
+			}
+		}
+		c.popScope()
+		structType.Methods[method.Name.Value] = FuncOf(refined, ret)
+	}
+}
+
+func (c *Checker) checkEnumStatement(stmt *ast.EnumStatement) {
+	if stmt == nil || stmt.Name == nil {
+		return
+	}
+	members := []string{}
+	seen := map[string]bool{}
+	for _, member := range stmt.Members {
+		if seen[member.Value] {
+			c.addError(fmt.Errorf("duplicate enum member %s.%s", stmt.Name.Value, member.Value))
+			continue
+		}
+		seen[member.Value] = true
+		members = append(members, member.Value)
+	}
+	enumType := EnumOf(stmt.Name.Value, members)
+	c.enums[stmt.Name.Value] = enumType
+	c.scope.defineImmutable(stmt.Name.Value, enumType)
+}
+
+func (c *Checker) checkAttributeAssignment(stmt *ast.AttributeAssignStatement) {
+	if stmt == nil || stmt.Target == nil {
+		return
+	}
+	left := c.inferExpression(stmt.Target.Object)
+	value := c.inferExpression(stmt.Value)
+	if left.Kind == Unknown {
+		return
+	}
+	if left.Kind != Struct {
+		c.addError(fmt.Errorf("attribute assignment requires struct, got %s", left.Kind))
+		return
+	}
+	field, ok := left.Fields[stmt.Target.Property.Value]
+	if !ok {
+		c.addError(fmt.Errorf("unknown field %s on %s", stmt.Target.Property.Value, left.Name))
+		return
+	}
+	if field.Kind != Unknown && value.Kind != Unknown && !Same(field, value) {
+		c.addError(fmt.Errorf("field %s expects %s, got %s", stmt.Target.Property.Value, field.Kind, value.Kind))
+	}
+}
+
+func (c *Checker) inferMatchExpression(expr *ast.MatchExpression) *Type {
+	valueType := c.inferExpression(expr.Value)
+	var result *Type
+	for _, candidate := range expr.Cases {
+		pattern := c.inferExpression(candidate.Pattern)
+		if valueType.Kind != Unknown && pattern.Kind != Unknown && !Same(valueType, pattern) {
+			c.addError(fmt.Errorf("match compares %s with %s", valueType.Kind, pattern.Kind))
+		}
+		c.pushScope()
+		caseType := c.inferBlockReturnType(candidate.Body)
+		c.popScope()
+		if result == nil {
+			result = caseType
+		} else {
+			result = c.unifyTypesOrError("match", result, caseType)
+		}
+	}
+	if expr.Default != nil {
+		c.pushScope()
+		defaultType := c.inferBlockReturnType(expr.Default)
+		c.popScope()
+		if result == nil {
+			result = defaultType
+		} else {
+			result = c.unifyTypesOrError("match", result, defaultType)
+		}
+	}
+	if result == nil {
+		return Simple(Null)
+	}
+	return result
+}
+
+func (c *Checker) checkStructConstructor(structType *Type, arguments []ast.Expression) *Type {
+	if len(arguments) == 1 {
+		if named, ok := arguments[0].(*ast.DictLiteral); ok {
+			seen := map[string]bool{}
+			for key, value := range named.Pairs {
+				name, ok := key.(*ast.StringLiteral)
+				if !ok {
+					c.addError(fmt.Errorf("named struct fields must use string keys"))
+					continue
+				}
+				fieldType, exists := structType.Fields[name.Value]
+				if !exists {
+					c.addError(fmt.Errorf("unknown field %s on %s", name.Value, structType.Name))
+					continue
+				}
+				seen[name.Value] = true
+				valueType := c.inferExpression(value)
+				if fieldType.Kind != Unknown && valueType.Kind != Unknown && !Same(fieldType, valueType) {
+					c.addError(fmt.Errorf("field %s expects %s, got %s", name.Value, fieldType.Kind, valueType.Kind))
+				}
+			}
+			for field := range structType.Fields {
+				if !seen[field] {
+					c.addError(fmt.Errorf("missing field %s for %s", field, structType.Name))
+				}
+			}
+			return structType
+		}
+	}
+	if len(arguments) != len(structType.Fields) {
+		c.addError(fmt.Errorf("struct %s expects %d fields, got %d", structType.Name, len(structType.Fields), len(arguments)))
+		return structType
+	}
+	// Fields are maps, so use the constructor function's ordered parameters when available.
+	constructor, _ := c.scope.resolve(structType.Name)
+	for index, argument := range arguments {
+		argType := c.inferExpression(argument)
+		if constructor != nil && constructor.Kind == Func && index < len(constructor.Params) {
+			expected := constructor.Params[index]
+			if expected.Kind != Unknown && argType.Kind != Unknown && !Same(expected, argType) {
+				c.addError(fmt.Errorf("field %d expects %s, got %s", index+1, expected.Kind, argType.Kind))
+			}
+		}
+	}
+	return structType
 }

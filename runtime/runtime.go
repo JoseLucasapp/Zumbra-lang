@@ -1891,5 +1891,204 @@ func tryValue(v interface{}) interface{} {
 	return awaitValue(v)
 }
 
+
+type zMethod func(self *zStructInstance, args ...interface{}) interface{}
+
+type zStructDefinition struct {
+	Name string
+	Fields []string
+	Methods map[string]zMethod
+}
+
+type zStructInstance struct {
+	Definition *zStructDefinition
+	Fields map[string]interface{}
+}
+
+type zEnumValue struct { EnumName string; Name string; Ordinal int }
+type zEnumDefinition struct { Name string; Members map[string]zEnumValue }
+type zMatchCase struct { Pattern interface{}; Body func() interface{} }
+
+func zStruct(name string, fields []string, methods map[string]zMethod) *zStructDefinition {
+	return &zStructDefinition{Name: name, Fields: fields, Methods: methods}
+}
+
+func zConstruct(definition *zStructDefinition, args ...interface{}) *zStructInstance {
+	instance := &zStructInstance{Definition: definition, Fields: map[string]interface{}{}}
+	if len(args) == 1 {
+		if named, ok := args[0].(map[string]interface{}); ok {
+			for _, field := range definition.Fields {
+				value, exists := named[field]
+				if !exists { panic(fmt.Sprintf("missing field %s for %s", field, definition.Name)) }
+				instance.Fields[field] = value
+			}
+			for field := range named {
+				known := false
+				for _, declared := range definition.Fields { if field == declared { known = true; break } }
+				if !known { panic(fmt.Sprintf("unknown field %s for %s", field, definition.Name)) }
+			}
+			return instance
+		}
+	}
+	if len(args) != len(definition.Fields) { panic(fmt.Sprintf("wrong number of fields for %s: want=%d, got=%d", definition.Name, len(definition.Fields), len(args))) }
+	for index, field := range definition.Fields { instance.Fields[field] = args[index] }
+	return instance
+}
+
+func zEnum(name string, members []string) *zEnumDefinition {
+	definition := &zEnumDefinition{Name: name, Members: map[string]zEnumValue{}}
+	for index, member := range members { definition.Members[member] = zEnumValue{EnumName: name, Name: member, Ordinal: index} }
+	return definition
+}
+
+func zGetAttr(value interface{}, property string) interface{} {
+	switch current := value.(type) {
+	case *zStructInstance:
+		if field, ok := current.Fields[property]; ok { return field }
+		if current.Definition != nil { if _, ok := current.Definition.Methods[property]; ok { return property } }
+		panic(fmt.Sprintf("unknown field or method %s", property))
+	case *zEnumDefinition:
+		member, ok := current.Members[property]
+		if !ok { panic(fmt.Sprintf("unknown enum member %s.%s", current.Name, property)) }
+		return member
+	case map[string]interface{}:
+		return current[property]
+	default:
+		reflected := reflect.ValueOf(value)
+		if reflected.Kind() == reflect.Pointer { reflected = reflected.Elem() }
+		if reflected.IsValid() && reflected.Kind() == reflect.Struct {
+			field := reflected.FieldByName(property)
+			if field.IsValid() { return field.Interface() }
+		}
+		panic(fmt.Sprintf("object %T has no attribute %s", value, property))
+	}
+}
+
+func zSetAttr(value interface{}, property string, fieldValue interface{}) interface{} {
+	instance, ok := value.(*zStructInstance)
+	if !ok { panic(fmt.Sprintf("attribute assignment requires struct, got %T", value)) }
+	if _, exists := instance.Fields[property]; !exists { panic(fmt.Sprintf("unknown field %s", property)) }
+	instance.Fields[property] = fieldValue
+	return fieldValue
+}
+
+func zCallMethod(value interface{}, method string, args ...interface{}) interface{} {
+	instance, ok := value.(*zStructInstance)
+	if !ok { panic(fmt.Sprintf("method call requires struct, got %T", value)) }
+	fn, ok := instance.Definition.Methods[method]
+	if !ok { panic(fmt.Sprintf("unknown method %s", method)) }
+	return fn(instance, args...)
+}
+
+func zMatch(value interface{}, cases []zMatchCase, fallback func() interface{}) interface{} {
+	for _, candidate := range cases { if reflect.DeepEqual(value, candidate.Pattern) { return candidate.Body() } }
+	if fallback != nil { return fallback() }
+	return nil
+}
+
+func zIntegerTarget(left reflect.Value, right reflect.Value) reflect.Type {
+	if left.Type() == right.Type() { return left.Type() }
+	isInteger := func(kind reflect.Kind) bool {
+		return (kind >= reflect.Int && kind <= reflect.Int64) || (kind >= reflect.Uint && kind <= reflect.Uint64)
+	}
+	if !isInteger(left.Kind()) || !isInteger(right.Kind()) { return nil }
+	if left.Kind() == reflect.Int && right.Kind() != reflect.Int { return right.Type() }
+	if right.Kind() == reflect.Int && left.Kind() != reflect.Int { return left.Type() }
+	return nil
+}
+
+func zCoerceInteger(value reflect.Value, target reflect.Type) reflect.Value {
+	number := zIntegerBigDynamic(value.Interface())
+	signed := target.Kind() >= reflect.Int && target.Kind() <= reflect.Int64
+	minimum, maximum := zIntegerBounds(signed, uint(target.Bits()))
+	if number.Cmp(minimum) < 0 || number.Cmp(maximum) > 0 {
+		panic(fmt.Sprintf("value %s is outside %s range", number.String(), target.String()))
+	}
+	result := reflect.New(target).Elem()
+	if signed { result.SetInt(number.Int64()) } else { result.SetUint(number.Uint64()) }
+	return result
+}
+
+func zSignedResult(target reflect.Type, value int64) interface{} {
+	result := reflect.New(target).Elem()
+	result.SetInt(value)
+	return result.Interface()
+}
+
+func zUnsignedResult(target reflect.Type, value uint64) interface{} {
+	result := reflect.New(target).Elem()
+	result.SetUint(value)
+	return result.Interface()
+}
+
+func zBinary(operator string, left interface{}, right interface{}) interface{} {
+	if operator == "==" { return reflect.DeepEqual(left, right) }
+	if operator == "!=" { return !reflect.DeepEqual(left, right) }
+	if l, ok := left.(string); ok {
+		r, rok := right.(string)
+		if operator == "+" && rok { return l + r }
+	}
+	lv, rv := reflect.ValueOf(left), reflect.ValueOf(right)
+	if !lv.IsValid() || !rv.IsValid() { panic("invalid binary operand") }
+	isFloat := func(k reflect.Kind) bool { return k == reflect.Float32 || k == reflect.Float64 }
+	isSigned := func(k reflect.Kind) bool { return k >= reflect.Int && k <= reflect.Int64 }
+	isUnsigned := func(k reflect.Kind) bool { return k >= reflect.Uint && k <= reflect.Uint64 }
+	if isFloat(lv.Kind()) || isFloat(rv.Kind()) {
+		toFloat := func(v reflect.Value) float64 { if isFloat(v.Kind()) { return v.Convert(reflect.TypeOf(float64(0))).Float() }; if isSigned(v.Kind()) { return float64(v.Int()) }; return float64(v.Uint()) }
+		l, r := toFloat(lv), toFloat(rv)
+		switch operator { case "+": return l+r; case "-": return l-r; case "*": return l*r; case "/": return l/r; case "<": return l<r; case ">": return l>r; case "<=": return l<=r; case ">=": return l>=r }
+	}
+	if target := zIntegerTarget(lv, rv); target != nil {
+		lv, rv = zCoerceInteger(lv, target), zCoerceInteger(rv, target)
+	}
+	if operator == "shl" || operator == "shr" {
+		var count uint64
+		if isSigned(rv.Kind()) {
+			if rv.Int() < 0 { panic("shift count must be non-negative") }
+			count = uint64(rv.Int())
+		} else if isUnsigned(rv.Kind()) {
+			count = rv.Uint()
+		} else { panic(fmt.Sprintf("shift count must be integer, got %T", right)) }
+		if count >= uint64(lv.Type().Bits()) { panic(fmt.Sprintf("shift count out of range: %d", count)) }
+		if isSigned(lv.Kind()) {
+			if operator == "shl" { return zSignedResult(lv.Type(), lv.Int()<<count) }
+			return zSignedResult(lv.Type(), lv.Int()>>count)
+		}
+		if isUnsigned(lv.Kind()) {
+			if operator == "shl" { return zUnsignedResult(lv.Type(), lv.Uint()<<count) }
+			return zUnsignedResult(lv.Type(), lv.Uint()>>count)
+		}
+	}
+	if isSigned(lv.Kind()) && isSigned(rv.Kind()) && lv.Type() == rv.Type() {
+		l, r := lv.Int(), rv.Int()
+		switch operator {
+		case "+": return zSignedResult(lv.Type(), l+r)
+		case "-": return zSignedResult(lv.Type(), l-r)
+		case "*": return zSignedResult(lv.Type(), l*r)
+		case "/": return zSignedResult(lv.Type(), l/r)
+		case "%": return zSignedResult(lv.Type(), l%r)
+		case "band": return zSignedResult(lv.Type(), l&r)
+		case "bor": return zSignedResult(lv.Type(), l|r)
+		case "bxor": return zSignedResult(lv.Type(), l^r)
+		case "<": return l<r; case ">": return l>r; case "<=": return l<=r; case ">=": return l>=r
+		}
+	}
+	if isUnsigned(lv.Kind()) && isUnsigned(rv.Kind()) && lv.Type() == rv.Type() {
+		l, r := lv.Uint(), rv.Uint()
+		switch operator {
+		case "+": return zUnsignedResult(lv.Type(), l+r)
+		case "-": return zUnsignedResult(lv.Type(), l-r)
+		case "*": return zUnsignedResult(lv.Type(), l*r)
+		case "/": return zUnsignedResult(lv.Type(), l/r)
+		case "%": return zUnsignedResult(lv.Type(), l%r)
+		case "band": return zUnsignedResult(lv.Type(), l&r)
+		case "bor": return zUnsignedResult(lv.Type(), l|r)
+		case "bxor": return zUnsignedResult(lv.Type(), l^r)
+		case "<": return l<r; case ">": return l>r; case "<=": return l<=r; case ">=": return l>=r
+		}
+	}
+	panic(fmt.Sprintf("unsupported binary operation %T %s %T", left, operator, right))
+}
+
 `
 }

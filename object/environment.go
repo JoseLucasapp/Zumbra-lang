@@ -1,9 +1,11 @@
 package object
 
+import "fmt"
+
 func NewEnvironment() *Environment {
-	s := make(map[string]Object)
 	return &Environment{
-		store:         s,
+		store:         make(map[string]Object),
+		constants:     make(map[string]bool),
 		outer:         nil,
 		importedFiles: make(map[string]bool),
 	}
@@ -11,6 +13,7 @@ func NewEnvironment() *Environment {
 
 type Environment struct {
 	store         map[string]Object
+	constants     map[string]bool
 	outer         *Environment
 	importedFiles map[string]bool
 }
@@ -28,18 +31,46 @@ func (e *Environment) Set(name string, val Object) Object {
 	return val
 }
 
-func NewEnclosedEnvironment(outer *Environment) *Environment {
-	env := &Environment{
-		store: make(map[string]Object),
-		outer: outer,
-	}
+func (e *Environment) DefineConst(name string, val Object) Object {
+	e.store[name] = val
+	e.constants[name] = true
+	return val
+}
 
+func (e *Environment) IsConst(name string) bool {
+	if e.constants[name] {
+		return true
+	}
+	if _, ok := e.store[name]; ok {
+		return false
+	}
+	if e.outer != nil {
+		return e.outer.IsConst(name)
+	}
+	return false
+}
+
+func (e *Environment) Assign(name string, val Object) (Object, error) {
+	if _, ok := e.store[name]; ok {
+		if e.constants[name] {
+			return nil, fmt.Errorf("cannot assign to constant %s", name)
+		}
+		e.store[name] = val
+		return val, nil
+	}
+	if e.outer != nil {
+		return e.outer.Assign(name, val)
+	}
+	return nil, fmt.Errorf("identifier not found: %s", name)
+}
+
+func NewEnclosedEnvironment(outer *Environment) *Environment {
+	env := &Environment{store: make(map[string]Object), constants: make(map[string]bool), outer: outer}
 	if outer != nil && outer.importedFiles != nil {
 		env.importedFiles = outer.importedFiles
 	} else {
 		env.importedFiles = make(map[string]bool)
 	}
-
 	return env
 }
 

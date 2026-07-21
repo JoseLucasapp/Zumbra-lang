@@ -36,6 +36,7 @@ type Compiler struct {
 	importingFiles      map[string]bool
 	currentDir          string
 	errorTempCounter    int
+	matchTempCounter    int
 	loopStack           []LoopContext
 	warnings            []Diagnostic
 }
@@ -104,6 +105,7 @@ func newCompilerWithState(
 		importingFiles:   map[string]bool{},
 		currentDir:       baseDir,
 		errorTempCounter: 0,
+		matchTempCounter: 0,
 		loopStack:        []LoopContext{},
 		warnings:         []Diagnostic{},
 	}
@@ -290,6 +292,26 @@ func (c *Compiler) Compile(node ast.Node) error {
 
 	case *ast.BlockStatement:
 		return c.compileBlockWithScope(node)
+
+	case *ast.ConstStatement:
+		symbol := c.symbolTable.DefineConst(node.Name.Value)
+		if err := c.Compile(node.Value); err != nil {
+			return err
+		}
+		if symbol.Scope == GlobalScope {
+			c.emit(code.OpSetGlobal, symbol.Index)
+		} else {
+			c.emit(code.OpSetLocal, symbol.Index)
+		}
+
+	case *ast.StructStatement:
+		return c.compileStructStatement(node)
+
+	case *ast.EnumStatement:
+		return c.compileEnumStatement(node)
+
+	case *ast.TypeAliasStatement:
+		return nil
 
 	case *ast.VarStatement:
 		symbol := c.symbolTable.Define(node.Name.Value)
@@ -516,6 +538,17 @@ func (c *Compiler) Compile(node ast.Node) error {
 			return err
 		}
 
+	case *ast.AttributeAssignStatement:
+		if err := c.Compile(node.Target.Object); err != nil {
+			return err
+		}
+		propertyIndex := c.addConstant(&object.String{Value: node.Target.Property.Value})
+		c.emit(code.OpConstant, propertyIndex)
+		if err := c.Compile(node.Value); err != nil {
+			return err
+		}
+		c.emit(code.OpSetAttr)
+
 	case *ast.IndexAssignStatement:
 		if err := c.Compile(node.Target.Left); err != nil {
 			return err
@@ -544,6 +577,9 @@ func (c *Compiler) Compile(node ast.Node) error {
 		}
 		pos := c.emit(code.OpJump, 9999)
 		c.registerContinue(pos)
+
+	case *ast.MatchExpression:
+		return c.compileMatchExpression(node)
 
 	case *ast.AttributeAccess:
 		if err := c.Compile(node.Object); err != nil {
@@ -704,6 +740,8 @@ func (c *Compiler) lastInstructionLeavesValue() bool {
 		code.OpCall,
 		code.OpGetAttr,
 		code.OpClosure,
+		code.OpStructDefinition,
+		code.OpEnumDefinition,
 		code.OpReturnValue,
 		code.OpReturn:
 		return true
@@ -813,6 +851,9 @@ func (c *Compiler) compileAssign(stmt *ast.AssignStatement) error {
 	symbol, ok := c.symbolTable.Resolve(stmt.Name.Value)
 	if !ok {
 		return fmt.Errorf("undefined variable %s", stmt.Name.Value)
+	}
+	if !c.symbolTable.IsMutable(stmt.Name.Value) {
+		return fmt.Errorf("cannot assign to constant %s", stmt.Name.Value)
 	}
 
 	switch symbol.Scope {
@@ -1557,4 +1598,104 @@ func rewriteErrorIdentInNode(node ast.Node, from, to string) {
 			rewriteErrorIdentInNode(n.Handler, from, to)
 		}
 	}
+}
+
+func (c *Compiler) compileStructStatement(node *ast.StructStatement) error {
+	symbol := c.symbolTable.DefineConst(node.Name.Value)
+	nameIndex := c.addConstant(&object.String{Value: node.Name.Value})
+	c.emit(code.OpConstant, nameIndex)
+	for _, field := range node.Fields {
+		fieldIndex := c.addConstant(&object.String{Value: field.Name.Value})
+		typeIndex := c.addConstant(&object.String{Value: field.TypeName})
+		c.emit(code.OpConstant, fieldIndex)
+		c.emit(code.OpConstant, typeIndex)
+	}
+	for _, method := range node.Methods {
+		methodIndex := c.addConstant(&object.String{Value: method.Name.Value})
+		c.emit(code.OpConstant, methodIndex)
+		if err := c.Compile(method.Function); err != nil {
+			return err
+		}
+	}
+	if len(node.Fields) > 255 || len(node.Methods) > 255 {
+		return fmt.Errorf("struct %s is too large", node.Name.Value)
+	}
+	c.emit(code.OpStructDefinition, len(node.Fields), len(node.Methods))
+	if symbol.Scope == GlobalScope {
+		c.emit(code.OpSetGlobal, symbol.Index)
+	} else {
+		c.emit(code.OpSetLocal, symbol.Index)
+	}
+	return nil
+}
+
+func (c *Compiler) compileEnumStatement(node *ast.EnumStatement) error {
+	symbol := c.symbolTable.DefineConst(node.Name.Value)
+	nameIndex := c.addConstant(&object.String{Value: node.Name.Value})
+	c.emit(code.OpConstant, nameIndex)
+	for _, member := range node.Members {
+		memberIndex := c.addConstant(&object.String{Value: member.Value})
+		c.emit(code.OpConstant, memberIndex)
+	}
+	if len(node.Members) > 255 {
+		return fmt.Errorf("enum %s has too many members", node.Name.Value)
+	}
+	c.emit(code.OpEnumDefinition, len(node.Members))
+	if symbol.Scope == GlobalScope {
+		c.emit(code.OpSetGlobal, symbol.Index)
+	} else {
+		c.emit(code.OpSetLocal, symbol.Index)
+	}
+	return nil
+}
+
+func (c *Compiler) compileMatchExpression(node *ast.MatchExpression) error {
+	tempName := fmt.Sprintf("__zumbra_match_%d", c.matchTempCounter)
+	c.matchTempCounter++
+	temp := c.symbolTable.Define(tempName)
+	if err := c.Compile(node.Value); err != nil {
+		return err
+	}
+	if temp.Scope == GlobalScope {
+		c.emit(code.OpSetGlobal, temp.Index)
+	} else {
+		c.emit(code.OpSetLocal, temp.Index)
+	}
+
+	endJumps := []int{}
+	for _, matchCase := range node.Cases {
+		c.loadSymbol(temp)
+		if err := c.Compile(matchCase.Pattern); err != nil {
+			return err
+		}
+		c.emit(code.OpEqual)
+		nextCase := c.emit(code.OpJumpNotTruthy, 9999)
+		if err := c.compileBlockWithScope(matchCase.Body); err != nil {
+			return err
+		}
+		if c.lastInstructionIs(code.OpPop) {
+			c.removeLastPop()
+		} else if !c.lastInstructionLeavesValue() {
+			c.emit(code.OpNull)
+		}
+		endJumps = append(endJumps, c.emit(code.OpJump, 9999))
+		c.changeOperand(nextCase, len(c.currentInstructions()))
+	}
+	if node.Default != nil {
+		if err := c.compileBlockWithScope(node.Default); err != nil {
+			return err
+		}
+		if c.lastInstructionIs(code.OpPop) {
+			c.removeLastPop()
+		} else if !c.lastInstructionLeavesValue() {
+			c.emit(code.OpNull)
+		}
+	} else {
+		c.emit(code.OpNull)
+	}
+	end := len(c.currentInstructions())
+	for _, jump := range endJumps {
+		c.changeOperand(jump, end)
+	}
+	return nil
 }

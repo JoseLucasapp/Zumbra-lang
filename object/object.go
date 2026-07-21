@@ -32,6 +32,11 @@ const (
 	DATE_OBJ              = "DATE"
 	RECORD_OBJ            = "RECORD"
 	ENV_OBJ               = "ENV"
+	STRUCT_DEF_OBJ        = "STRUCT_DEFINITION"
+	STRUCT_INSTANCE_OBJ   = "STRUCT_INSTANCE"
+	BOUND_METHOD_OBJ      = "BOUND_METHOD"
+	ENUM_DEF_OBJ          = "ENUM_DEFINITION"
+	ENUM_VALUE_OBJ        = "ENUM_VALUE"
 )
 
 type Object interface {

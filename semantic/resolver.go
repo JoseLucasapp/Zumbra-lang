@@ -235,11 +235,31 @@ func (r *Resolver) resolveBlockStatement(block *ast.BlockStatement, createScope 
 
 func (r *Resolver) resolveStatement(stmt ast.Statement) {
 	switch s := stmt.(type) {
+	case *ast.ConstStatement:
+		r.resolveConstStatement(s)
+
+	case *ast.StructStatement:
+		r.resolveStructStatement(s)
+
+	case *ast.EnumStatement:
+		r.defineImmutable(s.Name, SymbolEnum)
+
+	case *ast.TypeAliasStatement:
+		r.defineImmutable(s.Name, SymbolType)
+
 	case *ast.VarStatement:
 		r.resolveVarStatement(s)
 
 	case *ast.AssignStatement:
 		r.resolveAssignStatement(s)
+
+	case *ast.AttributeAssignStatement:
+		if s.Target != nil {
+			r.resolveExpression(s.Target.Object)
+		}
+		if s.Value != nil {
+			r.resolveExpression(s.Value)
+		}
 
 	case *ast.IndexAssignStatement:
 		if s.Target != nil {
@@ -310,9 +330,12 @@ func (r *Resolver) resolveAssignStatement(stmt *ast.AssignStatement) {
 		return
 	}
 
-	if _, _, ok := r.scope.Resolve(stmt.Name.Value); !ok {
+	if sym, _, ok := r.scope.Resolve(stmt.Name.Value); !ok {
 		r.addError(ErrAssignmentToUndefinedSymbolAt(stmt.Name.Value, stmt.Token))
 	} else {
+		if !sym.Mutable {
+			r.addError(ErrAssignmentToImmutableSymbolAt(stmt.Name.Value, stmt.Token))
+		}
 		r.scope.MarkUsed(stmt.Name.Value)
 	}
 
@@ -417,6 +440,20 @@ func (r *Resolver) resolveExpression(exp ast.Expression) {
 			r.resolveExpression(e.Value)
 		}
 
+	case *ast.MatchExpression:
+		if e.Value != nil {
+			r.resolveExpression(e.Value)
+		}
+		for _, candidate := range e.Cases {
+			if candidate.Pattern != nil {
+				r.resolveExpression(candidate.Pattern)
+			}
+			r.resolveBlockStatement(candidate.Body, true)
+		}
+		if e.Default != nil {
+			r.resolveBlockStatement(e.Default, true)
+		}
+
 	case *ast.ErrorHandlerExpression:
 		if e.Left != nil {
 			r.resolveExpression(e.Left)
@@ -464,6 +501,10 @@ func (r *Resolver) resolveExpression(exp ast.Expression) {
 }
 
 func (r *Resolver) resolveFunctionLiteral(fn *ast.FunctionLiteral) {
+	r.resolveFunctionLiteralWithName(fn, true)
+}
+
+func (r *Resolver) resolveFunctionLiteralWithName(fn *ast.FunctionLiteral, declareName bool) {
 	if fn == nil {
 		return
 	}
@@ -471,7 +512,7 @@ func (r *Resolver) resolveFunctionLiteral(fn *ast.FunctionLiteral) {
 	functionScope := r.pushScope(ScopeFunction)
 	r.pushFunction(fn, functionScope)
 
-	if fn.Name != "" {
+	if declareName && fn.Name != "" {
 		err := r.scope.Define(Symbol{
 			Name:        fn.Name,
 			Kind:        SymbolFunction,
@@ -694,4 +735,38 @@ func (r *Resolver) resolveForEverLoop(loop *ast.ForEverLoop) {
 	defer r.popScope()
 
 	r.resolveBlockStatement(loop.Block, false)
+}
+
+func (r *Resolver) defineImmutable(name *ast.Identifier, kind SymbolKind) {
+	if name == nil {
+		return
+	}
+	err := r.scope.Define(Symbol{Name: name.Value, Kind: kind, Depth: r.scope.Depth, Mutable: false, OriginDepth: r.scope.Depth})
+	if err != nil {
+		r.addError(ErrDuplicateSymbolAt(name.Value, name.Token))
+	}
+}
+
+func (r *Resolver) resolveConstStatement(stmt *ast.ConstStatement) {
+	if stmt == nil || stmt.Name == nil {
+		return
+	}
+	if stmt.Value != nil {
+		r.resolveExpression(stmt.Value)
+	}
+	r.defineImmutable(stmt.Name, SymbolConst)
+}
+
+func (r *Resolver) resolveStructStatement(stmt *ast.StructStatement) {
+	if stmt == nil || stmt.Name == nil {
+		return
+	}
+	r.defineImmutable(stmt.Name, SymbolStruct)
+	for _, method := range stmt.Methods {
+		if method != nil && method.Function != nil {
+			// A method is reached through its struct instance, so its local function
+			// name must not produce an "unused function" warning.
+			r.resolveFunctionLiteralWithName(method.Function, false)
+		}
+	}
 }

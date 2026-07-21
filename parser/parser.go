@@ -99,6 +99,7 @@ func New(l *lexer.Lexer) *Parser {
 	p.registerPrefix(token.ASYNC, p.parseAsyncFunctionLiteral)
 	p.registerPrefix(token.AWAIT, p.parseAwaitExpression)
 	p.registerPrefix(token.TRY, p.parseTryExpression)
+	p.registerPrefix(token.MATCH, p.parseMatchExpression)
 	p.registerPrefix(token.BREAK, p.parseBreakWithoutLoopContext)
 	p.registerPrefix(token.CONTINUE, p.parseContinueWithoutLoopContext)
 
@@ -168,6 +169,14 @@ func (p *Parser) parseStatement() ast.Statement {
 		return p.parseWhileStatement()
 	case token.IMPORT:
 		return p.parseImportStatement()
+	case token.CONST:
+		return p.parseConstStatement()
+	case token.STRUCT:
+		return p.parseStructStatement()
+	case token.ENUM:
+		return p.parseEnumStatement()
+	case token.TYPE:
+		return p.parseTypeAliasStatement()
 	case token.IDENT:
 		if p.peekTokenIs(token.ASSIGN) {
 			return p.parseAssignStatement()
@@ -176,6 +185,184 @@ func (p *Parser) parseStatement() ast.Statement {
 	default:
 		return p.parseExpressionStatement()
 	}
+}
+
+func (p *Parser) parseConstStatement() *ast.ConstStatement {
+	stmt := &ast.ConstStatement{Token: p.curToken}
+	if !p.expectPeek(token.IDENT) {
+		return nil
+	}
+	stmt.Name = &ast.Identifier{Token: p.curToken, Value: p.curToken.Literal}
+	if !p.expectPeek(token.ASSIGN) {
+		return nil
+	}
+	p.nextToken()
+	stmt.Value = p.parseExpression(LOWEST)
+	if p.peekTokenIs(token.SEMICOLON) {
+		p.nextToken()
+	}
+	return stmt
+}
+
+func (p *Parser) parseTypeAliasStatement() *ast.TypeAliasStatement {
+	stmt := &ast.TypeAliasStatement{Token: p.curToken}
+	if !p.expectPeek(token.IDENT) {
+		return nil
+	}
+	stmt.Name = &ast.Identifier{Token: p.curToken, Value: p.curToken.Literal}
+	if !p.expectPeek(token.ASSIGN) {
+		return nil
+	}
+	if !p.expectPeek(token.IDENT) {
+		return nil
+	}
+	stmt.Target = &ast.Identifier{Token: p.curToken, Value: p.curToken.Literal}
+	if p.peekTokenIs(token.SEMICOLON) {
+		p.nextToken()
+	}
+	return stmt
+}
+
+func (p *Parser) parseStructStatement() *ast.StructStatement {
+	stmt := &ast.StructStatement{Token: p.curToken, Fields: []*ast.StructField{}, Methods: []*ast.StructMethod{}}
+	if !p.expectPeek(token.IDENT) {
+		return nil
+	}
+	stmt.Name = &ast.Identifier{Token: p.curToken, Value: p.curToken.Literal}
+	if !p.expectPeek(token.LBRACE) {
+		return nil
+	}
+	p.nextToken()
+	for !p.curTokenIs(token.RBRACE) && !p.curTokenIs(token.EOF) {
+		switch p.curToken.Type {
+		case token.SEMICOLON, token.COMMA:
+			p.nextToken()
+			continue
+		case token.FUNCTION:
+			method := p.parseStructMethod()
+			if method == nil {
+				return nil
+			}
+			stmt.Methods = append(stmt.Methods, method)
+		default:
+			if !p.curTokenIs(token.IDENT) {
+				p.errors = append(p.errors, fmt.Sprintf("expected struct field or method, got %s", p.tokenDebugString(p.curToken)))
+				return nil
+			}
+			field := &ast.StructField{Token: p.curToken, Name: &ast.Identifier{Token: p.curToken, Value: p.curToken.Literal}}
+			if p.peekTokenIs(token.COLON) {
+				p.nextToken()
+				if !p.expectPeek(token.IDENT) {
+					return nil
+				}
+				field.TypeName = p.curToken.Literal
+			}
+			stmt.Fields = append(stmt.Fields, field)
+			if p.peekTokenIs(token.SEMICOLON) || p.peekTokenIs(token.COMMA) {
+				p.nextToken()
+			}
+		}
+		p.nextToken()
+	}
+	stmt.RBraceToken = p.curToken
+	return stmt
+}
+
+func (p *Parser) parseStructMethod() *ast.StructMethod {
+	method := &ast.StructMethod{Token: p.curToken}
+	if !p.expectPeek(token.IDENT) {
+		return nil
+	}
+	method.Name = &ast.Identifier{Token: p.curToken, Value: p.curToken.Literal}
+	if !p.expectPeek(token.LPAREN) {
+		return nil
+	}
+	params := p.parseFunctionParameters()
+	if params == nil {
+		return nil
+	}
+	selfToken := token.Token{Type: token.IDENT, Literal: "self", Pos: method.Token.Pos}
+	params = append([]*ast.Identifier{{Token: selfToken, Value: "self"}}, params...)
+	if !p.expectPeek(token.LBRACE) {
+		return nil
+	}
+	body := p.parseBlockStatement()
+	method.Function = &ast.FunctionLiteral{Token: method.Token, Parameters: params, Body: body, Name: method.Name.Value}
+	return method
+}
+
+func (p *Parser) parseEnumStatement() *ast.EnumStatement {
+	stmt := &ast.EnumStatement{Token: p.curToken, Members: []*ast.Identifier{}}
+	if !p.expectPeek(token.IDENT) {
+		return nil
+	}
+	stmt.Name = &ast.Identifier{Token: p.curToken, Value: p.curToken.Literal}
+	if !p.expectPeek(token.LBRACE) {
+		return nil
+	}
+	p.nextToken()
+	for !p.curTokenIs(token.RBRACE) && !p.curTokenIs(token.EOF) {
+		if p.curTokenIs(token.SEMICOLON) || p.curTokenIs(token.COMMA) {
+			p.nextToken()
+			continue
+		}
+		if !p.curTokenIs(token.IDENT) {
+			p.errors = append(p.errors, fmt.Sprintf("expected enum member, got %s", p.tokenDebugString(p.curToken)))
+			return nil
+		}
+		stmt.Members = append(stmt.Members, &ast.Identifier{Token: p.curToken, Value: p.curToken.Literal})
+		if p.peekTokenIs(token.SEMICOLON) || p.peekTokenIs(token.COMMA) {
+			p.nextToken()
+		}
+		p.nextToken()
+	}
+	stmt.RBraceToken = p.curToken
+	return stmt
+}
+
+func (p *Parser) parseMatchExpression() ast.Expression {
+	expr := &ast.MatchExpression{Token: p.curToken, Cases: []*ast.MatchCase{}}
+	if !p.expectPeek(token.LPAREN) {
+		return nil
+	}
+	p.nextToken()
+	expr.Value = p.parseExpression(LOWEST)
+	if !p.expectPeek(token.RPAREN) {
+		return nil
+	}
+	if !p.expectPeek(token.LBRACE) {
+		return nil
+	}
+	p.nextToken()
+	for !p.curTokenIs(token.RBRACE) && !p.curTokenIs(token.EOF) {
+		if p.curTokenIs(token.SEMICOLON) {
+			p.nextToken()
+			continue
+		}
+		switch p.curToken.Type {
+		case token.CASE:
+			caseToken := p.curToken
+			p.nextToken()
+			pattern := p.parseExpression(LOWEST)
+			if !p.expectPeek(token.LBRACE) {
+				return nil
+			}
+			body := p.parseBlockStatement()
+			expr.Cases = append(expr.Cases, &ast.MatchCase{Token: caseToken, Pattern: pattern, Body: body})
+			p.nextToken()
+		case token.ELSE:
+			if !p.expectPeek(token.LBRACE) {
+				return nil
+			}
+			expr.Default = p.parseBlockStatement()
+			p.nextToken()
+		default:
+			p.errors = append(p.errors, fmt.Sprintf("expected case or else in match, got %s", p.tokenDebugString(p.curToken)))
+			return nil
+		}
+	}
+	expr.RBraceToken = p.curToken
+	return expr
 }
 
 func (p *Parser) parseImportStatement() *ast.ImportStatement {
@@ -388,20 +575,20 @@ func (p *Parser) parseExpressionStatement() ast.Statement {
 	expression := p.parseExpression(LOWEST)
 
 	if p.peekTokenIs(token.ASSIGN) {
-		target, ok := expression.(*ast.IndexExpression)
-		if !ok {
-			p.errors = append(p.errors, fmt.Sprintf("invalid assignment target %T: only identifiers and indexed values can be assigned", expression))
-			return &ast.ExpressionStatement{Token: startToken, Expression: expression}
-		}
-
 		p.nextToken()
 		assignToken := p.curToken
 		p.nextToken()
+		value := p.parseExpression(LOWEST)
 
-		stmt := &ast.IndexAssignStatement{
-			Token:  assignToken,
-			Target: target,
-			Value:  p.parseExpression(LOWEST),
+		var stmt ast.Statement
+		switch target := expression.(type) {
+		case *ast.IndexExpression:
+			stmt = &ast.IndexAssignStatement{Token: assignToken, Target: target, Value: value}
+		case *ast.AttributeAccess:
+			stmt = &ast.AttributeAssignStatement{Token: assignToken, Target: target, Value: value}
+		default:
+			p.errors = append(p.errors, fmt.Sprintf("invalid assignment target %T: only identifiers, indexed values and fields can be assigned", expression))
+			return &ast.ExpressionStatement{Token: startToken, Expression: expression}
 		}
 
 		if p.peekTokenIs(token.SEMICOLON) {

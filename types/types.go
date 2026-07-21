@@ -23,15 +23,21 @@ const (
 	Slice      Kind = "slice"
 	Dict       Kind = "dict"
 	Func       Kind = "function"
+	Struct     Kind = "struct"
+	Enum       Kind = "enum"
 )
 
 type Type struct {
-	Kind   Kind
-	Elem   *Type
-	Key    *Type
-	Value  *Type
-	Params []*Type
-	Return *Type
+	Kind    Kind
+	Name    string
+	Elem    *Type
+	Key     *Type
+	Value   *Type
+	Params  []*Type
+	Return  *Type
+	Fields  map[string]*Type
+	Methods map[string]*Type
+	Members map[string]bool
 }
 
 func Simple(kind Kind) *Type {
@@ -92,6 +98,9 @@ func Same(a, b *Type) bool {
 		}
 		return Same(a.Key, b.Key) && Same(a.Value, b.Value)
 
+	case Struct, Enum:
+		return a.Name == b.Name
+
 	case Func:
 		if len(a.Params) != len(b.Params) {
 			return false
@@ -140,4 +149,16 @@ func FixedIntegerKind(name string) (Kind, bool) {
 	default:
 		return Unknown, false
 	}
+}
+
+func StructOf(name string, fields map[string]*Type, methods map[string]*Type) *Type {
+	return &Type{Kind: Struct, Name: name, Fields: fields, Methods: methods}
+}
+
+func EnumOf(name string, members []string) *Type {
+	set := make(map[string]bool, len(members))
+	for _, member := range members {
+		set[member] = true
+	}
+	return &Type{Kind: Enum, Name: name, Members: set}
 }

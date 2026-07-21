@@ -448,3 +448,59 @@ show(sha256(rom));
 ```
 
 Complete documentation: [`docs/pt-BR/arquivos-binarios-e-endianness.md`](./pt-BR/arquivos-binarios-e-endianness.md).
+
+
+---
+
+## Constants, structs, enums, and match
+
+Declare immutable values with `const`:
+
+```zumbra
+const RESET_VECTOR << 0xFFFCu16;
+```
+
+Create a readable alias for an existing type:
+
+```zumbra
+type Byte << u8;
+```
+
+Declare data and methods with a compact struct:
+
+```zumbra
+struct Player {
+    x: int;
+    y: int;
+
+    fct move(dx, dy) {
+        self.x << self.x + dx;
+        self.y << self.y + dy;
+    }
+}
+
+var player << Player(10, 20);
+player.move(5, -2);
+player.x << 30;
+```
+
+Named initialization is also supported:
+
+```zumbra
+var player << Player({"x": 10, "y": 20});
+```
+
+Declare a finite set of values and select with `match`:
+
+```zumbra
+enum Direction { Up; Down; Left; Right; }
+
+var direction << Direction.Right;
+var label << match(direction) {
+    case Direction.Left { "left"; }
+    case Direction.Right { "right"; }
+    else { "other"; }
+};
+```
+
+Complete documentation: [`docs/pt-BR/tipos-estruturados.md`](./pt-BR/tipos-estruturados.md).
