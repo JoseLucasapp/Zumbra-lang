@@ -21,7 +21,7 @@ Designed for clarity, simplicity, and extensibility, Zumbra is the perfect playg
 
 The rebuild now follows a clear direction: systems, emulation, and game development without abandoning Zumbra's simplicity. See the Portuguese design and feature documentation in [`docs/pt-BR/`](./docs/pt-BR/).
 
-Current systems features include readable bitwise operators, fixed-width integers (`u8` through `u64`, `i8` through `i64`), mutable indexes, compact byte memory, typed integer arrays, zero-copy mutable slices, binary file I/O, endian-aware integer access, buffer copying/comparison, SHA-256 hashing, immutable constants, type aliases, structs with methods, enums, and `match`. Z6 also adds a canonical typed pipeline with HIR, MIR, constant folding, dead-value elimination, IR verification, and inspection commands. See [`docs/pt-BR/ir-tipada-e-pipeline.md`](./docs/pt-BR/ir-tipada-e-pipeline.md).
+Current systems features include readable bitwise operators, fixed-width integers (`u8` through `u64`, `i8` through `i64`), mutable indexes, compact byte memory, typed integer arrays, zero-copy mutable slices, binary file I/O, endian-aware integer access, buffer copying/comparison, SHA-256 hashing, immutable constants, type aliases, structs with methods, enums, and `match`. Z6 adds a canonical typed pipeline with HIR and MIR. Z7 adds a C11 backend that consumes optimized MIR and produces standalone native executables with Clang or GCC. See [`docs/pt-BR/compilacao-nativa.md`](./docs/pt-BR/compilacao-nativa.md).
 
 <br />
 <a href="./code_examples/"><p style="font-size: 30px; font-weight: 600;">🛠 Code_examples</p></a>
@@ -67,6 +67,17 @@ zumbra check app.zum
 zumbra ir app.zum hir
 zumbra ir app.zum optimized
 ```
+
+<p style="font-size: 25px">🚀 Native build:</p>
+
+```bash
+zumbra build app.zum
+zumbra build --release app.zum
+zumbra build --emit-c app.zum
+./build/app
+```
+
+Native builds require Clang or GCC. Use `--compiler`, `CC`, and `-o` to control the toolchain and output.
 
 <p style="font-size: 25px">⚡ Additional Notes:</p>
 

@@ -617,9 +617,6 @@ func (r *Resolver) resolveForEachArrayLoop(loop *ast.ForEachArrayLoop) {
 	if loop.Value != nil {
 		r.resolveExpression(loop.Value)
 	}
-	if loop.Cond != nil {
-		r.resolveExpression(loop.Cond)
-	}
 
 	r.pushScope(ScopeBlock)
 	defer r.popScope()
@@ -638,6 +635,9 @@ func (r *Resolver) resolveForEachArrayLoop(loop *ast.ForEachArrayLoop) {
 			r.addError(ErrDuplicateSymbol(loop.Var))
 		}
 	}
+	if loop.Cond != nil {
+		r.resolveExpression(loop.Cond)
+	}
 
 	r.resolveBlockStatement(loop.Block, false)
 }
@@ -649,9 +649,6 @@ func (r *Resolver) resolveForEachMapLoop(loop *ast.ForEachMapLoop) {
 
 	if loop.X != nil {
 		r.resolveExpression(loop.X)
-	}
-	if loop.Cond != nil {
-		r.resolveExpression(loop.Cond)
 	}
 
 	r.pushScope(ScopeBlock)
@@ -687,6 +684,10 @@ func (r *Resolver) resolveForEachMapLoop(loop *ast.ForEachMapLoop) {
 		}
 	}
 
+	if loop.Cond != nil {
+		r.resolveExpression(loop.Cond)
+	}
+
 	r.resolveBlockStatement(loop.Block, false)
 }
 
@@ -700,9 +701,6 @@ func (r *Resolver) resolveForEachDotRange(loop *ast.ForEachDotRange) {
 	}
 	if loop.EndIdx != nil {
 		r.resolveExpression(loop.EndIdx)
-	}
-	if loop.Cond != nil {
-		r.resolveExpression(loop.Cond)
 	}
 
 	r.pushScope(ScopeBlock)
@@ -721,6 +719,10 @@ func (r *Resolver) resolveForEachDotRange(loop *ast.ForEachDotRange) {
 		if err != nil {
 			r.addError(ErrDuplicateSymbol(loop.Var))
 		}
+	}
+
+	if loop.Cond != nil {
+		r.resolveExpression(loop.Cond)
 	}
 
 	r.resolveBlockStatement(loop.Block, false)

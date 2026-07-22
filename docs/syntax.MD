@@ -521,3 +521,17 @@ zumbra ir app.zum optimized
 `hir` shows the typed high-level representation. `mir` shows explicit virtual values without optimization. `optimized` applies constant folding, dead-value elimination, and unreachable-code elimination.
 
 Complete documentation: [`docs/pt-BR/ir-tipada-e-pipeline.md`](./pt-BR/ir-tipada-e-pipeline.md).
+
+
+## Native builds
+
+Z7 compiles optimized MIR to portable C11 and then invokes Clang or GCC:
+
+```bash
+zumbra build app.zum
+zumbra build --release app.zum
+zumbra build --compiler clang -o dist/app app.zum
+zumbra build --emit-c app.zum
+```
+
+Generated sources are placed under `build/native/<program>/`. Unsupported native features fail with explicit diagnostics; the VM remains available through `zumbra run`.

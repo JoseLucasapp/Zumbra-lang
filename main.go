@@ -3,20 +3,20 @@ package main
 import (
 	"fmt"
 	"os"
-	"os/exec"
 	"os/user"
 	"path/filepath"
+	"strings"
 
 	"zumbra/compiler"
+	"zumbra/nativec"
 	"zumbra/object"
 	"zumbra/object/builtins"
 	"zumbra/pipeline"
 	"zumbra/repl"
-	"zumbra/transpiler"
 	"zumbra/vm"
 )
 
-const version = "0.1.6"
+const version = "0.1.7"
 
 func main() {
 	currentUser, err := user.Current()
@@ -29,13 +29,14 @@ func main() {
 	if len(args) > 0 {
 		switch args[0] {
 		case "build":
-			if len(args) < 2 {
+			filename, buildOptions, err := parseBuildArguments(args[1:])
+			if err != nil {
+				fmt.Printf("Build arguments error: %s\n", err)
 				printUsage()
 				os.Exit(1)
 			}
-
-			if err := buildZumbra(args[1]); err != nil {
-				fmt.Printf("Error when trying to build the file: %s\n", err)
+			if err := buildZumbra(filename, buildOptions); err != nil {
+				fmt.Printf("Native build error: %s\n", err)
 				os.Exit(1)
 			}
 			return
@@ -92,7 +93,7 @@ func printUsage() {
 	fmt.Println("Usage:")
 	fmt.Println("  zumbra <file.zum>")
 	fmt.Println("  zumbra run <file.zum>")
-	fmt.Println("  zumbra build <file.zum>")
+	fmt.Println("  zumbra build [--release] [--emit-c] [--compiler <name>] [-o <path>] <file.zum>")
 	fmt.Println("  zumbra check <file.zum>")
 	fmt.Println("  zumbra ir <file.zum> [hir|mir|optimized]")
 	fmt.Println("  zumbra version")
@@ -178,61 +179,89 @@ func printPipelineDiagnostics(filename string, diagnostics []pipeline.Diagnostic
 	}
 }
 
-func buildZumbra(filename string) error {
+type nativeBuildArguments struct {
+	Release   bool
+	EmitCOnly bool
+	Compiler  string
+	Output    string
+}
+
+func parseBuildArguments(arguments []string) (string, nativeBuildArguments, error) {
+	options := nativeBuildArguments{Compiler: "auto"}
+	filename := ""
+	for index := 0; index < len(arguments); index++ {
+		argument := arguments[index]
+		switch argument {
+		case "--release":
+			options.Release = true
+		case "--emit-c":
+			options.EmitCOnly = true
+		case "--compiler":
+			index++
+			if index >= len(arguments) {
+				return "", options, fmt.Errorf("--compiler requires clang, gcc, cc or auto")
+			}
+			options.Compiler = arguments[index]
+		case "-o", "--output":
+			index++
+			if index >= len(arguments) {
+				return "", options, fmt.Errorf("%s requires an output path", argument)
+			}
+			options.Output = arguments[index]
+		default:
+			if strings.HasPrefix(argument, "-") {
+				return "", options, fmt.Errorf("unknown build option %s", argument)
+			}
+			if filename != "" {
+				return "", options, fmt.Errorf("multiple input files are not supported yet")
+			}
+			filename = argument
+		}
+	}
+	if filename == "" {
+		return "", options, fmt.Errorf("missing .zum input file")
+	}
+	return filename, options, nil
+}
+
+func buildZumbra(filename string, cli nativeBuildArguments) error {
 	result, diagnostics := pipeline.BuildFile(filename, pipeline.Options{Optimize: true})
 	if len(diagnostics) > 0 {
 		return fmt.Errorf("pipeline failed:\n%s", pipeline.FormatDiagnostics(diagnostics))
 	}
-	goCode, err := transpiler.ZumbraTranspilerPipeline(result)
+	baseName := strings.TrimSuffix(filepath.Base(filename), filepath.Ext(filename))
+	buildDir := filepath.Join("build", "native", baseName)
+	buildResult, nativeDiagnostics, err := nativec.Build(result.MIR, nativec.BuildOptions{
+		Release:   cli.Release,
+		EmitCOnly: cli.EmitCOnly,
+		Compiler:  cli.Compiler,
+		Output:    cli.Output,
+		BuildDir:  buildDir,
+	})
 	if err != nil {
-		return fmt.Errorf("error when transpiling: %w", err)
+		return err
 	}
-
-	if _, err := os.Stat("build"); err == nil {
-		if err := os.RemoveAll("build"); err != nil {
-			return fmt.Errorf("error when trying to remove build: %w", err)
+	if len(nativeDiagnostics) != 0 {
+		var messages strings.Builder
+		for _, diagnostic := range nativeDiagnostics {
+			messages.WriteString("\t")
+			messages.WriteString(diagnostic.Error())
+			messages.WriteByte('\n')
 		}
+		return fmt.Errorf("native backend rejected the program:\n%s", messages.String())
 	}
-
-	if err := os.MkdirAll("build", 0o755); err != nil {
-		return fmt.Errorf("error when trying to create build dir: %w", err)
+	if buildResult == nil {
+		return fmt.Errorf("native backend returned no build result")
 	}
-
-	if err := os.WriteFile("build/main.go", []byte(goCode), 0o644); err != nil {
-		return fmt.Errorf("error when trying to write main.go: %w", err)
+	if cli.EmitCOnly {
+		fmt.Printf("Generated native C sources in %s\n", buildResult.SourceDir)
+		return nil
 	}
-
-	goModContent := `
-module zumbra-generated
-
-go 1.21
-
-require (
-	github.com/go-sql-driver/mysql v1.9.2
-	github.com/golang-jwt/jwt/v5 v5.2.2
-	github.com/lib/pq v1.10.9
-	github.com/redis/go-redis/v9 v9.6.1
-)
-`
-	if err := os.WriteFile("build/go.mod", []byte(goModContent), 0o644); err != nil {
-		return fmt.Errorf("error when trying to write go.mod: %w", err)
+	mode := "debug"
+	if cli.Release {
+		mode = "release"
 	}
-
-	cmd := exec.Command("go", "mod", "tidy")
-	cmd.Dir = "build"
-	cmd.Stdout = os.Stdout
-	cmd.Stderr = os.Stderr
-	if err := cmd.Run(); err != nil {
-		return fmt.Errorf("error running go mod tidy: %w", err)
-	}
-
-	cmd = exec.Command("go", "build", "-o", "zumbra-app", "main.go")
-	cmd.Dir = "build"
-	cmd.Stdout = os.Stdout
-	cmd.Stderr = os.Stderr
-	if err := cmd.Run(); err != nil {
-		return fmt.Errorf("error running go build: %w", err)
-	}
-
+	fmt.Printf("Built %s native executable: %s\n", mode, buildResult.Output)
+	fmt.Printf("C compiler: %s\n", buildResult.Compiler)
 	return nil
 }

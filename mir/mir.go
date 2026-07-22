@@ -79,6 +79,7 @@ type Region struct {
 
 type Function struct {
 	Name       string
+	Owner      string
 	Parameters []string
 	ReturnType *types.Type
 	Body       *Region
@@ -418,7 +419,7 @@ func (l *lowerer) lowerFunction(node *hir.Node, method bool) *Function {
 		params = strings.Split(raw, ",")
 	}
 	body := l.lowerBlock("body", first(node.Children))
-	fn := &Function{Name: name, Parameters: params, ReturnType: types.Clone(node.Type), Body: body, Async: node.Flags["async"], Method: method}
+	fn := &Function{Name: name, Owner: node.Meta["owner"], Parameters: params, ReturnType: types.Clone(node.Type), Body: body, Async: node.Flags["async"], Method: method}
 	if node.Type != nil && node.Type.Kind == types.Func {
 		fn.ReturnType = types.Clone(node.Type.Return)
 	}
@@ -488,7 +489,11 @@ func (m *Module) Dump() string {
 		dumpInstruction(&out, decl, 1)
 	}
 	for _, fn := range m.Functions {
-		out.WriteString("  function " + fn.Name + "(" + strings.Join(fn.Parameters, ", ") + ")")
+		functionName := fn.Name
+		if fn.Owner != "" {
+			functionName = fn.Owner + "." + fn.Name
+		}
+		out.WriteString("  function " + functionName + "(" + strings.Join(fn.Parameters, ", ") + ")")
 		if fn.ReturnType != nil {
 			out.WriteString(" -> " + fn.ReturnType.String())
 		}

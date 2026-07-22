@@ -204,6 +204,7 @@ func (l *lowerer) lowerStatement(stmt ast.Statement) *Node {
 			child := l.lowerExpression(method.Function)
 			child.Kind = MethodKind
 			child.Name = method.Name.Value
+			child.Meta["owner"] = s.Name.Value
 			n.Children = append(n.Children, child)
 		}
 		return n
@@ -293,9 +294,11 @@ func (l *lowerer) lowerExpression(expr ast.Expression) *Node {
 	case *ast.FunctionLiteral:
 		n := l.node(FunctionKind, e, e.Name, "", "")
 		n.Flags["async"] = e.Async
+		params := make([]string, 0, len(e.Parameters))
 		for _, param := range e.Parameters {
-			n.Meta["param."+strconv.Itoa(len(n.Meta))] = param.Value
+			params = append(params, param.Value)
 		}
+		n.Meta["params"] = strings.Join(params, ",")
 		n.Children = append(n.Children, l.lowerBlock(e.Body))
 		return n
 	case *ast.IfExpression:

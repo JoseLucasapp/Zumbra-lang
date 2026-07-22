@@ -32,6 +32,7 @@ func TestRunnableCodeExamplesParseCompileAndRun(t *testing.T) {
 		"date.zum":             true,
 		"for.zum":              true,
 		"functions.zum":        true,
+		"native_build.zum":     true,
 		"hello_world.zum":      true,
 		"parse.zum":            true,
 		"show.zum":             true,

@@ -5,6 +5,7 @@ import (
 	"testing"
 
 	"zumbra/compiler"
+	"zumbra/nativec"
 	"zumbra/object"
 	"zumbra/object/builtins"
 	"zumbra/pipeline"
@@ -51,5 +52,28 @@ func TestCoreSyntaxSnippetsParseAndCompile(t *testing.T) {
 				t.Fatalf("compiler error: %s", err)
 			}
 		})
+	}
+}
+
+func TestNativeDocumentationSnippetGeneratesC(t *testing.T) {
+	source := `
+struct Counter { value: int; fct add(amount) { self.value << self.value + amount; } }
+var counter << Counter(5);
+counter.add(14);
+var memory << bytes(4);
+memory[0] << 0xA9u8;
+show(counter.value);
+show(memory[0]);
+`
+	result, diagnostics := pipeline.Build("native-docs.zum", source, pipeline.Options{Optimize: true})
+	if len(diagnostics) != 0 {
+		t.Fatalf("pipeline failed: %s", pipeline.FormatDiagnostics(diagnostics))
+	}
+	sources, nativeDiagnostics := nativec.Generate(result.MIR)
+	if len(nativeDiagnostics) != 0 {
+		t.Fatalf("native generation failed: %v", nativeDiagnostics)
+	}
+	if !strings.Contains(string(sources.Program), "Generated from Zumbra MIR") {
+		t.Fatal("native C marker not found")
 	}
 }
