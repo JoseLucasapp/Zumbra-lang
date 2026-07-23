@@ -76,6 +76,47 @@ func builtinType(name string) (*Type, bool) {
 	case "sha256":
 		return FuncOf([]*Type{Simple(Unknown)}, Simple(String)), true
 
+	case "join":
+		return FuncOf([]*Type{TaskOf(Simple(Unknown))}, Simple(Unknown)), true
+	case "cancel", "taskDone", "taskCancelled":
+		return FuncOf([]*Type{TaskOf(Simple(Unknown))}, Simple(Bool)), true
+	case "joinTimeout":
+		return FuncOf([]*Type{TaskOf(Simple(Unknown)), Simple(Int)}, ArrayOf(Simple(Unknown))), true
+	case "sleepMs":
+		return FuncOf([]*Type{Simple(Int)}, Simple(Null)), true
+	case "channel":
+		return FuncOf([]*Type{Simple(Int)}, ChannelOf(Simple(Unknown))), true
+	case "send":
+		return FuncOf([]*Type{ChannelOf(Simple(Unknown)), Simple(Unknown)}, Simple(Null)), true
+	case "receive":
+		return FuncOf([]*Type{ChannelOf(Simple(Unknown))}, Simple(Unknown)), true
+	case "receiveOk", "receiveTimeout":
+		return FuncOf([]*Type{ChannelOf(Simple(Unknown))}, ArrayOf(Simple(Unknown))), true
+	case "closeChannel", "channelClosed":
+		return FuncOf([]*Type{ChannelOf(Simple(Unknown))}, Simple(Bool)), true
+	case "channelLen", "channelCap":
+		return FuncOf([]*Type{ChannelOf(Simple(Unknown))}, Simple(Int)), true
+	case "mutex":
+		return FuncOf(nil, Simple(Mutex)), true
+	case "rwMutex":
+		return FuncOf(nil, Simple(RWMutex)), true
+	case "waitGroup":
+		return FuncOf(nil, Simple(WaitGroup)), true
+	case "semaphore":
+		return FuncOf([]*Type{Simple(Int)}, Simple(Semaphore)), true
+	case "atomicInt":
+		return FuncOf([]*Type{Simple(Int)}, Simple(AtomicInt)), true
+	case "atomicLoad":
+		return FuncOf([]*Type{Simple(AtomicInt)}, Simple(Int)), true
+	case "atomicStore":
+		return FuncOf([]*Type{Simple(AtomicInt), Simple(Int)}, Simple(Null)), true
+	case "atomicAdd", "atomicSwap":
+		return FuncOf([]*Type{Simple(AtomicInt), Simple(Int)}, Simple(Int)), true
+	case "atomicCompareSwap":
+		return FuncOf([]*Type{Simple(AtomicInt), Simple(Int), Simple(Int)}, Simple(Bool)), true
+	case "lock", "unlock", "rLock", "rUnlock", "wgAdd", "wgDone", "wgWait", "acquire", "release":
+		return FuncOf([]*Type{Simple(Unknown)}, Simple(Null)), true
+
 	case "first":
 		return FuncOf([]*Type{ArrayOf(Simple(Unknown))}, Simple(Unknown)), true
 

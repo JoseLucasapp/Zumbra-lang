@@ -1,3 +1,4 @@
+#define _XOPEN_SOURCE 700
 #include "zumbra_runtime.h"
 
 #include <errno.h>
@@ -7,6 +8,10 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <pthread.h>
+#include <setjmp.h>
+#include <stdatomic.h>
+#include <time.h>
 
 #if defined(_WIN32)
 #include <windows.h>
@@ -18,12 +23,22 @@ typedef struct ZAllocation {
 } ZAllocation;
 
 static ZAllocation *z_allocations = NULL;
+static pthread_mutex_t z_allocation_mutex = PTHREAD_MUTEX_INITIALIZER;
+static pthread_mutex_t z_task_count_mutex = PTHREAD_MUTEX_INITIALIZER;
+static pthread_cond_t z_task_count_condition = PTHREAD_COND_INITIALIZER;
+static size_t z_active_tasks = 0;
+static _Thread_local jmp_buf *z_task_error_trap = NULL;
+static _Thread_local char z_task_error_message[1024];
 
 uint32_t z_abi_version(void) { return ZUMBRA_NATIVE_ABI_VERSION; }
 
-void z_runtime_init(void) { z_allocations = NULL; }
+void z_runtime_init(void) { z_allocations = NULL; z_active_tasks = 0; }
 
 void z_runtime_shutdown(void) {
+    pthread_mutex_lock(&z_task_count_mutex);
+    while (z_active_tasks != 0) pthread_cond_wait(&z_task_count_condition, &z_task_count_mutex);
+    pthread_mutex_unlock(&z_task_count_mutex);
+    pthread_mutex_lock(&z_allocation_mutex);
     ZAllocation *current = z_allocations;
     while (current != NULL) {
         ZAllocation *next = current->next;
@@ -32,16 +47,23 @@ void z_runtime_shutdown(void) {
         current = next;
     }
     z_allocations = NULL;
+    pthread_mutex_unlock(&z_allocation_mutex);
 }
 
 void z_fatal(const char *format, ...) {
     va_list arguments;
-    fprintf(stderr, "zumbra runtime error: ");
     va_start(arguments, format);
+    if (z_task_error_trap != NULL) {
+        vsnprintf(z_task_error_message, sizeof(z_task_error_message), format, arguments);
+        va_end(arguments);
+        longjmp(*z_task_error_trap, 1);
+    }
+    fprintf(stderr, "zumbra runtime error: ");
     vfprintf(stderr, format, arguments);
     va_end(arguments);
     fputc('\n', stderr);
-    z_runtime_shutdown();
+    /* Fatal exits rely on the operating system for cleanup. Waiting for tasks
+       here could deadlock when the failure originated inside a task. */
     exit(1);
 }
 
@@ -59,8 +81,10 @@ void *z_alloc(size_t size) {
         z_fatal("out of memory tracking allocation");
     }
     entry->pointer = pointer;
+    pthread_mutex_lock(&z_allocation_mutex);
     entry->next = z_allocations;
     z_allocations = entry;
+    pthread_mutex_unlock(&z_allocation_mutex);
     return pointer;
 }
 
@@ -540,11 +564,197 @@ void z_set_field(ZValue object, const char *name, ZValue value) {
     object.as.structure->fields[field] = value;
 }
 
-ZValue z_call(ZValue callable, const ZValue *args, size_t argc) {
+
+typedef struct {
+    pthread_mutex_t mutex;
+    pthread_cond_t condition;
+    bool done;
+    bool cancelled;
+    bool failed;
+    const char *error_message;
+    ZValue result;
+    ZValue callable;
+    ZValue *args;
+    size_t argc;
+} ZTaskNative;
+
+typedef struct {
+    pthread_mutex_t mutex;
+    pthread_cond_t not_empty;
+    pthread_cond_t not_full;
+    ZValue *items;
+    size_t capacity;
+    size_t count;
+    size_t head;
+    size_t tail;
+    bool closed;
+} ZChannelNative;
+
+typedef struct { pthread_mutex_t mutex; } ZMutexNative;
+typedef struct { pthread_rwlock_t mutex; } ZRWMutexNative;
+typedef struct { pthread_mutex_t mutex; pthread_cond_t condition; int64_t count; } ZWaitGroupNative;
+typedef struct { pthread_mutex_t mutex; pthread_cond_t condition; int64_t available; int64_t capacity; } ZSemaphoreNative;
+
+static ZValue z_call_sync(ZValue callable, const ZValue *args, size_t argc) {
     if (callable.tag == ZV_FUNCTION) return z_dispatch_function(callable.as.id, args, argc);
     if (callable.tag == ZV_BUILTIN) return z_call_builtin(callable.as.s, args, argc);
     if (callable.tag == ZV_STRUCT_TYPE) return z_construct_struct(callable.as.id, args, argc);
     if (callable.tag == ZV_BOUND_METHOD) {
+        ZValue *full = (ZValue *)z_alloc(sizeof(ZValue) * (argc + 1));
+        ZValue receiver = z_value(ZV_STRUCT, ZK_STRUCT);
+        receiver.as.structure = callable.as.method->receiver;
+        full[0] = receiver;
+        if (argc != 0) memcpy(full + 1, args, sizeof(ZValue) * argc);
+        return z_dispatch_function(callable.as.method->function_id, full, argc + 1);
+    }
+    z_fatal("value is not callable");
+    return z_null();
+}
+
+static void *z_task_worker(void *raw) {
+    ZTaskNative *task = (ZTaskNative *)raw;
+    jmp_buf trap;
+    z_task_error_trap = &trap;
+    if (setjmp(trap) == 0) {
+        ZValue result = z_call_sync(task->callable, task->args, task->argc);
+        z_task_error_trap = NULL;
+        pthread_mutex_lock(&task->mutex);
+        if (!task->done) {
+            task->result = result;
+            task->failed = false;
+            task->error_message = NULL;
+            task->done = true;
+        }
+        pthread_cond_broadcast(&task->condition);
+        pthread_mutex_unlock(&task->mutex);
+    } else {
+        char captured_error[sizeof(z_task_error_message)];
+        strncpy(captured_error, z_task_error_message, sizeof(captured_error) - 1);
+        captured_error[sizeof(captured_error) - 1] = '\0';
+        z_task_error_trap = NULL;
+        pthread_mutex_lock(&task->mutex);
+        if (!task->done) {
+            task->result = z_null();
+            task->failed = true;
+            task->error_message = z_strdup(captured_error);
+            task->done = true;
+        }
+        pthread_cond_broadcast(&task->condition);
+        pthread_mutex_unlock(&task->mutex);
+    }
+    pthread_mutex_lock(&z_task_count_mutex);
+    z_active_tasks--;
+    pthread_cond_broadcast(&z_task_count_condition);
+    pthread_mutex_unlock(&z_task_count_mutex);
+    return NULL;
+}
+
+ZValue z_spawn(ZValue callable, const ZValue *args, size_t argc) {
+    ZTaskNative *task = (ZTaskNative *)z_alloc(sizeof(ZTaskNative));
+    pthread_mutex_init(&task->mutex, NULL);
+    pthread_cond_init(&task->condition, NULL);
+    task->done = false;
+    task->cancelled = false;
+    task->failed = false;
+    task->error_message = NULL;
+    task->result = z_null();
+    task->callable = callable;
+    task->argc = argc;
+    task->args = argc == 0 ? NULL : (ZValue *)z_alloc(sizeof(ZValue) * argc);
+    if (argc != 0) memcpy(task->args, args, sizeof(ZValue) * argc);
+    pthread_mutex_lock(&z_task_count_mutex);
+    z_active_tasks++;
+    pthread_mutex_unlock(&z_task_count_mutex);
+    pthread_t thread;
+    if (pthread_create(&thread, NULL, z_task_worker, task) != 0) z_fatal("could not create native task");
+    pthread_detach(thread);
+    ZValue value = z_value(ZV_TASK, ZK_TASK);
+    value.as.p = task;
+    return value;
+}
+
+static ZTaskNative *z_expect_task(ZValue value) {
+    if (value.tag != ZV_TASK || value.as.p == NULL) z_fatal("expected Task");
+    return (ZTaskNative *)value.as.p;
+}
+
+ZValue z_task_await(ZValue value) {
+    ZTaskNative *task = z_expect_task(value);
+    pthread_mutex_lock(&task->mutex);
+    while (!task->done) pthread_cond_wait(&task->condition, &task->mutex);
+    ZValue result = task->result;
+    bool failed = task->failed;
+    const char *error_message = task->error_message;
+    pthread_mutex_unlock(&task->mutex);
+    if (failed) z_fatal("task failed: %s", error_message == NULL ? "unknown task error" : error_message);
+    return result;
+}
+
+bool z_task_cancel(ZValue value) {
+    ZTaskNative *task = z_expect_task(value);
+    pthread_mutex_lock(&task->mutex);
+    bool changed = !task->done && !task->cancelled;
+    if (changed) { task->cancelled = true; task->done = true; task->result = z_null(); pthread_cond_broadcast(&task->condition); }
+    pthread_mutex_unlock(&task->mutex);
+    return changed;
+}
+bool z_task_done(ZValue value) { ZTaskNative *task=z_expect_task(value); pthread_mutex_lock(&task->mutex); bool result=task->done; pthread_mutex_unlock(&task->mutex); return result; }
+bool z_task_cancelled(ZValue value) { ZTaskNative *task=z_expect_task(value); pthread_mutex_lock(&task->mutex); bool result=task->cancelled; pthread_mutex_unlock(&task->mutex); return result; }
+
+static struct timespec z_deadline_after_ms(int64_t milliseconds) {
+    struct timespec deadline;
+    clock_gettime(CLOCK_REALTIME, &deadline);
+    if (milliseconds < 0) milliseconds = 0;
+    deadline.tv_sec += (time_t)(milliseconds / 1000);
+    deadline.tv_nsec += (long)((milliseconds % 1000) * 1000000);
+    if (deadline.tv_nsec >= 1000000000L) { deadline.tv_sec++; deadline.tv_nsec -= 1000000000L; }
+    return deadline;
+}
+
+static ZValue z_task_await_timeout(ZValue value, int64_t milliseconds, bool *completed) {
+    ZTaskNative *task = z_expect_task(value);
+    struct timespec deadline = z_deadline_after_ms(milliseconds);
+    pthread_mutex_lock(&task->mutex);
+    while (!task->done) {
+        int status = pthread_cond_timedwait(&task->condition, &task->mutex, &deadline);
+        if (status == ETIMEDOUT) { *completed = false; pthread_mutex_unlock(&task->mutex); return z_null(); }
+    }
+    *completed = true;
+    ZValue result = task->result;
+    bool failed = task->failed;
+    const char *error_message = task->error_message;
+    pthread_mutex_unlock(&task->mutex);
+    if (failed) z_fatal("task failed: %s", error_message == NULL ? "unknown task error" : error_message);
+    return result;
+}
+
+static ZChannelNative *z_expect_channel(ZValue value) { if(value.tag!=ZV_CHANNEL||value.as.p==NULL)z_fatal("expected Channel");return (ZChannelNative *)value.as.p; }
+static ZValue z_channel_new(size_t capacity) {
+    ZChannelNative *channel=(ZChannelNative *)z_alloc(sizeof(ZChannelNative));
+    pthread_mutex_init(&channel->mutex,NULL);pthread_cond_init(&channel->not_empty,NULL);pthread_cond_init(&channel->not_full,NULL);
+    channel->capacity=capacity;channel->count=0;channel->head=0;channel->tail=0;channel->closed=false;
+    channel->items=(ZValue *)z_alloc(sizeof(ZValue)*(capacity==0?1:capacity));
+    ZValue result=z_value(ZV_CHANNEL,ZK_CHANNEL);result.as.p=channel;return result;
+}
+static void z_channel_send(ZValue channelValue,ZValue value){ZChannelNative *c=z_expect_channel(channelValue);pthread_mutex_lock(&c->mutex);if(c->capacity==0){while(c->count!=0&&!c->closed)pthread_cond_wait(&c->not_full,&c->mutex);}else{while(c->count==c->capacity&&!c->closed)pthread_cond_wait(&c->not_full,&c->mutex);}if(c->closed){pthread_mutex_unlock(&c->mutex);z_fatal("cannot send to closed channel");}c->items[c->tail]=value;c->tail=(c->tail+1)%(c->capacity==0?1:c->capacity);c->count++;pthread_cond_signal(&c->not_empty);if(c->capacity==0){while(c->count!=0&&!c->closed)pthread_cond_wait(&c->not_full,&c->mutex);}pthread_mutex_unlock(&c->mutex);}
+static ZValue z_channel_receive(ZValue channelValue,bool *open){ZChannelNative *c=z_expect_channel(channelValue);pthread_mutex_lock(&c->mutex);while(c->count==0&&!c->closed)pthread_cond_wait(&c->not_empty,&c->mutex);if(c->count==0&&c->closed){*open=false;pthread_mutex_unlock(&c->mutex);return z_null();}ZValue value=c->items[c->head];c->head=(c->head+1)%(c->capacity==0?1:c->capacity);c->count--;*open=true;pthread_cond_broadcast(&c->not_full);pthread_mutex_unlock(&c->mutex);return value;}
+static ZValue z_channel_receive_timeout(ZValue channelValue,int64_t milliseconds,bool *open,bool *received){
+    ZChannelNative *c=z_expect_channel(channelValue);
+    struct timespec deadline=z_deadline_after_ms(milliseconds);
+    pthread_mutex_lock(&c->mutex);
+    while(c->count==0&&!c->closed){int status=pthread_cond_timedwait(&c->not_empty,&c->mutex,&deadline);if(status==ETIMEDOUT){*received=false;*open=true;pthread_mutex_unlock(&c->mutex);return z_null();}}
+    if(c->count==0&&c->closed){*received=true;*open=false;pthread_mutex_unlock(&c->mutex);return z_null();}
+    ZValue value=c->items[c->head];c->head=(c->head+1)%(c->capacity==0?1:c->capacity);c->count--;*received=true;*open=true;pthread_cond_broadcast(&c->not_full);pthread_mutex_unlock(&c->mutex);return value;
+}
+static bool z_channel_close(ZValue channelValue){ZChannelNative *c=z_expect_channel(channelValue);pthread_mutex_lock(&c->mutex);bool changed=!c->closed;c->closed=true;pthread_cond_broadcast(&c->not_empty);pthread_cond_broadcast(&c->not_full);pthread_mutex_unlock(&c->mutex);return changed;}
+static void z_sleep_ms(int64_t milliseconds){if(milliseconds<0)z_fatal("sleepMs expects non-negative milliseconds");struct timespec request;request.tv_sec=(time_t)(milliseconds/1000);request.tv_nsec=(long)((milliseconds%1000)*1000000);nanosleep(&request,NULL);}
+
+ZValue z_call(ZValue callable, const ZValue *args, size_t argc) {
+    if (callable.tag == ZV_FUNCTION) { if (z_function_is_async(callable.as.id)) return z_spawn(callable,args,argc); return z_dispatch_function(callable.as.id, args, argc); }
+    if (callable.tag == ZV_BUILTIN) return z_call_builtin(callable.as.s, args, argc);
+    if (callable.tag == ZV_STRUCT_TYPE) return z_construct_struct(callable.as.id, args, argc);
+    if (callable.tag == ZV_BOUND_METHOD) {
+        if (z_function_is_async(callable.as.method->function_id)) return z_spawn(callable, args, argc);
         ZValue *full = (ZValue *)z_alloc(sizeof(ZValue) * (argc + 1));
         ZValue receiver = z_value(ZV_STRUCT, ZK_STRUCT);
         receiver.as.structure = callable.as.method->receiver;
@@ -565,6 +775,13 @@ static void z_show_inner(ZValue value) {
     case ZV_BOOL: fputs(value.as.b ? "true" : "false", stdout); break;
     case ZV_STRING: fputs(value.as.s, stdout); break;
     case ZV_POINTER: fprintf(stdout, "%p", value.as.p); break;
+    case ZV_TASK: fputs("Task", stdout); break;
+    case ZV_CHANNEL: fputs("Channel", stdout); break;
+    case ZV_MUTEX: fputs("Mutex", stdout); break;
+    case ZV_RW_MUTEX: fputs("RWMutex", stdout); break;
+    case ZV_WAIT_GROUP: fputs("WaitGroup", stdout); break;
+    case ZV_SEMAPHORE: fputs("Semaphore", stdout); break;
+    case ZV_ATOMIC_INT: fprintf(stdout, "AtomicInt<%" PRId64 ">", atomic_load((_Atomic int64_t *)value.as.p)); break;
     case ZV_ENUM: {
         int type_id = value.as.id >> 16;
         int ordinal = value.as.id & 0xffff;
@@ -747,6 +964,40 @@ static ZValue z_checked_arithmetic(const char *name, ZValue a, ZValue b, char op
 }
 
 ZValue z_call_builtin(const char *name, const ZValue *args, size_t argc) {
+    if(strcmp(name,"join")==0){z_expect_args(name,argc,1);return z_task_await(args[0]);}
+    if(strcmp(name,"cancel")==0){z_expect_args(name,argc,1);return z_bool(z_task_cancel(args[0]));}
+    if(strcmp(name,"taskDone")==0){z_expect_args(name,argc,1);return z_bool(z_task_done(args[0]));}
+    if(strcmp(name,"taskCancelled")==0){z_expect_args(name,argc,1);return z_bool(z_task_cancelled(args[0]));}
+    if(strcmp(name,"joinTimeout")==0){z_expect_args(name,argc,2);bool completed=false;ZValue value=z_task_await_timeout(args[0],z_as_i64(args[1]),&completed);ZValue pair[2]={value,z_bool(completed)};return z_array_from(pair,2);}
+    if(strcmp(name,"sleepMs")==0){z_expect_args(name,argc,1);z_sleep_ms(z_as_i64(args[0]));return z_null();}
+    if(strcmp(name,"channel")==0){if(argc>1)z_fatal("channel expects zero or one argument");return z_channel_new(argc==0?0:(size_t)z_as_u64(args[0]));}
+    if(strcmp(name,"send")==0){z_expect_args(name,argc,2);z_channel_send(args[0],args[1]);return z_null();}
+    if(strcmp(name,"receive")==0){z_expect_args(name,argc,1);bool open=false;return z_channel_receive(args[0],&open);}
+    if(strcmp(name,"receiveOk")==0){z_expect_args(name,argc,1);bool open=false;ZValue value=z_channel_receive(args[0],&open);ZValue pair[2]={value,z_bool(open)};return z_array_from(pair,2);}
+    if(strcmp(name,"receiveTimeout")==0){z_expect_args(name,argc,2);bool open=false,received=false;ZValue value=z_channel_receive_timeout(args[0],z_as_i64(args[1]),&open,&received);ZValue triple[3]={value,z_bool(open),z_bool(received)};return z_array_from(triple,3);}
+    if(strcmp(name,"closeChannel")==0){z_expect_args(name,argc,1);return z_bool(z_channel_close(args[0]));}
+    if(strcmp(name,"channelClosed")==0){z_expect_args(name,argc,1);ZChannelNative*c=z_expect_channel(args[0]);pthread_mutex_lock(&c->mutex);bool closed=c->closed;pthread_mutex_unlock(&c->mutex);return z_bool(closed);}
+    if(strcmp(name,"channelLen")==0){z_expect_args(name,argc,1);ZChannelNative*c=z_expect_channel(args[0]);pthread_mutex_lock(&c->mutex);size_t count=c->count;pthread_mutex_unlock(&c->mutex);return z_int((int64_t)count);}
+    if(strcmp(name,"channelCap")==0){z_expect_args(name,argc,1);return z_int((int64_t)z_expect_channel(args[0])->capacity);}
+    if(strcmp(name,"mutex")==0){z_expect_args(name,argc,0);ZMutexNative*m=(ZMutexNative*)z_alloc(sizeof(ZMutexNative));pthread_mutex_init(&m->mutex,NULL);ZValue v=z_value(ZV_MUTEX,ZK_MUTEX);v.as.p=m;return v;}
+    if(strcmp(name,"lock")==0){z_expect_args(name,argc,1);if(args[0].tag==ZV_MUTEX)pthread_mutex_lock(&((ZMutexNative*)args[0].as.p)->mutex);else if(args[0].tag==ZV_RW_MUTEX)pthread_rwlock_wrlock(&((ZRWMutexNative*)args[0].as.p)->mutex);else z_fatal("lock expects Mutex or RWMutex");return z_null();}
+    if(strcmp(name,"unlock")==0){z_expect_args(name,argc,1);if(args[0].tag==ZV_MUTEX)pthread_mutex_unlock(&((ZMutexNative*)args[0].as.p)->mutex);else if(args[0].tag==ZV_RW_MUTEX)pthread_rwlock_unlock(&((ZRWMutexNative*)args[0].as.p)->mutex);else z_fatal("unlock expects Mutex or RWMutex");return z_null();}
+    if(strcmp(name,"rwMutex")==0){z_expect_args(name,argc,0);ZRWMutexNative*m=(ZRWMutexNative*)z_alloc(sizeof(ZRWMutexNative));pthread_rwlock_init(&m->mutex,NULL);ZValue v=z_value(ZV_RW_MUTEX,ZK_RW_MUTEX);v.as.p=m;return v;}
+    if(strcmp(name,"rLock")==0){z_expect_args(name,argc,1);if(args[0].tag!=ZV_RW_MUTEX)z_fatal("rLock expects RWMutex");pthread_rwlock_rdlock(&((ZRWMutexNative*)args[0].as.p)->mutex);return z_null();}
+    if(strcmp(name,"rUnlock")==0){z_expect_args(name,argc,1);if(args[0].tag!=ZV_RW_MUTEX)z_fatal("rUnlock expects RWMutex");pthread_rwlock_unlock(&((ZRWMutexNative*)args[0].as.p)->mutex);return z_null();}
+    if(strcmp(name,"waitGroup")==0){z_expect_args(name,argc,0);ZWaitGroupNative*w=(ZWaitGroupNative*)z_alloc(sizeof(ZWaitGroupNative));pthread_mutex_init(&w->mutex,NULL);pthread_cond_init(&w->condition,NULL);w->count=0;ZValue v=z_value(ZV_WAIT_GROUP,ZK_WAIT_GROUP);v.as.p=w;return v;}
+    if(strcmp(name,"wgAdd")==0){z_expect_args(name,argc,2);if(args[0].tag!=ZV_WAIT_GROUP)z_fatal("wgAdd expects WaitGroup");ZWaitGroupNative*w=(ZWaitGroupNative*)args[0].as.p;pthread_mutex_lock(&w->mutex);w->count+=z_as_i64(args[1]);if(w->count<0){pthread_mutex_unlock(&w->mutex);z_fatal("negative WaitGroup counter");}if(w->count==0)pthread_cond_broadcast(&w->condition);pthread_mutex_unlock(&w->mutex);return z_null();}
+    if(strcmp(name,"wgDone")==0){ZValue call[2]={args[0],z_int(-1)};z_expect_args(name,argc,1);return z_call_builtin("wgAdd",call,2);}
+    if(strcmp(name,"wgWait")==0){z_expect_args(name,argc,1);if(args[0].tag!=ZV_WAIT_GROUP)z_fatal("wgWait expects WaitGroup");ZWaitGroupNative*w=(ZWaitGroupNative*)args[0].as.p;pthread_mutex_lock(&w->mutex);while(w->count!=0)pthread_cond_wait(&w->condition,&w->mutex);pthread_mutex_unlock(&w->mutex);return z_null();}
+    if(strcmp(name,"semaphore")==0){z_expect_args(name,argc,1);int64_t n=z_as_i64(args[0]);if(n<1)z_fatal("semaphore capacity must be positive");ZSemaphoreNative*q=(ZSemaphoreNative*)z_alloc(sizeof(ZSemaphoreNative));pthread_mutex_init(&q->mutex,NULL);pthread_cond_init(&q->condition,NULL);q->available=n;q->capacity=n;ZValue v=z_value(ZV_SEMAPHORE,ZK_SEMAPHORE);v.as.p=q;return v;}
+    if(strcmp(name,"acquire")==0){z_expect_args(name,argc,1);if(args[0].tag!=ZV_SEMAPHORE)z_fatal("acquire expects Semaphore");ZSemaphoreNative*q=(ZSemaphoreNative*)args[0].as.p;pthread_mutex_lock(&q->mutex);while(q->available==0)pthread_cond_wait(&q->condition,&q->mutex);q->available--;pthread_mutex_unlock(&q->mutex);return z_null();}
+    if(strcmp(name,"release")==0){z_expect_args(name,argc,1);if(args[0].tag!=ZV_SEMAPHORE)z_fatal("release expects Semaphore");ZSemaphoreNative*q=(ZSemaphoreNative*)args[0].as.p;pthread_mutex_lock(&q->mutex);if(q->available==q->capacity){pthread_mutex_unlock(&q->mutex);z_fatal("release called without a matching acquire");}q->available++;pthread_cond_signal(&q->condition);pthread_mutex_unlock(&q->mutex);return z_null();}
+    if(strcmp(name,"atomicInt")==0){if(argc>1)z_fatal("atomicInt expects zero or one argument");_Atomic int64_t*a=(_Atomic int64_t*)z_alloc(sizeof(_Atomic int64_t));atomic_init(a,argc==0?0:z_as_i64(args[0]));ZValue v=z_value(ZV_ATOMIC_INT,ZK_ATOMIC_INT);v.as.p=a;return v;}
+    if(strcmp(name,"atomicLoad")==0){z_expect_args(name,argc,1);if(args[0].tag!=ZV_ATOMIC_INT)z_fatal("atomicLoad expects AtomicInt");return z_int(atomic_load((_Atomic int64_t*)args[0].as.p));}
+    if(strcmp(name,"atomicStore")==0){z_expect_args(name,argc,2);if(args[0].tag!=ZV_ATOMIC_INT)z_fatal("atomicStore expects AtomicInt");atomic_store((_Atomic int64_t*)args[0].as.p,z_as_i64(args[1]));return z_null();}
+    if(strcmp(name,"atomicAdd")==0){z_expect_args(name,argc,2);if(args[0].tag!=ZV_ATOMIC_INT)z_fatal("atomicAdd expects AtomicInt");return z_int(atomic_fetch_add((_Atomic int64_t*)args[0].as.p,z_as_i64(args[1]))+z_as_i64(args[1]));}
+    if(strcmp(name,"atomicSwap")==0){z_expect_args(name,argc,2);if(args[0].tag!=ZV_ATOMIC_INT)z_fatal("atomicSwap expects AtomicInt");return z_int(atomic_exchange((_Atomic int64_t*)args[0].as.p,z_as_i64(args[1])));}
+    if(strcmp(name,"atomicCompareSwap")==0){z_expect_args(name,argc,3);if(args[0].tag!=ZV_ATOMIC_INT)z_fatal("atomicCompareSwap expects AtomicInt");int64_t expected=z_as_i64(args[1]);return z_bool(atomic_compare_exchange_strong((_Atomic int64_t*)args[0].as.p,&expected,z_as_i64(args[2])));}
     if (strcmp(name,"show")==0){z_expect_args(name,argc,1);z_show(args[0]);return z_null();}
     if (strcmp(name,"sizeOf")==0){z_expect_args(name,argc,1);return z_int((int64_t)z_size_of(args[0]));}
     if (strcmp(name,"bytes")==0){z_expect_args(name,argc,1);return z_bytes((size_t)z_as_u64(args[0]));}

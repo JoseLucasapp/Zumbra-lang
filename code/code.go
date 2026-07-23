@@ -62,6 +62,8 @@ const (
 	OpStructDefinition
 	OpEnumDefinition
 	OpSetAttr
+	OpSpawn
+	OpAwait
 )
 
 type Definition struct {
@@ -121,6 +123,8 @@ var definitions = map[Opcode]*Definition{
 	OpStructDefinition:   {"OpStructDefinition", []int{1, 1}},
 	OpEnumDefinition:     {"OpEnumDefinition", []int{1}},
 	OpSetAttr:            {"OpSetAttr", []int{}},
+	OpSpawn:              {"OpSpawn", []int{1}},
+	OpAwait:              {"OpAwait", []int{}},
 }
 
 func Lookup(op byte) (*Definition, error) {

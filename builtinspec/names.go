@@ -132,6 +132,11 @@ var Names = []string{
 	"copyBytes",
 	"bytesEqual",
 	"sha256",
+	"join", "cancel", "taskDone", "taskCancelled", "joinTimeout", "sleepMs",
+	"channel", "send", "receive", "receiveOk", "receiveTimeout", "closeChannel", "channelClosed", "channelLen", "channelCap",
+	"mutex", "lock", "unlock", "rwMutex", "rLock", "rUnlock",
+	"waitGroup", "wgAdd", "wgDone", "wgWait", "semaphore", "acquire", "release",
+	"atomicInt", "atomicLoad", "atomicStore", "atomicAdd", "atomicSwap", "atomicCompareSwap",
 }
 
 func Contains(name string) bool {

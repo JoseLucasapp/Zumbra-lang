@@ -53,6 +53,7 @@ const (
 	BinaryKind      Kind = "binary"
 	IndexKind       Kind = "index"
 	FieldKind       Kind = "field"
+	SpawnKind       Kind = "spawn"
 	AwaitKind       Kind = "await"
 	TryKind         Kind = "try"
 	HandlerKind     Kind = "error_handler"
@@ -355,6 +356,11 @@ func (l *lowerer) lowerExpression(expr ast.Expression) *Node {
 			n.Children = append(n.Children, d)
 		}
 		return n
+	case *ast.SpawnExpression:
+		n := l.node(SpawnKind, e, "", "", "")
+		n.Children = append(n.Children, l.lowerExpression(e.Value))
+		return n
+
 	case *ast.AwaitExpression:
 		n := l.node(AwaitKind, e, "", "", "")
 		n.Children = append(n.Children, l.lowerExpression(e.Value))
@@ -489,6 +495,8 @@ func positionOf(node ast.Node) token.Position {
 	case *ast.IfExpression:
 		return n.Token.Pos
 	case *ast.MatchExpression:
+		return n.Token.Pos
+	case *ast.SpawnExpression:
 		return n.Token.Pos
 	case *ast.AwaitExpression:
 		return n.Token.Pos

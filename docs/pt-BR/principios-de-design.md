@@ -110,3 +110,29 @@ O principal pilar do Zumbra é ser simples. A linguagem pode se tornar mais pote
 Quando uma assinatura de callback já é conhecida, o compilador deve usá-la antes de analisar o corpo da função enviada. A sintaxe do usuário permanece curta, mas Type Analysis, HIR, MIR e backends não podem conservar `unknown` onde o contexto fornece um tipo concreto.
 
 A inferência nunca deve mascarar incompatibilidades: aridade, parâmetros, retorno ou reutilização com assinaturas diferentes devem produzir diagnóstico explícito.
+
+## Contrato de concorrência a partir do Z9
+
+25. **Concorrência é opt-in**
+    Objetos sequenciais não pagam automaticamente o custo de mutexes. Compartilhamento seguro é feito por channels, atomics ou regiões explicitamente protegidas.
+
+26. **Cancelamento é cooperativo**
+    O runtime pode liberar quem aguarda e marcar uma tarefa, mas não pode interromper arbitrariamente código que mantém recursos ou invariantes.
+
+27. **`spawn` recebe uma chamada explícita**
+    A sintaxe deixa visíveis a função e os argumentos enviados à tarefa. O compilador não deve capturar expressões arbitrárias de forma implícita.
+
+28. **Channels drenam antes de fechar para o receptor**
+    Valores armazenados antes de `closeChannel` continuam disponíveis. Somente depois o receptor observa `open == false`.
+
+29. **O comportamento observável deve coincidir entre VM e nativo**
+    Bloqueio, timeout, fechamento, cancelamento e valores atômicos devem seguir o mesmo contrato nos runtimes Go e C.
+
+30. **Deadlocks não podem ser escondidos por comportamento mágico**
+    Mutexes e channels mantêm semântica previsível. Ferramentas de diagnóstico podem detectar problemas, mas o runtime não deve alterar silenciosamente a ordem do programa.
+
+31. **Concorrência não autoriza tipos vagos**
+    Tasks preservam o tipo de retorno. Channels refinam o tipo de elemento pelo uso e rejeitam envios incompatíveis.
+
+32. **Integração nativa usa primitivas maduras da plataforma**
+    O backend C usa pthreads e atomics C11, mantendo uma camada Zumbra pequena em vez de implementar um sistema operacional dentro do runtime.

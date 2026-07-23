@@ -102,7 +102,7 @@ func Build(module *mir.Module, options BuildOptions) (*BuildResult, []Diagnostic
 			return nil, nil, fmt.Errorf("create output directory: %w", err)
 		}
 	}
-	args := []string{"-std=c11", "-Wall", "-Wextra", "-Werror", "-Wno-unused-variable", "-Wno-unused-parameter", "-I", buildDir}
+	args := []string{"-std=c11", "-pthread", "-Wall", "-Wextra", "-Werror", "-Wno-unused-variable", "-Wno-unused-parameter", "-I", buildDir}
 	for _, includeDir := range options.IncludeDirs {
 		args = append(args, "-I", includeDir)
 	}
@@ -127,7 +127,7 @@ func Build(module *mir.Module, options BuildOptions) (*BuildResult, []Diagnostic
 	for _, library := range options.Libraries {
 		args = append(args, "-l"+library)
 	}
-	args = append(args, "-lm", "-o", output)
+	args = append(args, "-lm", "-pthread", "-o", output)
 	command := exec.Command(compiler, args...)
 	command.Stdout = os.Stdout
 	command.Stderr = os.Stderr

@@ -423,6 +423,7 @@ func (c *Compiler) Compile(node ast.Node) error {
 			Instructions:  instructions,
 			NumLocals:     numLocals,
 			NumParameters: len(node.Parameters),
+			Async:         node.Async,
 		}
 		fnIndex := c.addConstant(compiledFn)
 		c.emit(code.OpClosure, fnIndex, len(freeSymbols))
@@ -441,8 +442,26 @@ func (c *Compiler) Compile(node ast.Node) error {
 
 		c.emit(code.OpReturnValue)
 
+	case *ast.SpawnExpression:
+		call, ok := node.Value.(*ast.CallExpression)
+		if !ok {
+			return fmt.Errorf("spawn expects a function call")
+		}
+		if err := c.Compile(call.Function); err != nil {
+			return err
+		}
+		for _, arg := range call.Arguments {
+			if err := c.Compile(arg); err != nil {
+				return err
+			}
+		}
+		c.emit(code.OpSpawn, len(call.Arguments))
+
 	case *ast.AwaitExpression:
-		return c.Compile(node.Value)
+		if err := c.Compile(node.Value); err != nil {
+			return err
+		}
+		c.emit(code.OpAwait)
 
 	case *ast.TryExpression:
 		return c.Compile(node.Value)
@@ -1584,6 +1603,11 @@ func rewriteErrorIdentInNode(node ast.Node, from, to string) {
 	case *ast.FunctionLiteral:
 		if n.Body != nil {
 			rewriteErrorIdentInNode(n.Body, from, to)
+		}
+
+	case *ast.SpawnExpression:
+		if n.Value != nil {
+			rewriteErrorIdentInNode(n.Value, from, to)
 		}
 
 	case *ast.AwaitExpression:

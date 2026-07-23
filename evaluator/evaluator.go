@@ -42,10 +42,37 @@ func Eval(node ast.Node, env *object.Environment) object.Object {
 		}
 		return &object.ReturnValue{Value: value}
 
+	case *ast.SpawnExpression:
+		call, ok := node.Value.(*ast.CallExpression)
+		if !ok {
+			return newError("spawn expects a function call")
+		}
+		function := Eval(call.Function, env)
+		if isError(function) {
+			return function
+		}
+		args := evalExpressions(call.Arguments, env)
+		if len(args) == 1 && isError(args[0]) {
+			return args[0]
+		}
+		task := object.NewTask()
+		go func() {
+			defer func() {
+				if recovered := recover(); recovered != nil {
+					task.Complete(newError("task panic: %v", recovered))
+				}
+			}()
+			task.Complete(applyFunctionSync(function, args))
+		}()
+		return task
+
 	case *ast.AwaitExpression:
 		value := Eval(node.Value, env)
 		if isError(value) {
 			return value
+		}
+		if task, ok := value.(*object.Task); ok {
+			return task.Await()
 		}
 		return value
 
@@ -236,7 +263,7 @@ func Eval(node ast.Node, env *object.Environment) object.Object {
 	case *ast.FunctionLiteral:
 		params := node.Parameters
 		body := node.Body
-		return &object.Function{Parameters: params, Env: env, Body: body}
+		return &object.Function{Parameters: params, Env: env, Body: body, Async: node.Async}
 
 	case *ast.MatchExpression:
 		return evalMatchExpression(node, env)
@@ -689,6 +716,22 @@ func extendFunctionEnv(fct *object.Function, args []object.Object) *object.Envir
 }
 
 func applyFunction(fct object.Object, args []object.Object) object.Object {
+	if function, ok := fct.(*object.Function); ok && function.Async {
+		task := object.NewTask()
+		go func() {
+			defer func() {
+				if recovered := recover(); recovered != nil {
+					task.Complete(newError("task panic: %v", recovered))
+				}
+			}()
+			task.Complete(applyFunctionSync(function, args))
+		}()
+		return task
+	}
+	return applyFunctionSync(fct, args)
+}
+
+func applyFunctionSync(fct object.Object, args []object.Object) object.Object {
 	switch fct := fct.(type) {
 	case *object.Function:
 		if len(args) != len(fct.Parameters) {

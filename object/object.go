@@ -38,6 +38,13 @@ const (
 	ENUM_DEF_OBJ          = "ENUM_DEFINITION"
 	ENUM_VALUE_OBJ        = "ENUM_VALUE"
 	EXTERNAL_FUNCTION_OBJ = "EXTERNAL_FUNCTION"
+	TASK_OBJ              = "TASK"
+	CHANNEL_OBJ           = "CHANNEL"
+	MUTEX_OBJ             = "MUTEX"
+	RW_MUTEX_OBJ          = "RW_MUTEX"
+	WAIT_GROUP_OBJ        = "WAIT_GROUP"
+	SEMAPHORE_OBJ         = "SEMAPHORE"
+	ATOMIC_INT_OBJ        = "ATOMIC_INT"
 )
 
 type Object interface {
@@ -82,6 +89,7 @@ type Function struct {
 	Parameters []*ast.Identifier
 	Body       *ast.BlockStatement
 	Env        *Environment
+	Async      bool
 }
 
 func (f *Function) Type() ObjectType { return FUNCTION_OBJ }
@@ -202,6 +210,7 @@ type CompiledFunction struct {
 	Instructions  code.Instructions
 	NumLocals     int
 	NumParameters int
+	Async         bool
 }
 
 func (cf *CompiledFunction) Type() ObjectType { return COMPILED_FUNCTION_OBJ }

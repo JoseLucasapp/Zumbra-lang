@@ -621,3 +621,74 @@ unsafe {
 A callback with the wrong arity or return type is rejected. A named callback that has already been inferred with one concrete signature cannot later be reused with an incompatible signature.
 
 Complete documentation: [`docs/pt-BR/inferencia-contextual-de-callbacks.md`](./pt-BR/inferencia-contextual-de-callbacks.md).
+
+---
+
+## Concorrência e tarefas
+
+Inicie uma chamada comum em paralelo com `spawn`:
+
+```zumbra
+fct calculate(value) {
+    value * value;
+}
+
+var task << spawn calculate(6);
+show(await task);
+```
+
+Uma função declarada com `async` retorna uma `Task` em todas as chamadas:
+
+```zumbra
+var calculate << async fct(value) {
+    value * value;
+};
+
+show(await calculate(6));
+```
+
+Use channels para comunicação:
+
+```zumbra
+var messages << channel(8);
+send(messages, "ready");
+show(receive(messages));
+closeChannel(messages);
+```
+
+O tipo do channel é inferido pelo primeiro envio conhecido. Depois de enviar uma `string`, envios de outro tipo são rejeitados.
+
+Primitivas adicionais:
+
+```zumbra
+join(task);
+joinTimeout(task, 100);
+cancel(task);
+taskDone(task);
+taskCancelled(task);
+sleepMs(10);
+
+receiveOk(messages);
+receiveTimeout(messages, 100);
+channelClosed(messages);
+channelLen(messages);
+channelCap(messages);
+
+var guard << mutex();
+lock(guard);
+unlock(guard);
+
+var group << waitGroup();
+wgAdd(group, 1);
+wgDone(group);
+wgWait(group);
+
+var slots << semaphore(2);
+acquire(slots);
+release(slots);
+
+var counter << atomicInt(0);
+atomicAdd(counter, 1);
+```
+
+Complete documentation: [`docs/pt-BR/concorrencia-e-tarefas.md`](./pt-BR/concorrencia-e-tarefas.md).

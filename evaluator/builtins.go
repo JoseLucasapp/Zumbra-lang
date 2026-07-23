@@ -59,6 +59,14 @@ func init() {
 		"copyBytes", "bytesEqual", "sha256",
 	}
 
+	concurrency := []string{
+		"join", "cancel", "taskDone", "taskCancelled", "joinTimeout", "sleepMs",
+		"channel", "send", "receive", "receiveOk", "receiveTimeout", "closeChannel", "channelClosed", "channelLen", "channelCap",
+		"mutex", "lock", "unlock", "rwMutex", "rLock", "rUnlock",
+		"waitGroup", "wgAdd", "wgDone", "wgWait", "semaphore", "acquire", "release",
+		"atomicInt", "atomicLoad", "atomicStore", "atomicAdd", "atomicSwap", "atomicCompareSwap",
+	}
+
 	fixedIntegers := []string{
 		"u8", "u16", "u32", "u64", "i8", "i16", "i32", "i64",
 		"wrapAdd", "wrapSub", "wrapMul",
@@ -76,6 +84,7 @@ func init() {
 	allBuiltins = append(allBuiltins, fixedIntegers...)
 	allBuiltins = append(allBuiltins, memoryCollections...)
 	allBuiltins = append(allBuiltins, binaryIO...)
+	allBuiltins = append(allBuiltins, concurrency...)
 	allBuiltins = append(allBuiltins, stringUtils...)
 	allBuiltins = append(allBuiltins, numbersUtils...)
 	allBuiltins = append(allBuiltins, ioUtils...)

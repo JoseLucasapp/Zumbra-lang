@@ -53,6 +53,11 @@ var supportedBuiltins = map[string]bool{
 	"writeU16LE": true, "writeU16BE": true, "writeU32LE": true, "writeU32BE": true,
 	"writeU64LE": true, "writeU64BE": true,
 	"copyBytes": true, "bytesEqual": true, "sha256": true,
+	"join": true, "cancel": true, "taskDone": true, "taskCancelled": true, "joinTimeout": true, "sleepMs": true,
+	"channel": true, "send": true, "receive": true, "receiveOk": true, "receiveTimeout": true, "closeChannel": true, "channelClosed": true, "channelLen": true, "channelCap": true,
+	"mutex": true, "lock": true, "unlock": true, "rwMutex": true, "rLock": true, "rUnlock": true,
+	"waitGroup": true, "wgAdd": true, "wgDone": true, "wgWait": true, "semaphore": true, "acquire": true, "release": true,
+	"atomicInt": true, "atomicLoad": true, "atomicStore": true, "atomicAdd": true, "atomicSwap": true, "atomicCompareSwap": true,
 }
 
 type structInfo struct {
@@ -192,9 +197,6 @@ func (g *generator) validateModule() {
 		}
 	}
 	for _, function := range g.module.Functions {
-		if function.Async {
-			g.errs = append(g.errs, Diagnostic{Message: fmt.Sprintf("async function %s requires a future native scheduler", function.Name)})
-		}
 		g.validateRegion(function.Body)
 	}
 	g.validateRegion(g.module.Entry)
@@ -206,7 +208,7 @@ func (g *generator) validateRegion(region *mir.Region) {
 	}
 	for _, instruction := range region.Instructions {
 		switch instruction.Op {
-		case mir.OpAwait, mir.OpTry, mir.OpHandler:
+		case mir.OpTry, mir.OpHandler:
 			g.errs = append(g.errs, Diagnostic{Instruction: instruction.ID, Message: fmt.Sprintf("%s is not supported by the first native backend", instruction.Op)})
 		case mir.OpUnknown:
 			g.errs = append(g.errs, Diagnostic{Instruction: instruction.ID, Message: "unknown MIR operation cannot be compiled natively"})
@@ -224,7 +226,7 @@ func (g *generator) emitProgram() {
 	g.line("#include \"zumbra_runtime.h\"")
 	g.line("#include <stdio.h>")
 	g.line("#include <string.h>")
-	g.line("_Static_assert(ZUMBRA_NATIVE_ABI_VERSION == 1u, \"unsupported Zumbra native ABI\");")
+	g.line("_Static_assert(ZUMBRA_NATIVE_ABI_VERSION == 2u, \"unsupported Zumbra native ABI\");")
 	g.line("")
 	g.emitFFIDeclarations()
 	for _, name := range sortedKeys(g.globals) {
@@ -449,6 +451,22 @@ func (g *generator) emitDispatch() {
 	g.indent--
 	g.line("}")
 	g.line("")
+	g.line("bool z_function_is_async(int function_id) {")
+	g.indent++
+	g.line("switch (function_id) {")
+	g.indent++
+	for index, function := range g.module.Functions {
+		if function.Async {
+			g.line("case %d: return true;", index)
+		}
+	}
+	g.line("default: return false;")
+	g.indent--
+	g.line("}")
+	g.indent--
+	g.line("}")
+	g.line("")
+
 }
 
 func (g *generator) emitMain() {
@@ -534,6 +552,11 @@ func (g *generator) emitInstruction(instruction *mir.Instruction, rootEntry bool
 		} else {
 			g.line("ZValue %s = z_function(%d);", result, functionID)
 		}
+	case mir.OpSpawn:
+		g.emitValueArray("zs", instruction.ID, instruction.Args[1:])
+		g.line("ZValue %s = z_spawn(%s, %s, %d);", result, argName(instruction.Args, 0), arrayNameOrNull("zs", instruction.ID, len(instruction.Args)-1), max(0, len(instruction.Args)-1))
+	case mir.OpAwait:
+		g.line("ZValue %s = z_task_await(%s);", result, argName(instruction.Args, 0))
 	case mir.OpCall:
 		g.emitValueArray("za", instruction.ID, instruction.Args[1:])
 		g.line("ZValue %s = z_call(%s, %s, %d);", result, argName(instruction.Args, 0), arrayNameOrNull("za", instruction.ID, len(instruction.Args)-1), max(0, len(instruction.Args)-1))
@@ -889,6 +912,20 @@ func cKind(value *types.Type) string {
 		return "ZK_FUNCTION"
 	case types.Pointer:
 		return "ZK_POINTER"
+	case types.Task:
+		return "ZK_TASK"
+	case types.Channel:
+		return "ZK_CHANNEL"
+	case types.Mutex:
+		return "ZK_MUTEX"
+	case types.RWMutex:
+		return "ZK_RW_MUTEX"
+	case types.WaitGroup:
+		return "ZK_WAIT_GROUP"
+	case types.Semaphore:
+		return "ZK_SEMAPHORE"
+	case types.AtomicInt:
+		return "ZK_ATOMIC_INT"
 	default:
 		return "ZK_UNKNOWN"
 	}

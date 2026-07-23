@@ -45,6 +45,7 @@ const (
 	OpBreak       Op = "break"
 	OpContinue    Op = "continue"
 	OpDrop        Op = "drop"
+	OpSpawn       Op = "spawn"
 	OpAwait       Op = "await"
 	OpTry         Op = "try"
 	OpHandler     Op = "error_handler"
@@ -352,6 +353,18 @@ func (l *lowerer) lowerExpression(region *Region, node *hir.Node) ValueID {
 		result := l.value(inst)
 		l.emit(region, inst)
 		return result
+	case hir.SpawnKind:
+		inst := l.newInstruction(OpSpawn, node)
+		call := first(node.Children)
+		if call != nil && call.Kind == hir.CallKind {
+			for _, child := range call.Children {
+				inst.Args = appendArg(inst.Args, l.lowerExpression(region, child))
+			}
+		}
+		result := l.value(inst)
+		l.emit(region, inst)
+		return result
+
 	case hir.AwaitKind:
 		inst := l.newInstruction(OpAwait, node)
 		inst.Args = []ValueID{l.lowerExpression(region, first(node.Children))}

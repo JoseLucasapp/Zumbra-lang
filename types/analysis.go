@@ -54,7 +54,7 @@ func Clone(value *Type) *Type {
 	if value == nil {
 		return nil
 	}
-	copyValue := &Type{Kind: value.Kind, Name: value.Name}
+	copyValue := &Type{Kind: value.Kind, Name: value.Name, Async: value.Async}
 	copyValue.Elem = Clone(value.Elem)
 	copyValue.Key = Clone(value.Key)
 	copyValue.Value = Clone(value.Value)

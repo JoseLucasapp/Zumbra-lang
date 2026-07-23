@@ -616,6 +616,139 @@ func (c *Checker) inferHandlerBlockType(block *ast.BlockStatement) *Type {
 
 func (c *Checker) checkBuiltinCall(name string, args []ast.Expression) *Type {
 	switch name {
+	case "join":
+		if len(args) != 1 {
+			c.addError(fmt.Errorf("join expects 1 argument, got %d", len(args)))
+			return Simple(Unknown)
+		}
+		t := c.inferExpression(args[0])
+		if t.Kind == Task && t.Elem != nil {
+			return t.Elem
+		}
+		if t.Kind != Unknown {
+			c.addError(fmt.Errorf("join expects Task, got %s", t.String()))
+		}
+		return Simple(Unknown)
+	case "cancel", "taskDone", "taskCancelled":
+		if len(args) != 1 {
+			c.addError(fmt.Errorf("%s expects 1 argument, got %d", name, len(args)))
+			return Simple(Bool)
+		}
+		t := c.inferExpression(args[0])
+		if t.Kind != Unknown && t.Kind != Task {
+			c.addError(fmt.Errorf("%s expects Task, got %s", name, t.String()))
+		}
+		return Simple(Bool)
+	case "joinTimeout":
+		if len(args) != 2 {
+			c.addError(fmt.Errorf("joinTimeout expects 2 arguments, got %d", len(args)))
+			return ArrayOf(Simple(Unknown))
+		}
+		c.inferExpression(args[0])
+		c.inferExpression(args[1])
+		return ArrayOf(Simple(Unknown))
+	case "sleepMs":
+		if len(args) != 1 {
+			c.addError(fmt.Errorf("sleepMs expects 1 argument, got %d", len(args)))
+		} else {
+			d := c.inferExpression(args[0])
+			if d.Kind != Unknown && !IsInteger(d) {
+				c.addError(fmt.Errorf("sleepMs expects integer milliseconds, got %s", d.String()))
+			}
+		}
+		return Simple(Null)
+	case "channel":
+		if len(args) > 1 {
+			c.addError(fmt.Errorf("channel expects 0 or 1 arguments, got %d", len(args)))
+		}
+		if len(args) == 1 {
+			c.inferExpression(args[0])
+		}
+		return ChannelOf(Simple(Unknown))
+	case "send":
+		if len(args) != 2 {
+			c.addError(fmt.Errorf("send expects 2 arguments, got %d", len(args)))
+			return Simple(Null)
+		}
+		ch := c.inferExpression(args[0])
+		val := c.inferExpression(args[1])
+		if ch.Kind != Unknown && ch.Kind != Channel {
+			c.addError(fmt.Errorf("send expects Channel, got %s", ch.String()))
+		}
+		if ch.Kind == Channel && ch.Elem != nil {
+			if ch.Elem.Kind == Unknown {
+				ch.Elem = Clone(val)
+			} else if val.Kind != Unknown && !Compatible(ch.Elem, val) {
+				c.addError(fmt.Errorf("send expects %s values, got %s", ch.Elem.String(), val.String()))
+			}
+		}
+		return Simple(Null)
+	case "receive":
+		if len(args) != 1 {
+			c.addError(fmt.Errorf("receive expects 1 argument, got %d", len(args)))
+			return Simple(Unknown)
+		}
+		ch := c.inferExpression(args[0])
+		if ch.Kind == Channel && ch.Elem != nil {
+			return ch.Elem
+		}
+		if ch.Kind != Unknown {
+			c.addError(fmt.Errorf("receive expects Channel, got %s", ch.String()))
+		}
+		return Simple(Unknown)
+	case "receiveOk", "receiveTimeout":
+		for _, arg := range args {
+			c.inferExpression(arg)
+		}
+		return ArrayOf(Simple(Unknown))
+	case "closeChannel", "channelClosed":
+		if len(args) != 1 {
+			c.addError(fmt.Errorf("%s expects 1 argument, got %d", name, len(args)))
+		} else {
+			ch := c.inferExpression(args[0])
+			if ch.Kind != Unknown && ch.Kind != Channel {
+				c.addError(fmt.Errorf("%s expects Channel, got %s", name, ch.String()))
+			}
+		}
+		return Simple(Bool)
+	case "channelLen", "channelCap":
+		if len(args) != 1 {
+			c.addError(fmt.Errorf("%s expects 1 argument, got %d", name, len(args)))
+		} else {
+			c.inferExpression(args[0])
+		}
+		return Simple(Int)
+	case "mutex":
+		return Simple(Mutex)
+	case "rwMutex":
+		return Simple(RWMutex)
+	case "waitGroup":
+		return Simple(WaitGroup)
+	case "semaphore":
+		if len(args) == 1 {
+			c.inferExpression(args[0])
+		}
+		return Simple(Semaphore)
+	case "atomicInt":
+		if len(args) == 1 {
+			c.inferExpression(args[0])
+		}
+		return Simple(AtomicInt)
+	case "atomicLoad", "atomicAdd", "atomicSwap":
+		for _, arg := range args {
+			c.inferExpression(arg)
+		}
+		return Simple(Int)
+	case "atomicCompareSwap":
+		for _, arg := range args {
+			c.inferExpression(arg)
+		}
+		return Simple(Bool)
+	case "atomicStore", "lock", "unlock", "rLock", "rUnlock", "wgAdd", "wgDone", "wgWait", "acquire", "release":
+		for _, arg := range args {
+			c.inferExpression(arg)
+		}
+		return Simple(Null)
 	case "show":
 		if len(args) != 1 {
 			c.addError(fmt.Errorf("show expects 1 argument, got %d", len(args)))
@@ -1006,7 +1139,7 @@ func containsUnknown(value *Type) bool {
 		return true
 	}
 	switch value.Kind {
-	case Array, ByteArray, TypedArray, Slice:
+	case Array, ByteArray, TypedArray, Slice, Task, Channel:
 		return value.Elem == nil || containsUnknown(value.Elem)
 	case Dict:
 		return value.Key == nil || value.Value == nil || containsUnknown(value.Key) || containsUnknown(value.Value)
@@ -1120,6 +1253,7 @@ func (c *Checker) inferFunctionLiteral(function *ast.FunctionLiteral, expected *
 	}
 
 	result := FuncOf(refinedParams, returned)
+	result.Async = function.Async
 	if expected != nil && expected.Kind == Func {
 		if !Compatible(expected, result) || !Compatible(result, expected) {
 			c.addError(fmt.Errorf("callback expects %s, got %s", expected.String(), result.String()))
@@ -1386,6 +1520,9 @@ func (c *Checker) inferExpressionImpl(exp ast.Expression) *Type {
 			}
 
 			if fnType.Return != nil {
+				if fnType.Async {
+					return TaskOf(Clone(fnType.Return))
+				}
 				return fnType.Return
 			}
 			return Simple(Unknown)
@@ -1452,9 +1589,26 @@ func (c *Checker) inferExpressionImpl(exp ast.Expression) *Type {
 
 		return Simple(Unknown)
 
+	case *ast.SpawnExpression:
+		if e.Value == nil {
+			return TaskOf(Simple(Unknown))
+		}
+		callType := c.inferExpression(e.Value)
+		if callType.Kind == Task {
+			return callType
+		}
+		return TaskOf(callType)
+
 	case *ast.AwaitExpression:
 		if e.Value != nil {
-			return c.inferExpression(e.Value)
+			valueType := c.inferExpression(e.Value)
+			if valueType.Kind == Task {
+				if valueType.Elem != nil {
+					return valueType.Elem
+				}
+				return Simple(Unknown)
+			}
+			return valueType
 		}
 		return Simple(Unknown)
 
@@ -1674,6 +1828,7 @@ func (c *Checker) checkStructStatement(stmt *ast.StructStatement) {
 		}
 		c.popScope()
 		methodType := FuncOf(refined, ret)
+		methodType.Async = method.Function.Async
 		structType.Methods[method.Name.Value] = methodType
 		c.nodeTypes[method.Function] = Clone(methodType)
 	}

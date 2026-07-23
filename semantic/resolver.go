@@ -491,6 +491,11 @@ func (r *Resolver) resolveExpression(exp ast.Expression) {
 			r.resolveExpression(e.Left)
 		}
 
+	case *ast.SpawnExpression:
+		if e.Value != nil {
+			r.resolveExpression(e.Value)
+		}
+
 	case *ast.AwaitExpression:
 		if e.Value != nil {
 			r.resolveExpression(e.Value)

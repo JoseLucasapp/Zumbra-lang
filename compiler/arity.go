@@ -245,6 +245,11 @@ func (v *ArityValidator) visitExpression(expr ast.Expression) {
 			v.visitExpression(node.Object)
 		}
 
+	case *ast.SpawnExpression:
+		if node.Value != nil {
+			v.visitExpression(node.Value)
+		}
+
 	case *ast.AwaitExpression:
 		if node.Value != nil {
 			v.visitExpression(node.Value)

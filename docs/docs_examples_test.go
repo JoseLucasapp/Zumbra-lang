@@ -34,6 +34,9 @@ func TestCoreSyntaxSnippetsParseAndCompile(t *testing.T) {
 		`struct Point { x: int; y: int; fct move(dx, dy) { self.x << self.x + dx; self.y << self.y + dy; } } var p << Point(1, 2); p.move(3, 4); p.x;`,
 		`enum Direction { Up; Down; } match(Direction.Up) { case Direction.Up { 1; } else { 0; } };`,
 		`var task << async fct() { 10; }; await task();`,
+		`fct answer() { 42; } var task << spawn answer(); await task;`,
+		`var messages << channel(2); send(messages, "ready"); var message << receive(messages); closeChannel(messages); message;`,
+		`var counter << atomicInt(0); atomicAdd(counter, 1); atomicLoad(counter);`,
 		`var run << fct() { 1; }; try run() or err { err; };`,
 	}
 
@@ -132,5 +135,28 @@ func TestZ8FFIDocumentationExampleGeneratesC(t *testing.T) {
 	}
 	if !strings.Contains(result.DumpHIR(), "fct(i32) -> i32") || !strings.Contains(result.DumpMIR(), "fct(i32) -> i32") {
 		t.Fatalf("contextual callback type is missing:\nHIR:\n%s\nMIR:\n%s", result.DumpHIR(), result.DumpMIR())
+	}
+}
+
+func TestZ9ConcurrencyDocumentationGeneratesNativeC(t *testing.T) {
+	source := `
+        fct answer() { 42; }
+        var task << spawn answer();
+        var result << await task;
+        var messages << channel(1);
+        send(messages, result);
+        show(receive(messages));
+    `
+	result, diagnostics := pipeline.Build("concurrency-docs.zum", source, pipeline.Options{Optimize: true})
+	if len(diagnostics) != 0 {
+		t.Fatalf("concurrency documentation pipeline failed: %s", pipeline.FormatDiagnostics(diagnostics))
+	}
+	sources, nativeDiagnostics := nativec.Generate(result.MIR)
+	if len(nativeDiagnostics) != 0 {
+		t.Fatalf("concurrency documentation native generation failed: %v", nativeDiagnostics)
+	}
+	generated := string(sources.Program)
+	if !strings.Contains(generated, "z_spawn") || !strings.Contains(generated, "z_task_await") {
+		t.Fatalf("concurrency operations were not generated:\n%s", generated)
 	}
 }

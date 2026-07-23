@@ -3,6 +3,7 @@ package vm
 import (
 	"fmt"
 	"math"
+	"sync"
 	"zumbra/code"
 	"zumbra/collections"
 	"zumbra/compiler"
@@ -26,6 +27,7 @@ type VM struct {
 	globals     []object.Object
 	frames      []*Frame
 	framesIndex int
+	globalMu    *sync.RWMutex
 }
 
 func New(bytecode *compiler.Bytecode) *VM {
@@ -42,6 +44,7 @@ func New(bytecode *compiler.Bytecode) *VM {
 		globals:     make([]object.Object, GlobalSize),
 		frames:      frames,
 		framesIndex: 1,
+		globalMu:    &sync.RWMutex{},
 	}
 }
 
@@ -54,8 +57,13 @@ func (vm *VM) StackTop() object.Object {
 }
 
 func InvokeFunction(handler object.Object, args []object.Object, constants []object.Object, globals []object.Object) (object.Object, error) {
+	return invokeFunctionShared(handler, args, constants, globals, &sync.RWMutex{})
+}
+
+func invokeFunctionShared(handler object.Object, args []object.Object, constants []object.Object, globals []object.Object, globalMu *sync.RWMutex) (object.Object, error) {
 	bytecode := &compiler.Bytecode{Constants: constants}
 	invoker := NewWithGlobalsStore(bytecode, globals)
+	invoker.globalMu = globalMu
 	invoker.constants = constants
 	if err := invoker.push(handler); err != nil {
 		return nil, err
@@ -71,7 +79,10 @@ func InvokeFunction(handler object.Object, args []object.Object, constants []obj
 	if err := invoker.Run(); err != nil {
 		return nil, err
 	}
-	return invoker.LastPoppedStackElem(), nil
+	if result := invoker.StackTop(); result != nil {
+		return result, nil
+	}
+	return Null, nil
 }
 
 func (vm *VM) Run() error {
@@ -193,13 +204,19 @@ func (vm *VM) Run() error {
 			globalIndex := code.ReadUint16(ins[ip+1:])
 			vm.currentFrame().ip += 2
 
-			vm.globals[globalIndex] = vm.pop()
+			value := vm.pop()
+			vm.globalMu.Lock()
+			vm.globals[globalIndex] = value
+			vm.globalMu.Unlock()
 
 		case code.OpGetGlobal:
 			globalIndex := code.ReadUint16(ins[ip+1:])
 			vm.currentFrame().ip += 2
 
-			err := vm.push(vm.globals[globalIndex])
+			vm.globalMu.RLock()
+			value := vm.globals[globalIndex]
+			vm.globalMu.RUnlock()
+			err := vm.push(value)
 			if err != nil {
 				return err
 			}
@@ -296,6 +313,22 @@ func (vm *VM) Run() error {
 			vm.currentFrame().ip += 1
 			err := vm.executeCall(int(numArgs))
 			if err != nil {
+				return err
+			}
+
+		case code.OpSpawn:
+			numArgs := int(code.ReadUint8(ins[ip+1:]))
+			vm.currentFrame().ip += 1
+			if err := vm.spawnCall(numArgs); err != nil {
+				return err
+			}
+
+		case code.OpAwait:
+			value := vm.pop()
+			if task, ok := value.(*object.Task); ok {
+				value = task.Await()
+			}
+			if err := vm.push(value); err != nil {
 				return err
 			}
 
@@ -1173,6 +1206,36 @@ func (vm *VM) callClosure(cl *object.Closure, numArgs int) error {
 	return nil
 }
 
+func (vm *VM) spawnCall(numArgs int) error {
+	calleeIndex := vm.sp - 1 - numArgs
+	if calleeIndex < 0 {
+		return fmt.Errorf("invalid spawn stack state")
+	}
+	callee := vm.stack[calleeIndex]
+	if closure, ok := callee.(*object.Closure); ok && closure.Fn.Async {
+		copyFn := *closure.Fn
+		copyFn.Async = false
+		callee = &object.Closure{Fn: &copyFn, Free: append([]object.Object(nil), closure.Free...)}
+	}
+	args := append([]object.Object(nil), vm.stack[calleeIndex+1:vm.sp]...)
+	vm.sp = calleeIndex
+	task := object.NewTask()
+	go func() {
+		defer func() {
+			if recovered := recover(); recovered != nil {
+				task.Complete(&object.Error{Message: fmt.Sprintf("task panic: %v", recovered)})
+			}
+		}()
+		result, err := invokeFunctionShared(callee, args, vm.constants, vm.globals, vm.globalMu)
+		if err != nil {
+			task.Complete(&object.Error{Message: err.Error()})
+			return
+		}
+		task.Complete(result)
+	}()
+	return vm.push(task)
+}
+
 func (vm *VM) executeCall(numArgs int) error {
 	callee := vm.stack[vm.sp-1-numArgs]
 
@@ -1182,6 +1245,9 @@ func (vm *VM) executeCall(numArgs int) error {
 
 	switch callee := callee.(type) {
 	case *object.Closure:
+		if callee.Fn.Async {
+			return vm.spawnCall(numArgs)
+		}
 		return vm.callClosure(callee, numArgs)
 	case *object.Builtin:
 		return vm.callBuiltin(callee, numArgs)

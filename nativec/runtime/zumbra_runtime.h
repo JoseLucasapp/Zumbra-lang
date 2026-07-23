@@ -1,7 +1,7 @@
 #ifndef ZUMBRA_RUNTIME_H
 #define ZUMBRA_RUNTIME_H
 
-#define ZUMBRA_NATIVE_ABI_VERSION 1u
+#define ZUMBRA_NATIVE_ABI_VERSION 2u
 
 #include <stdbool.h>
 #include <stddef.h>
@@ -30,7 +30,14 @@ typedef enum {
     ZK_STRUCT,
     ZK_ENUM,
     ZK_FUNCTION,
-    ZK_POINTER
+    ZK_POINTER,
+    ZK_TASK,
+    ZK_CHANNEL,
+    ZK_MUTEX,
+    ZK_RW_MUTEX,
+    ZK_WAIT_GROUP,
+    ZK_SEMAPHORE,
+    ZK_ATOMIC_INT
 } ZKind;
 
 typedef enum {
@@ -51,7 +58,14 @@ typedef enum {
     ZV_BUILTIN,
     ZV_STRUCT_TYPE,
     ZV_ENUM_TYPE,
-    ZV_POINTER
+    ZV_POINTER,
+    ZV_TASK,
+    ZV_CHANNEL,
+    ZV_MUTEX,
+    ZV_RW_MUTEX,
+    ZV_WAIT_GROUP,
+    ZV_SEMAPHORE,
+    ZV_ATOMIC_INT
 } ZTag;
 
 typedef struct ZValue ZValue;
@@ -165,6 +179,11 @@ ZValue z_get_field(ZValue object, const char *name);
 void z_set_field(ZValue object, const char *name, ZValue value);
 
 ZValue z_call(ZValue callable, const ZValue *args, size_t argc);
+ZValue z_spawn(ZValue callable, const ZValue *args, size_t argc);
+ZValue z_task_await(ZValue task);
+bool z_task_cancel(ZValue task);
+bool z_task_done(ZValue task);
+bool z_task_cancelled(ZValue task);
 ZValue z_call_builtin(const char *name, const ZValue *args, size_t argc);
 void z_show(ZValue value);
 
@@ -180,6 +199,7 @@ ZValue z_sha256(ZValue buffer);
 
 /* Hooks emitted by the MIR native backend. */
 ZValue z_dispatch_function(int function_id, const ZValue *args, size_t argc);
+bool z_function_is_async(int function_id);
 ZValue z_construct_struct(int type_id, const ZValue *args, size_t argc);
 int z_struct_field_index(int type_id, const char *name);
 int z_struct_method_id(int type_id, const char *name);

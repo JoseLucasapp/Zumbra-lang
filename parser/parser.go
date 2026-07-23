@@ -98,6 +98,7 @@ func New(l *lexer.Lexer) *Parser {
 	p.registerPrefix(token.FOR, p.parseForLoopExpression)
 	p.registerPrefix(token.ASYNC, p.parseAsyncFunctionLiteral)
 	p.registerPrefix(token.AWAIT, p.parseAwaitExpression)
+	p.registerPrefix(token.SPAWN, p.parseSpawnExpression)
 	p.registerPrefix(token.TRY, p.parseTryExpression)
 	p.registerPrefix(token.MATCH, p.parseMatchExpression)
 	p.registerPrefix(token.BREAK, p.parseBreakWithoutLoopContext)
@@ -480,6 +481,16 @@ func (p *Parser) parseStructStatement() *ast.StructStatement {
 				return nil
 			}
 			stmt.Methods = append(stmt.Methods, method)
+		case token.ASYNC:
+			if !p.expectPeek(token.FUNCTION) {
+				return nil
+			}
+			method := p.parseStructMethod()
+			if method == nil {
+				return nil
+			}
+			method.Function.Async = true
+			stmt.Methods = append(stmt.Methods, method)
 		default:
 			if !p.curTokenIs(token.IDENT) {
 				p.errors = append(p.errors, fmt.Sprintf("expected struct field or method, got %s", p.tokenDebugString(p.curToken)))
@@ -773,6 +784,16 @@ func (p *Parser) parseAwaitExpression() ast.Expression {
 	expr := &ast.AwaitExpression{Token: p.curToken}
 	p.nextToken()
 	expr.Value = p.parseExpression(PREFIX)
+	return expr
+}
+
+func (p *Parser) parseSpawnExpression() ast.Expression {
+	expr := &ast.SpawnExpression{Token: p.curToken}
+	p.nextToken()
+	expr.Value = p.parseExpression(PREFIX)
+	if _, ok := expr.Value.(*ast.CallExpression); !ok {
+		p.errors = append(p.errors, "spawn expects a function call, for example: spawn work()")
+	}
 	return expr
 }
 

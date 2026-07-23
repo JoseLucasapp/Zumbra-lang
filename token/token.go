@@ -41,6 +41,7 @@ const (
 	EXTERN   = "EXTERN"
 	FROM     = "FROM"
 	UNSAFE   = "UNSAFE"
+	SPAWN    = "SPAWN"
 
 	// Operators
 	ASSIGN     = "<<"
@@ -131,6 +132,7 @@ var keywords = map[string]TokenType{
 	"extern":   EXTERN,
 	"from":     FROM,
 	"unsafe":   UNSAFE,
+	"spawn":    SPAWN,
 }
 
 func LookupIdent(ident string) TokenType {

@@ -342,6 +342,11 @@ func (a *Analyzer) visitExpression(expr ast.Expression) {
 			a.visitExpression(node.Object)
 		}
 
+	case *ast.SpawnExpression:
+		if node.Value != nil {
+			a.visitExpression(node.Value)
+		}
+
 	case *ast.AwaitExpression:
 		if node.Value != nil {
 			a.visitExpression(node.Value)

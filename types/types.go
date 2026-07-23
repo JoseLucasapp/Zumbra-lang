@@ -26,11 +26,19 @@ const (
 	Struct     Kind = "struct"
 	Enum       Kind = "enum"
 	Pointer    Kind = "ptr"
+	Task       Kind = "task"
+	Channel    Kind = "channel"
+	Mutex      Kind = "mutex"
+	RWMutex    Kind = "rw_mutex"
+	WaitGroup  Kind = "wait_group"
+	Semaphore  Kind = "semaphore"
+	AtomicInt  Kind = "atomic_int"
 )
 
 type Type struct {
 	Kind    Kind
 	Name    string
+	Async   bool
 	Elem    *Type
 	Key     *Type
 	Value   *Type
@@ -61,6 +69,9 @@ func SliceOf(elem *Type) *Type {
 	return &Type{Kind: Slice, Elem: elem}
 }
 
+func TaskOf(result *Type) *Type  { return &Type{Kind: Task, Elem: result} }
+func ChannelOf(elem *Type) *Type { return &Type{Kind: Channel, Elem: elem} }
+
 func DictOf(key *Type, value *Type) *Type {
 	return &Type{
 		Kind:  Dict,
@@ -87,7 +98,7 @@ func Same(a, b *Type) bool {
 	}
 
 	switch a.Kind {
-	case Array, ByteArray, TypedArray, Slice:
+	case Array, ByteArray, TypedArray, Slice, Task, Channel:
 		if a.Elem == nil || b.Elem == nil {
 			return a.Elem == b.Elem
 		}
@@ -103,6 +114,9 @@ func Same(a, b *Type) bool {
 		return a.Name == b.Name
 
 	case Func:
+		if a.Async != b.Async {
+			return false
+		}
 		if len(a.Params) != len(b.Params) {
 			return false
 		}
@@ -133,7 +147,7 @@ func Compatible(expected, actual *Type) bool {
 		return false
 	}
 	switch expected.Kind {
-	case Array, ByteArray, TypedArray, Slice:
+	case Array, ByteArray, TypedArray, Slice, Task, Channel:
 		if expected.Elem == nil || actual.Elem == nil {
 			return true
 		}
@@ -143,6 +157,9 @@ func Compatible(expected, actual *Type) bool {
 	case Struct, Enum:
 		return expected.Name == actual.Name
 	case Func:
+		if expected.Async != actual.Async {
+			return false
+		}
 		if len(expected.Params) != len(actual.Params) {
 			return false
 		}
@@ -209,7 +226,7 @@ func (t *Type) String() string {
 		return string(Unknown)
 	}
 	switch t.Kind {
-	case Array, ByteArray, TypedArray, Slice:
+	case Array, ByteArray, TypedArray, Slice, Task, Channel:
 		if t.Elem == nil {
 			return string(t.Kind)
 		}
@@ -225,6 +242,9 @@ func (t *Type) String() string {
 		return "dict<" + key + "," + value + ">"
 	case Func:
 		text := "fct("
+		if t.Async {
+			text = "async " + text
+		}
 		for i, param := range t.Params {
 			if i > 0 {
 				text += ","
