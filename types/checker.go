@@ -6,16 +6,23 @@ import (
 )
 
 type scope struct {
-	parent  *scope
-	values  map[string]*Type
-	mutable map[string]bool
+	parent    *scope
+	values    map[string]*Type
+	mutable   map[string]bool
+	functions map[string]functionBinding
+}
+
+type functionBinding struct {
+	literal          *ast.FunctionLiteral
+	declarationScope *scope
 }
 
 func newScope(parent *scope) *scope {
 	return &scope{
-		parent:  parent,
-		values:  make(map[string]*Type),
-		mutable: make(map[string]bool),
+		parent:    parent,
+		values:    make(map[string]*Type),
+		mutable:   make(map[string]bool),
+		functions: make(map[string]functionBinding),
 	}
 }
 
@@ -57,6 +64,44 @@ func (s *scope) resolve(name string) (*Type, bool) {
 	return nil, false
 }
 
+func (s *scope) bindFunction(name string, literal *ast.FunctionLiteral) {
+	if s == nil || name == "" || literal == nil {
+		return
+	}
+	s.functions[name] = functionBinding{literal: literal, declarationScope: s}
+}
+
+func (s *scope) assignFunction(name string, literal *ast.FunctionLiteral) {
+	if s == nil || name == "" || literal == nil {
+		return
+	}
+	for cur := s; cur != nil; cur = cur.parent {
+		if _, exists := cur.values[name]; exists {
+			cur.functions[name] = functionBinding{literal: literal, declarationScope: cur}
+			return
+		}
+	}
+	s.bindFunction(name, literal)
+}
+
+func (s *scope) unbindFunction(name string) {
+	for cur := s; cur != nil; cur = cur.parent {
+		if _, exists := cur.values[name]; exists {
+			delete(cur.functions, name)
+			return
+		}
+	}
+}
+
+func (s *scope) resolveFunction(name string) (functionBinding, bool) {
+	for cur := s; cur != nil; cur = cur.parent {
+		if value, ok := cur.functions[name]; ok {
+			return value, true
+		}
+	}
+	return functionBinding{}, false
+}
+
 type Checker struct {
 	global      *scope
 	scope       *scope
@@ -67,19 +112,21 @@ type Checker struct {
 	externals   map[string]*Type
 	unsafeDepth int
 	nodeTypes   map[ast.Node]*Type
+	contextual  map[*ast.FunctionLiteral]*Type
 }
 
 func NewChecker() *Checker {
 	global := newScope(nil)
 	c := &Checker{
-		global:    global,
-		scope:     global,
-		errors:    []error{},
-		aliases:   map[string]*Type{},
-		structs:   map[string]*Type{},
-		enums:     map[string]*Type{},
-		externals: map[string]*Type{},
-		nodeTypes: map[ast.Node]*Type{},
+		global:     global,
+		scope:      global,
+		errors:     []error{},
+		aliases:    map[string]*Type{},
+		structs:    map[string]*Type{},
+		enums:      map[string]*Type{},
+		externals:  map[string]*Type{},
+		nodeTypes:  map[ast.Node]*Type{},
+		contextual: map[*ast.FunctionLiteral]*Type{},
 	}
 	c.installBuiltins()
 	return c
@@ -123,6 +170,7 @@ func (c *Checker) ResetForNextRun() {
 	c.externals = map[string]*Type{}
 	c.unsafeDepth = 0
 	c.nodeTypes = map[ast.Node]*Type{}
+	c.contextual = map[*ast.FunctionLiteral]*Type{}
 }
 
 func (c *Checker) Check(program *ast.Program) []error {
@@ -235,6 +283,9 @@ func (c *Checker) checkStatement(stmt ast.Statement) {
 		}
 		if s.Name != nil {
 			c.scope.defineImmutable(s.Name.Value, t)
+			if function, ok := s.Value.(*ast.FunctionLiteral); ok {
+				c.scope.assignFunction(s.Name.Value, function)
+			}
 		}
 
 	case *ast.TypeAliasStatement:
@@ -273,6 +324,9 @@ func (c *Checker) checkStatement(stmt ast.Statement) {
 		}
 		if s.Name != nil {
 			c.scope.define(s.Name.Value, t)
+			if function, ok := s.Value.(*ast.FunctionLiteral); ok {
+				c.scope.bindFunction(s.Name.Value, function)
+			}
 		}
 
 	case *ast.AssignStatement:
@@ -290,6 +344,11 @@ func (c *Checker) checkStatement(stmt ast.Statement) {
 				}
 			} else {
 				c.scope.define(s.Name.Value, valueType)
+			}
+			if function, ok := s.Value.(*ast.FunctionLiteral); ok {
+				c.scope.assignFunction(s.Name.Value, function)
+			} else {
+				c.scope.unbindFunction(s.Name.Value)
 			}
 		}
 
@@ -939,6 +998,138 @@ func fixedIntegerResultType(left, right *Type) (*Type, error) {
 	return Simple(Int), nil
 }
 
+func containsUnknown(value *Type) bool {
+	if value == nil {
+		return true
+	}
+	if value.Kind == Unknown {
+		return true
+	}
+	switch value.Kind {
+	case Array, ByteArray, TypedArray, Slice:
+		return value.Elem == nil || containsUnknown(value.Elem)
+	case Dict:
+		return value.Key == nil || value.Value == nil || containsUnknown(value.Key) || containsUnknown(value.Value)
+	case Func:
+		if value.Return == nil || containsUnknown(value.Return) {
+			return true
+		}
+		for _, parameter := range value.Params {
+			if containsUnknown(parameter) {
+				return true
+			}
+		}
+	}
+	return false
+}
+
+func (c *Checker) inferExpressionExpected(exp ast.Expression, expected *Type) *Type {
+	if exp == nil || expected == nil || expected.Kind != Func {
+		return c.inferExpression(exp)
+	}
+
+	switch value := exp.(type) {
+	case *ast.FunctionLiteral:
+		result := c.inferFunctionLiteral(value, expected, c.scope)
+		c.nodeTypes[value] = Clone(result)
+		return result
+
+	case *ast.Identifier:
+		current, exists := c.scope.resolve(value.Value)
+		if exists && current != nil && current.Kind == Func && !containsUnknown(current) {
+			if !Compatible(expected, current) || !Compatible(current, expected) {
+				c.addError(fmt.Errorf("callback %s expects %s, got %s", value.Value, expected.String(), current.String()))
+			}
+			c.nodeTypes[value] = Clone(current)
+			return current
+		}
+
+		if binding, ok := c.scope.resolveFunction(value.Value); ok {
+			result := c.inferFunctionLiteral(binding.literal, expected, binding.declarationScope)
+			_ = c.scope.assign(value.Value, result)
+			c.nodeTypes[value] = Clone(result)
+			c.nodeTypes[binding.literal] = Clone(result)
+			return result
+		}
+	}
+
+	actual := c.inferExpression(exp)
+	if actual.Kind != Unknown && (!Compatible(expected, actual) || !Compatible(actual, expected)) {
+		c.addError(fmt.Errorf("callback expects %s, got %s", expected.String(), actual.String()))
+	}
+	return actual
+}
+
+func (c *Checker) inferFunctionLiteral(function *ast.FunctionLiteral, expected *Type, parent *scope) *Type {
+	if function == nil {
+		return Simple(Unknown)
+	}
+
+	if contextual, ok := c.contextual[function]; ok {
+		if expected != nil && (!Compatible(expected, contextual) || !Compatible(contextual, expected)) {
+			c.addError(fmt.Errorf("function %s was inferred as %s and cannot also satisfy %s", function.Name, contextual.String(), expected.String()))
+		}
+		return contextual
+	}
+
+	if parent == nil {
+		parent = c.scope
+	}
+	previous := c.scope
+	c.scope = newScope(parent)
+	defer func() { c.scope = previous }()
+
+	if expected != nil && expected.Kind == Func && len(expected.Params) != len(function.Parameters) {
+		c.addError(fmt.Errorf("callback expects %d parameters, got %d", len(expected.Params), len(function.Parameters)))
+	}
+
+	for index, parameter := range function.Parameters {
+		if parameter == nil {
+			continue
+		}
+		parameterType := Simple(Unknown)
+		if expected != nil && expected.Kind == Func && index < len(expected.Params) && expected.Params[index] != nil {
+			parameterType = Clone(expected.Params[index])
+		}
+		c.scope.define(parameter.Value, parameterType)
+	}
+
+	returned := Simple(Null)
+	if function.Body != nil {
+		returned = c.inferBlockReturnType(function.Body)
+	}
+
+	refinedParams := make([]*Type, 0, len(function.Parameters))
+	for _, parameter := range function.Parameters {
+		if parameter == nil {
+			continue
+		}
+		if parameterType, ok := c.scope.resolve(parameter.Value); ok {
+			refinedParams = append(refinedParams, parameterType)
+		} else {
+			refinedParams = append(refinedParams, Simple(Unknown))
+		}
+	}
+
+	if expected != nil && expected.Kind == Func && expected.Return != nil {
+		if returned == nil || returned.Kind == Unknown {
+			returned = Clone(expected.Return)
+		} else if !Compatible(expected.Return, returned) || !Compatible(returned, expected.Return) {
+			c.addError(fmt.Errorf("callback return expects %s, got %s", expected.Return.String(), returned.String()))
+		}
+	}
+
+	result := FuncOf(refinedParams, returned)
+	if expected != nil && expected.Kind == Func {
+		if !Compatible(expected, result) || !Compatible(result, expected) {
+			c.addError(fmt.Errorf("callback expects %s, got %s", expected.String(), result.String()))
+		}
+		c.contextual[function] = Clone(result)
+	}
+	c.nodeTypes[function] = Clone(result)
+	return result
+}
+
 func (c *Checker) inferExpression(exp ast.Expression) *Type {
 	value := c.inferExpressionImpl(exp)
 	if exp != nil {
@@ -1148,37 +1339,7 @@ func (c *Checker) inferExpressionImpl(exp ast.Expression) *Type {
 		return Simple(Unknown)
 
 	case *ast.FunctionLiteral:
-		c.pushScope()
-
-		params := make([]*Type, 0, len(e.Parameters))
-		for _, p := range e.Parameters {
-			if p == nil {
-				continue
-			}
-			pt := Simple(Unknown)
-			c.scope.define(p.Value, pt)
-			params = append(params, pt)
-		}
-
-		ret := Simple(Null)
-		if e.Body != nil {
-			ret = c.inferBlockReturnType(e.Body)
-		}
-
-		refinedParams := make([]*Type, 0, len(e.Parameters))
-		for _, p := range e.Parameters {
-			if p == nil {
-				continue
-			}
-			if pt, ok := c.scope.resolve(p.Value); ok {
-				refinedParams = append(refinedParams, pt)
-			} else {
-				refinedParams = append(refinedParams, Simple(Unknown))
-			}
-		}
-
-		c.popScope()
-		return FuncOf(refinedParams, ret)
+		return c.inferFunctionLiteral(e, nil, c.scope)
 
 	case *ast.CallExpression:
 		if ident, ok := e.Function.(*ast.Identifier); ok {
@@ -1196,8 +1357,12 @@ func (c *Checker) inferExpressionImpl(exp ast.Expression) *Type {
 		}
 
 		argTypes := make([]*Type, 0, len(e.Arguments))
-		for _, arg := range e.Arguments {
-			argTypes = append(argTypes, c.inferExpression(arg))
+		for index, arg := range e.Arguments {
+			var expected *Type
+			if fnType.Kind == Func && index < len(fnType.Params) {
+				expected = fnType.Params[index]
+			}
+			argTypes = append(argTypes, c.inferExpressionExpected(arg, expected))
 		}
 
 		if fnType.Kind == Func {

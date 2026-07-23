@@ -127,4 +127,10 @@ func TestZ8FFIDocumentationExampleGeneratesC(t *testing.T) {
 	if !strings.Contains(generated, "extern int32_t native_add") || !strings.Contains(generated, "zffi_trampoline") {
 		t.Fatalf("FFI declarations were not generated:\n%s", generated)
 	}
+	if strings.Contains(result.DumpHIR(), "fct(unknown) -> unknown") || strings.Contains(result.DumpMIR(), "fct(unknown) -> unknown") {
+		t.Fatalf("contextual callback type was not propagated:\nHIR:\n%s\nMIR:\n%s", result.DumpHIR(), result.DumpMIR())
+	}
+	if !strings.Contains(result.DumpHIR(), "fct(i32) -> i32") || !strings.Contains(result.DumpMIR(), "fct(i32) -> i32") {
+		t.Fatalf("contextual callback type is missing:\nHIR:\n%s\nMIR:\n%s", result.DumpHIR(), result.DumpMIR())
+	}
 }

@@ -104,3 +104,9 @@ O principal pilar do Zumbra é ser simples. A linguagem pode se tornar mais pote
 
 24. **Módulos são carregados por alcance**
     Somente arquivos alcançáveis a partir da entrada entram no pipeline. Otimização por símbolo pode ser adicionada depois sem mudar a sintaxe.
+
+## Contrato de inferência contextual de callbacks
+
+Quando uma assinatura de callback já é conhecida, o compilador deve usá-la antes de analisar o corpo da função enviada. A sintaxe do usuário permanece curta, mas Type Analysis, HIR, MIR e backends não podem conservar `unknown` onde o contexto fornece um tipo concreto.
+
+A inferência nunca deve mascarar incompatibilidades: aridade, parâmetros, retorno ou reutilização com assinaturas diferentes devem produzir diagnóstico explícito.

@@ -1,0 +1,11 @@
+extern "C" from "../native/z8_math.c" {
+    fct apply(value: i32, transform: callback(i32) -> i32) -> i32 as "z8_apply";
+}
+
+var triple << fct(value) {
+    value * 3i32;
+};
+
+unsafe {
+    show(apply(14i32, triple));
+}

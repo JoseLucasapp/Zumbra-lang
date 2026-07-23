@@ -318,3 +318,9 @@ O Z8 não inclui ainda:
 - ABI estável entre bibliotecas escritas em Zumbra.
 
 Esses limites são explícitos para que a linguagem permaneça pequena e previsível enquanto a base nativa amadurece.
+
+## Inferência contextual de callbacks
+
+A partir do Z8.1, uma função enviada para um parâmetro `callback(...) -> ...` recebe essa assinatura antes da análise do corpo. Isso remove `unknown` da Type Analysis, HIR e MIR sem exigir anotações adicionais.
+
+Consulte [`inferencia-contextual-de-callbacks.md`](./inferencia-contextual-de-callbacks.md) para regras, erros e exemplos.

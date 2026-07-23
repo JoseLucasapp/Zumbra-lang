@@ -587,3 +587,37 @@ zumbra bind-c --pub --link ../native/math.c -o bindings/math.zum native/math.h
 ```
 
 Complete documentation: [`docs/pt-BR/modulos-abi-e-ffi.md`](./pt-BR/modulos-abi-e-ffi.md).
+
+---
+
+## Contextual callback inference
+
+A callback can remain concise when the receiving function already declares its signature:
+
+```zumbra
+extern "C" {
+    fct apply(value: i32, transform: callback(i32) -> i32) -> i32;
+}
+
+var double << fct(value) {
+    value * 2i32;
+};
+
+unsafe {
+    show(apply(21i32, double));
+}
+```
+
+The expected `callback(i32) -> i32` type is applied before checking the callback body. The parameter `value`, the multiplication, the function return, and every HIR/MIR reference become `i32`.
+
+Inline callbacks are inferred the same way:
+
+```zumbra
+unsafe {
+    show(apply(21i32, fct(value) { value * 2i32; }));
+}
+```
+
+A callback with the wrong arity or return type is rejected. A named callback that has already been inferred with one concrete signature cannot later be reused with an incompatible signature.
+
+Complete documentation: [`docs/pt-BR/inferencia-contextual-de-callbacks.md`](./pt-BR/inferencia-contextual-de-callbacks.md).
