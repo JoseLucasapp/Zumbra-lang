@@ -535,3 +535,55 @@ zumbra build --emit-c app.zum
 ```
 
 Generated sources are placed under `build/native/<program>/`. Unsupported native features fail with explicit diagnostics; the VM remains available through `zumbra run`.
+
+---
+
+## Modules, visibility, and C FFI
+
+Declarations are private to their file by default. Export a top-level declaration with `pub`:
+
+```zumbra
+pub const BASE << 40;
+
+pub fct add(left, right) {
+    left + right;
+}
+```
+
+Import a module through an alias:
+
+```zumbra
+import "../modules/math.zum" as math;
+show(math.add(math.BASE, 2));
+```
+
+Inspect the resolved graph:
+
+```bash
+zumbra modules app.zum
+```
+
+Declare native C functions with typed signatures:
+
+```zumbra
+pub extern "C" from "../native/math.c" {
+    fct add(left: i32, right: i32) -> i32 as "project_add";
+    fct apply(value: i32, cb: callback(i32) -> i32) -> i32;
+}
+```
+
+External calls must be explicit:
+
+```zumbra
+unsafe {
+    show(add(20i32, 22i32));
+}
+```
+
+Generate conservative bindings for simple C headers:
+
+```bash
+zumbra bind-c --pub --link ../native/math.c -o bindings/math.zum native/math.h
+```
+
+Complete documentation: [`docs/pt-BR/modulos-abi-e-ffi.md`](./pt-BR/modulos-abi-e-ffi.md).

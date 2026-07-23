@@ -28,6 +28,9 @@ const (
 	ReturnKind      Kind = "return"
 	WhileKind       Kind = "while"
 	ImportKind      Kind = "import"
+	ExternKind      Kind = "extern"
+	ExternFuncKind  Kind = "extern_function"
+	UnsafeKind      Kind = "unsafe"
 	TypeAliasKind   Kind = "type_alias"
 	StructKind      Kind = "struct"
 	StructFieldKind Kind = "struct_field"
@@ -182,6 +185,36 @@ func (l *lowerer) lowerStatement(stmt ast.Statement) *Node {
 			path = s.Path.Value
 		}
 		return l.node(ImportKind, s, "", "", path)
+	case *ast.ExternBlockStatement:
+		n := l.node(ExternKind, s, "", "", "")
+		n.Meta["abi"] = s.ABI
+		n.Meta["link"] = s.Link
+		for _, function := range s.Functions {
+			if function == nil || function.Name == nil {
+				continue
+			}
+			child := l.node(ExternFuncKind, function.Name, function.Name.Value, "", "")
+			child.Meta["c_name"] = function.CName
+			child.Meta["return"] = externTypeText(function.ReturnType)
+			child.Meta["abi"] = s.ABI
+			child.Meta["link"] = s.Link
+			child.Meta["param_count"] = strconv.Itoa(len(function.Parameters))
+			for index, parameter := range function.Parameters {
+				child.Meta[fmt.Sprintf("param.%d.name", index)] = parameter.Name.Value
+				child.Meta[fmt.Sprintf("param.%d.type", index)] = externTypeText(parameter.Type)
+			}
+			if l.analysis != nil {
+				if t, ok := l.analysis.Global(function.Name.Value); ok {
+					child.Type = t
+				}
+			}
+			n.Children = append(n.Children, child)
+		}
+		return n
+	case *ast.UnsafeStatement:
+		n := l.node(UnsafeKind, s, "", "", "")
+		n.Children = append(n.Children, l.lowerBlock(s.Body))
+		return n
 	case *ast.TypeAliasStatement:
 		target := ""
 		if s.Target != nil {
@@ -379,6 +412,13 @@ func (l *lowerer) lowerExpression(expr ast.Expression) *Node {
 	}
 }
 
+func externTypeText(value *ast.ExternType) string {
+	if value == nil {
+		return "void"
+	}
+	return value.String()
+}
+
 func typeField(value *types.Type, name string) *types.Type {
 	if value != nil && value.Fields != nil {
 		if item, ok := value.Fields[name]; ok {
@@ -409,6 +449,10 @@ func positionOf(node ast.Node) token.Position {
 	case *ast.ImportStatement:
 		return n.Token.Pos
 	case *ast.TypeAliasStatement:
+		return n.Token.Pos
+	case *ast.ExternBlockStatement:
+		return n.Token.Pos
+	case *ast.UnsafeStatement:
 		return n.Token.Pos
 	case *ast.StructStatement:
 		return n.Token.Pos
@@ -498,6 +542,16 @@ func dumpNode(out *strings.Builder, node *Node, depth int) {
 	}
 	if node.Type != nil {
 		out.WriteString(" : " + node.Type.String())
+	}
+	if len(node.Meta) > 0 {
+		keys := make([]string, 0, len(node.Meta))
+		for key := range node.Meta {
+			keys = append(keys, key)
+		}
+		sort.Strings(keys)
+		for _, key := range keys {
+			out.WriteString(" " + key + "=" + strconv.Quote(node.Meta[key]))
+		}
 	}
 	if node.Position.IsValid() {
 		out.WriteString(fmt.Sprintf(" @%d:%d", node.Position.Line, node.Position.Col))

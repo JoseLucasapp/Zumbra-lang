@@ -113,6 +113,17 @@ func Eval(node ast.Node, env *object.Environment) object.Object {
 	case *ast.TypeAliasStatement:
 		return NULL
 
+	case *ast.ExternBlockStatement:
+		for _, function := range node.Functions {
+			if function != nil && function.Name != nil {
+				env.DefineConst(function.Name.Value, &object.ExternalFunction{Name: function.Name.Value})
+			}
+		}
+		return NULL
+
+	case *ast.UnsafeStatement:
+		return Eval(node.Body, env)
+
 	case *ast.VarStatement:
 
 		if _, ok := env.Get(node.Name.Value); ok {
@@ -700,6 +711,9 @@ func applyFunction(fct object.Object, args []object.Object) object.Object {
 
 	case *object.StructDefinition:
 		return instantiateStruct(fct, args)
+
+	case *object.ExternalFunction:
+		return newError("external function %s requires `zumbra build` and cannot run in the evaluator", fct.Name)
 
 	case *object.BoundMethod:
 		boundArgs := make([]object.Object, 0, len(args)+1)

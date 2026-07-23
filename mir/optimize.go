@@ -401,7 +401,7 @@ func hasSideEffects(op Op) bool {
 	case OpDeclare, OpStore, OpSetIndex, OpSetField, OpCall,
 		OpIf, OpMatch, OpCase, OpWhile, OpFor, OpForEach, OpForRange, OpForever,
 		OpReturn, OpBreak, OpContinue, OpAwait, OpTry, OpHandler,
-		OpImport, OpTypeAlias, OpStruct, OpStructField, OpEnum, OpUnknown:
+		OpImport, OpExtern, OpUnsafe, OpTypeAlias, OpStruct, OpStructField, OpEnum, OpUnknown:
 		return true
 	default:
 		return false

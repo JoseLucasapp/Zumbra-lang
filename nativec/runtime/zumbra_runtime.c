@@ -19,6 +19,8 @@ typedef struct ZAllocation {
 
 static ZAllocation *z_allocations = NULL;
 
+uint32_t z_abi_version(void) { return ZUMBRA_NATIVE_ABI_VERSION; }
+
 void z_runtime_init(void) { z_allocations = NULL; }
 
 void z_runtime_shutdown(void) {
@@ -87,6 +89,7 @@ ZValue z_signed(int64_t value, ZKind kind) { ZValue result = z_value(ZV_INT, kin
 ZValue z_float(double value) { ZValue result = z_value(ZV_FLOAT, ZK_FLOAT); result.as.f = value; return result; }
 ZValue z_bool(bool value) { ZValue result = z_value(ZV_BOOL, ZK_BOOL); result.as.b = value; return result; }
 ZValue z_string(const char *value) { ZValue result = z_value(ZV_STRING, ZK_STRING); result.as.s = z_strdup(value); return result; }
+ZValue z_pointer(void *value) { ZValue result = z_value(ZV_POINTER, ZK_POINTER); result.as.p = value; return result; }
 ZValue z_function(int id) { ZValue result = z_value(ZV_FUNCTION, ZK_FUNCTION); result.as.id = id; return result; }
 ZValue z_builtin(const char *name) { ZValue result = z_value(ZV_BUILTIN, ZK_FUNCTION); result.as.s = name; return result; }
 ZValue z_struct_type(int id) { ZValue result = z_value(ZV_STRUCT_TYPE, ZK_STRUCT); result.as.id = id; return result; }
@@ -105,7 +108,7 @@ static bool z_is_numeric(ZValue value) {
     return value.tag == ZV_INT || value.tag == ZV_UINT || value.tag == ZV_FLOAT || value.tag == ZV_BOOL;
 }
 
-static int64_t z_as_i64(ZValue value) {
+int64_t z_as_i64(ZValue value) {
     switch (value.tag) {
     case ZV_INT: return value.as.i;
     case ZV_UINT: return (int64_t)value.as.u;
@@ -115,7 +118,7 @@ static int64_t z_as_i64(ZValue value) {
     }
 }
 
-static uint64_t z_as_u64(ZValue value) {
+uint64_t z_as_u64(ZValue value) {
     switch (value.tag) {
     case ZV_INT: return (uint64_t)value.as.i;
     case ZV_UINT: return value.as.u;
@@ -125,7 +128,7 @@ static uint64_t z_as_u64(ZValue value) {
     }
 }
 
-static double z_as_f64(ZValue value) {
+double z_as_f64(ZValue value) {
     switch (value.tag) {
     case ZV_INT: return (double)value.as.i;
     case ZV_UINT: return (double)value.as.u;
@@ -133,6 +136,19 @@ static double z_as_f64(ZValue value) {
     case ZV_BOOL: return value.as.b ? 1.0 : 0.0;
     default: z_fatal("expected numeric value"); return 0.0;
     }
+}
+
+bool z_as_bool(ZValue value) { return z_truthy(value); }
+
+const char *z_as_cstring(ZValue value) {
+    if (value.tag != ZV_STRING) z_fatal("expected string for C FFI");
+    return value.as.s;
+}
+
+void *z_as_pointer(ZValue value) {
+    if (value.tag == ZV_NULL) return NULL;
+    if (value.tag != ZV_POINTER) z_fatal("expected ptr for C FFI");
+    return value.as.p;
 }
 
 static unsigned z_kind_bits(ZKind kind) {
@@ -548,6 +564,7 @@ static void z_show_inner(ZValue value) {
     case ZV_FLOAT: fprintf(stdout, "%.15g", value.as.f); break;
     case ZV_BOOL: fputs(value.as.b ? "true" : "false", stdout); break;
     case ZV_STRING: fputs(value.as.s, stdout); break;
+    case ZV_POINTER: fprintf(stdout, "%p", value.as.p); break;
     case ZV_ENUM: {
         int type_id = value.as.id >> 16;
         int ordinal = value.as.id & 0xffff;

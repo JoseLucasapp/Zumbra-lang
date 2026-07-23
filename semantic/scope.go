@@ -13,6 +13,7 @@ const (
 	SymbolStruct   SymbolKind = "STRUCT"
 	SymbolEnum     SymbolKind = "ENUM"
 	SymbolType     SymbolKind = "TYPE"
+	SymbolExternal SymbolKind = "EXTERNAL"
 )
 
 const (

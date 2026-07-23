@@ -313,6 +313,12 @@ func (c *Compiler) Compile(node ast.Node) error {
 	case *ast.TypeAliasStatement:
 		return nil
 
+	case *ast.ExternBlockStatement:
+		return fmt.Errorf("extern C requires native compilation with `zumbra build`")
+
+	case *ast.UnsafeStatement:
+		return c.Compile(node.Body)
+
 	case *ast.VarStatement:
 		symbol := c.symbolTable.Define(node.Name.Value)
 		err := c.Compile(node.Value)

@@ -241,6 +241,20 @@ func (a *Analyzer) visitStatement(stmt ast.Statement) {
 	case *ast.TypeAliasStatement:
 		return
 
+	case *ast.ExternBlockStatement:
+		for _, function := range node.Functions {
+			if function != nil && function.Name != nil {
+				a.markDeclared(function.Name.Value)
+			}
+		}
+
+	case *ast.UnsafeStatement:
+		a.pushScope()
+		if node.Body != nil {
+			a.visitStatementList(node.Body.Statements)
+		}
+		a.popScope()
+
 	case *ast.ImportStatement:
 		if node.Path != nil {
 			a.imports = append(a.imports, node.Path.Value)

@@ -177,6 +177,17 @@ func (p *Parser) parseStatement() ast.Statement {
 		return p.parseEnumStatement()
 	case token.TYPE:
 		return p.parseTypeAliasStatement()
+	case token.PUB:
+		return p.parsePublicStatement()
+	case token.EXTERN:
+		return p.parseExternBlockStatement(false)
+	case token.UNSAFE:
+		return p.parseUnsafeStatement()
+	case token.FUNCTION:
+		if p.peekTokenIs(token.IDENT) {
+			return p.parseNamedFunctionStatement(false)
+		}
+		return p.parseExpressionStatement()
 	case token.IDENT:
 		if p.peekTokenIs(token.ASSIGN) {
 			return p.parseAssignStatement()
@@ -185,6 +196,228 @@ func (p *Parser) parseStatement() ast.Statement {
 	default:
 		return p.parseExpressionStatement()
 	}
+}
+
+func (p *Parser) parsePublicStatement() ast.Statement {
+	pubToken := p.curToken
+	p.nextToken()
+	switch p.curToken.Type {
+	case token.VAR:
+		stmt := p.parseVarStatement()
+		if stmt != nil {
+			stmt.Public = true
+		}
+		return stmt
+	case token.CONST:
+		stmt := p.parseConstStatement()
+		if stmt != nil {
+			stmt.Public = true
+		}
+		return stmt
+	case token.STRUCT:
+		stmt := p.parseStructStatement()
+		if stmt != nil {
+			stmt.Public = true
+		}
+		return stmt
+	case token.ENUM:
+		stmt := p.parseEnumStatement()
+		if stmt != nil {
+			stmt.Public = true
+		}
+		return stmt
+	case token.TYPE:
+		stmt := p.parseTypeAliasStatement()
+		if stmt != nil {
+			stmt.Public = true
+		}
+		return stmt
+	case token.FUNCTION:
+		return p.parseNamedFunctionStatementWithToken(true, pubToken)
+	case token.EXTERN:
+		return p.parseExternBlockStatement(true)
+	default:
+		p.errors = append(p.errors, fmt.Sprintf("pub expects var, const, fct, struct, enum, type or extern, got %s", p.tokenDebugString(p.curToken)))
+		return nil
+	}
+}
+
+func (p *Parser) parseNamedFunctionStatement(public bool) *ast.VarStatement {
+	return p.parseNamedFunctionStatementWithToken(public, p.curToken)
+}
+
+func (p *Parser) parseNamedFunctionStatementWithToken(public bool, declarationToken token.Token) *ast.VarStatement {
+	functionToken := p.curToken
+	if !p.expectPeek(token.IDENT) {
+		return nil
+	}
+	name := &ast.Identifier{Token: p.curToken, Value: p.curToken.Literal}
+	if !p.expectPeek(token.LPAREN) {
+		return nil
+	}
+	params := p.parseFunctionParameters()
+	if params == nil {
+		return nil
+	}
+	if !p.expectPeek(token.LBRACE) {
+		return nil
+	}
+	body := p.parseBlockStatement()
+	fn := &ast.FunctionLiteral{Token: functionToken, Parameters: params, Body: body, Name: name.Value}
+	varToken := token.Token{Type: token.VAR, Literal: "var", Pos: declarationToken.Pos}
+	return &ast.VarStatement{Token: varToken, Public: public, Name: name, Value: fn}
+}
+
+func (p *Parser) parseUnsafeStatement() *ast.UnsafeStatement {
+	stmt := &ast.UnsafeStatement{Token: p.curToken}
+	if !p.expectPeek(token.LBRACE) {
+		return nil
+	}
+	stmt.Body = p.parseBlockStatement()
+	return stmt
+}
+
+func (p *Parser) parseExternBlockStatement(public bool) *ast.ExternBlockStatement {
+	stmt := &ast.ExternBlockStatement{Token: p.curToken, Public: public, Functions: []*ast.ExternFunction{}}
+	if !p.expectPeek(token.STRING) {
+		return nil
+	}
+	stmt.ABI = p.curToken.Literal
+	if stmt.ABI != "C" {
+		p.errors = append(p.errors, fmt.Sprintf("unsupported extern ABI %q; only C is available", stmt.ABI))
+	}
+	if p.peekTokenIs(token.FROM) {
+		p.nextToken()
+		if !p.expectPeek(token.STRING) {
+			return nil
+		}
+		stmt.Link = p.curToken.Literal
+	}
+	if !p.expectPeek(token.LBRACE) {
+		return nil
+	}
+	p.nextToken()
+	for !p.curTokenIs(token.RBRACE) && !p.curTokenIs(token.EOF) {
+		if p.curTokenIs(token.SEMICOLON) || p.curTokenIs(token.COMMA) {
+			p.nextToken()
+			continue
+		}
+		if !p.curTokenIs(token.FUNCTION) {
+			p.errors = append(p.errors, fmt.Sprintf("extern block expects fct declarations, got %s", p.tokenDebugString(p.curToken)))
+			return nil
+		}
+		fn := p.parseExternFunction()
+		if fn == nil {
+			return nil
+		}
+		stmt.Functions = append(stmt.Functions, fn)
+		if p.peekTokenIs(token.SEMICOLON) {
+			p.nextToken()
+		}
+		p.nextToken()
+	}
+	return stmt
+}
+
+func (p *Parser) parseExternFunction() *ast.ExternFunction {
+	fn := &ast.ExternFunction{Token: p.curToken}
+	if !p.expectPeek(token.IDENT) {
+		return nil
+	}
+	fn.Name = &ast.Identifier{Token: p.curToken, Value: p.curToken.Literal}
+	fn.CName = fn.Name.Value
+	if !p.expectPeek(token.LPAREN) {
+		return nil
+	}
+	fn.Parameters = []*ast.ExternParam{}
+	if p.peekTokenIs(token.RPAREN) {
+		p.nextToken()
+	} else {
+		p.nextToken()
+		for {
+			if !p.curTokenIs(token.IDENT) {
+				p.errors = append(p.errors, fmt.Sprintf("extern parameter name must be an identifier, got %s", p.tokenDebugString(p.curToken)))
+				return nil
+			}
+			param := &ast.ExternParam{Token: p.curToken, Name: &ast.Identifier{Token: p.curToken, Value: p.curToken.Literal}}
+			if !p.expectPeek(token.COLON) {
+				return nil
+			}
+			p.nextToken()
+			param.Type = p.parseExternType()
+			if param.Type == nil {
+				return nil
+			}
+			fn.Parameters = append(fn.Parameters, param)
+			if p.peekTokenIs(token.COMMA) {
+				p.nextToken()
+				p.nextToken()
+				continue
+			}
+			if !p.expectPeek(token.RPAREN) {
+				return nil
+			}
+			break
+		}
+	}
+	if !p.expectPeek(token.ARROW) {
+		return nil
+	}
+	p.nextToken()
+	fn.ReturnType = p.parseExternType()
+	if fn.ReturnType == nil {
+		return nil
+	}
+	if p.peekTokenIs(token.AS) {
+		p.nextToken()
+		if !p.expectPeek(token.STRING) {
+			return nil
+		}
+		fn.CName = p.curToken.Literal
+	}
+	return fn
+}
+
+func (p *Parser) parseExternType() *ast.ExternType {
+	if !p.curTokenIs(token.IDENT) {
+		p.errors = append(p.errors, fmt.Sprintf("expected extern type, got %s", p.tokenDebugString(p.curToken)))
+		return nil
+	}
+	t := &ast.ExternType{Name: p.curToken.Literal}
+	if t.Name != "callback" {
+		return t
+	}
+	if !p.expectPeek(token.LPAREN) {
+		return nil
+	}
+	t.CallbackParams = []*ast.ExternType{}
+	if p.peekTokenIs(token.RPAREN) {
+		p.nextToken()
+	} else {
+		p.nextToken()
+		for {
+			param := p.parseExternType()
+			if param == nil {
+				return nil
+			}
+			t.CallbackParams = append(t.CallbackParams, param)
+			if p.peekTokenIs(token.COMMA) {
+				p.nextToken()
+				p.nextToken()
+				continue
+			}
+			if !p.expectPeek(token.RPAREN) {
+				return nil
+			}
+			break
+		}
+	}
+	if !p.expectPeek(token.ARROW) {
+		return nil
+	}
+	p.nextToken()
+	t.CallbackReturn = p.parseExternType()
+	return t
 }
 
 func (p *Parser) parseConstStatement() *ast.ConstStatement {
@@ -216,7 +449,10 @@ func (p *Parser) parseTypeAliasStatement() *ast.TypeAliasStatement {
 	if !p.expectPeek(token.IDENT) {
 		return nil
 	}
-	stmt.Target = &ast.Identifier{Token: p.curToken, Value: p.curToken.Literal}
+	targetToken := p.curToken
+	targetName := p.parseQualifiedTypeName()
+	stmt.Target = &ast.Identifier{Token: targetToken, Value: targetName}
+	stmt.Target.Token.Literal = targetName
 	if p.peekTokenIs(token.SEMICOLON) {
 		p.nextToken()
 	}
@@ -255,7 +491,7 @@ func (p *Parser) parseStructStatement() *ast.StructStatement {
 				if !p.expectPeek(token.IDENT) {
 					return nil
 				}
-				field.TypeName = p.curToken.Literal
+				field.TypeName = p.parseQualifiedTypeName()
 			}
 			stmt.Fields = append(stmt.Fields, field)
 			if p.peekTokenIs(token.SEMICOLON) || p.peekTokenIs(token.COMMA) {
@@ -266,6 +502,18 @@ func (p *Parser) parseStructStatement() *ast.StructStatement {
 	}
 	stmt.RBraceToken = p.curToken
 	return stmt
+}
+
+func (p *Parser) parseQualifiedTypeName() string {
+	name := p.curToken.Literal
+	if p.peekTokenIs(token.DOT) {
+		p.nextToken()
+		if !p.expectPeek(token.IDENT) {
+			return name
+		}
+		name += "." + p.curToken.Literal
+	}
+	return name
 }
 
 func (p *Parser) parseStructMethod() *ast.StructMethod {
@@ -375,6 +623,14 @@ func (p *Parser) parseImportStatement() *ast.ImportStatement {
 	stmt.Path = &ast.StringLiteral{
 		Token: p.curToken,
 		Value: p.curToken.Literal,
+	}
+
+	if p.peekTokenIs(token.AS) {
+		p.nextToken()
+		if !p.expectPeek(token.IDENT) {
+			return nil
+		}
+		stmt.Alias = &ast.Identifier{Token: p.curToken, Value: p.curToken.Literal}
 	}
 
 	if p.peekTokenIs(token.SEMICOLON) {

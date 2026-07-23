@@ -78,3 +78,29 @@ O principal pilar do Zumbra é ser simples. A linguagem pode se tornar mais pote
 
 16. **Performance nativa deve ser medida por camada**
     Tempo de pipeline, geração C, compilação C, inicialização e execução devem ser registrados separadamente.
+
+## Regras de módulos e FFI a partir do Z8
+
+17. **Privado por padrão**
+    Um arquivo não deve expor acidentalmente sua implementação. Somente declarações `pub` atravessam um import com alias.
+
+18. **Imports não podem depender do diretório atual do terminal**
+    Caminhos de módulos e arquivos declarados em `extern from` são resolvidos a partir do arquivo que os declara.
+
+19. **Fronteiras nativas são tipadas e explícitas**
+    Toda assinatura C deve declarar tipos compatíveis. Chamadas externas exigem `unsafe`, mas continuam passando por semantic resolver e type checker.
+
+20. **O backend nunca deve adivinhar uma ABI**
+    Tipos, declarações ou headers não suportados devem produzir diagnóstico. O gerador de bindings não pode inferir silenciosamente layouts de structs, unions, variádicos ou callbacks complexos.
+
+21. **Ponteiros são opacos antes de serem poderosos**
+    Handles C podem atravessar a FFI como `ptr`. Dereference, aritmética e memória manual só entram quando existirem contratos claros de segurança e vida útil.
+
+22. **Callbacks têm contrato de vida útil**
+    O suporte inicial é apenas síncrono, não retido e não reentrante. Uma biblioteca que guarda ou chama o callback em outra thread precisa de uma API futura própria.
+
+23. **Dependências nativas são observáveis**
+    O comando de grafo deve mostrar módulos, exportações e links. Builds não podem esconder quais arquivos ou bibliotecas externas são incorporados.
+
+24. **Módulos são carregados por alcance**
+    Somente arquivos alcançáveis a partir da entrada entram no pipeline. Otimização por símbolo pode ser adicionada depois sem mudar a sintaxe.

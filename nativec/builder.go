@@ -12,11 +12,15 @@ import (
 )
 
 type BuildOptions struct {
-	Release   bool
-	EmitCOnly bool
-	Compiler  string
-	Output    string
-	BuildDir  string
+	Release     bool
+	EmitCOnly   bool
+	Compiler    string
+	Output      string
+	BuildDir    string
+	Links       []string
+	IncludeDirs []string
+	LibraryDirs []string
+	Libraries   []string
 }
 
 type BuildResult struct {
@@ -27,6 +31,7 @@ type BuildResult struct {
 	RuntimeSource string
 	RuntimeHeader string
 	Command       []string
+	Links         []string
 }
 
 func DetectCompiler(preferred string) (string, error) {
@@ -98,12 +103,31 @@ func Build(module *mir.Module, options BuildOptions) (*BuildResult, []Diagnostic
 		}
 	}
 	args := []string{"-std=c11", "-Wall", "-Wextra", "-Werror", "-Wno-unused-variable", "-Wno-unused-parameter", "-I", buildDir}
+	for _, includeDir := range options.IncludeDirs {
+		args = append(args, "-I", includeDir)
+	}
+	for _, libraryDir := range options.LibraryDirs {
+		args = append(args, "-L", libraryDir)
+	}
 	if options.Release {
 		args = append(args, "-O3", "-DNDEBUG")
 	} else {
 		args = append(args, "-O0", "-g3")
 	}
-	args = append(args, programPath, runtimePath, "-lm", "-o", output)
+	links := append([]string{}, NativeLinks(module)...)
+	links = append(links, options.Links...)
+	links = uniqueStrings(links)
+	for _, link := range links {
+		if _, statErr := os.Stat(link); statErr != nil {
+			return nil, nil, fmt.Errorf("native link input %s: %w", link, statErr)
+		}
+	}
+	args = append(args, programPath, runtimePath)
+	args = append(args, links...)
+	for _, library := range options.Libraries {
+		args = append(args, "-l"+library)
+	}
+	args = append(args, "-lm", "-o", output)
 	command := exec.Command(compiler, args...)
 	command.Stdout = os.Stdout
 	command.Stderr = os.Stderr
@@ -113,6 +137,7 @@ func Build(module *mir.Module, options BuildOptions) (*BuildResult, []Diagnostic
 	result.Compiler = compiler
 	result.Output = output
 	result.Command = append([]string{compiler}, args...)
+	result.Links = links
 	return result, nil, nil
 }
 
@@ -125,4 +150,32 @@ func executableName(filename string) string {
 		name += ".exe"
 	}
 	return name
+}
+
+// NativeLinks returns source, object or library files declared by extern blocks.
+func NativeLinks(module *mir.Module) []string {
+	if module == nil {
+		return nil
+	}
+	result := []string{}
+	for _, declaration := range module.Declarations {
+		if declaration != nil && declaration.Op == mir.OpExtern && declaration.Meta["link"] != "" {
+			result = append(result, declaration.Meta["link"])
+		}
+	}
+	return uniqueStrings(result)
+}
+
+func uniqueStrings(values []string) []string {
+	seen := map[string]bool{}
+	result := make([]string, 0, len(values))
+	for _, value := range values {
+		value = strings.TrimSpace(value)
+		if value == "" || seen[value] {
+			continue
+		}
+		seen[value] = true
+		result = append(result, value)
+	}
+	return result
 }

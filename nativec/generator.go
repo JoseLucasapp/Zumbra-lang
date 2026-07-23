@@ -84,6 +84,8 @@ type generator struct {
 	enumByName     map[string]int
 	functions      map[*mir.Function]int
 	functionByName map[string]int
+	externs        []ffiInfo
+	externByName   map[string]int
 	globals        map[string]string
 
 	scopes []map[string]string
@@ -100,6 +102,7 @@ func Generate(module *mir.Module) (*Sources, []Diagnostic) {
 		enumByName:     map[string]int{},
 		functions:      map[*mir.Function]int{},
 		functionByName: map[string]int{},
+		externByName:   map[string]int{},
 		globals:        map[string]string{},
 	}
 	g.collectMetadata()
@@ -125,6 +128,14 @@ func Generate(module *mir.Module) (*Sources, []Diagnostic) {
 func (g *generator) collectMetadata() {
 	for _, declaration := range g.module.Declarations {
 		switch declaration.Op {
+		case mir.OpExtern:
+			info, err := externFromInstruction(len(g.externs), declaration)
+			if err != nil {
+				g.errs = append(g.errs, Diagnostic{Instruction: declaration.ID, Message: err.Error()})
+				continue
+			}
+			g.externByName[info.Name] = info.ID
+			g.externs = append(g.externs, info)
 		case mir.OpStruct:
 			info := structInfo{ID: len(g.structs), Name: declaration.Name, Methods: map[string]int{}}
 			for _, region := range declaration.Regions {
@@ -171,8 +182,13 @@ func (g *generator) collectMetadata() {
 
 func (g *generator) validateModule() {
 	for _, declaration := range g.module.Declarations {
-		if declaration.Op == mir.OpImport {
-			g.errs = append(g.errs, Diagnostic{Instruction: declaration.ID, Message: "imports require the Z8 module linker and are not supported by the Z7 native backend"})
+		switch declaration.Op {
+		case mir.OpImport:
+			g.errs = append(g.errs, Diagnostic{Instruction: declaration.ID, Message: "unresolved import reached the Z8 native backend"})
+		case mir.OpExtern:
+			if declaration.Meta["abi"] != "C" {
+				g.errs = append(g.errs, Diagnostic{Instruction: declaration.ID, Message: "only extern C is supported"})
+			}
 		}
 	}
 	for _, function := range g.module.Functions {
@@ -208,7 +224,9 @@ func (g *generator) emitProgram() {
 	g.line("#include \"zumbra_runtime.h\"")
 	g.line("#include <stdio.h>")
 	g.line("#include <string.h>")
+	g.line("_Static_assert(ZUMBRA_NATIVE_ABI_VERSION == 1u, \"unsupported Zumbra native ABI\");")
 	g.line("")
+	g.emitFFIDeclarations()
 	for _, name := range sortedKeys(g.globals) {
 		g.line("static ZValue %s;", g.globals[name])
 	}
@@ -422,6 +440,9 @@ func (g *generator) emitDispatch() {
 	for index := range g.module.Functions {
 		g.line("case %d: return zf_%d(args, argc);", index, index)
 	}
+	for index := range g.externs {
+		g.line("case %d: return zffi_%d(args, argc);", len(g.module.Functions)+index, index)
+	}
 	g.line("default: z_fatal(\"unknown function id %%d\", function_id); return z_null();")
 	g.indent--
 	g.line("}")
@@ -590,7 +611,11 @@ func (g *generator) emitInstruction(instruction *mir.Instruction, rootEntry bool
 		if len(instruction.Args) > 0 {
 			g.line("(void)%s;", argName(instruction.Args, 0))
 		}
-	case mir.OpTypeAlias, mir.OpStruct, mir.OpStructField, mir.OpEnum, mir.OpImport:
+	case mir.OpUnsafe:
+		if len(instruction.Regions) > 0 {
+			g.emitRegion(instruction.Regions[0], false, "")
+		}
+	case mir.OpTypeAlias, mir.OpStruct, mir.OpStructField, mir.OpEnum, mir.OpImport, mir.OpExtern:
 		// Declarations are emitted through metadata tables.
 	default:
 		g.errs = append(g.errs, Diagnostic{Instruction: instruction.ID, Message: fmt.Sprintf("native code emission for %s is not implemented", instruction.Op)})
@@ -745,6 +770,9 @@ func (g *generator) resolveLoad(name string) (string, bool) {
 	if id, ok := g.functionByName[name]; ok {
 		return fmt.Sprintf("z_function(%d)", id), true
 	}
+	if id, ok := g.externByName[name]; ok {
+		return fmt.Sprintf("z_function(%d)", len(g.module.Functions)+id), true
+	}
 	if supportedBuiltins[name] {
 		return fmt.Sprintf("z_builtin(%s)", cString(name)), true
 	}
@@ -859,6 +887,8 @@ func cKind(value *types.Type) string {
 		return "ZK_ENUM"
 	case types.Func:
 		return "ZK_FUNCTION"
+	case types.Pointer:
+		return "ZK_POINTER"
 	default:
 		return "ZK_UNKNOWN"
 	}

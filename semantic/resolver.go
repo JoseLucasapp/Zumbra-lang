@@ -13,11 +13,13 @@ type functionContext struct {
 }
 
 type Resolver struct {
-	global    *Scope
-	scope     *Scope
-	errors    []error
-	result    *Result
-	functions []*functionContext
+	global      *Scope
+	scope       *Scope
+	errors      []error
+	result      *Result
+	functions   []*functionContext
+	externals   map[string]bool
+	unsafeDepth int
 }
 
 func NewResolver() *Resolver {
@@ -29,6 +31,7 @@ func NewResolver() *Resolver {
 		errors:    []error{},
 		result:    NewResult(),
 		functions: []*functionContext{},
+		externals: map[string]bool{},
 	}
 
 	r.installBuiltins()
@@ -46,6 +49,7 @@ func NewResolverWithGlobalScope(global *Scope) *Resolver {
 		errors:    []error{},
 		result:    NewResult(),
 		functions: []*functionContext{},
+		externals: map[string]bool{},
 	}
 
 	if len(global.Symbols) == 0 {
@@ -68,6 +72,8 @@ func (r *Resolver) ResetForNextRun() {
 	r.errors = []error{}
 	r.result = NewResult()
 	r.functions = []*functionContext{}
+	r.externals = map[string]bool{}
+	r.unsafeDepth = 0
 }
 
 func (r *Resolver) Resolve(program *ast.Program) []error {
@@ -234,6 +240,34 @@ func (r *Resolver) resolveBlockStatement(block *ast.BlockStatement, createScope 
 }
 
 func (r *Resolver) resolveStatement(stmt ast.Statement) {
+	if r.scope != r.global {
+		switch s := stmt.(type) {
+		case *ast.VarStatement:
+			if s.Public {
+				r.addError(fmt.Errorf("pub declarations are allowed only at module level"))
+			}
+		case *ast.ConstStatement:
+			if s.Public {
+				r.addError(fmt.Errorf("pub declarations are allowed only at module level"))
+			}
+		case *ast.StructStatement:
+			if s.Public {
+				r.addError(fmt.Errorf("pub declarations are allowed only at module level"))
+			}
+		case *ast.EnumStatement:
+			if s.Public {
+				r.addError(fmt.Errorf("pub declarations are allowed only at module level"))
+			}
+		case *ast.TypeAliasStatement:
+			if s.Public {
+				r.addError(fmt.Errorf("pub declarations are allowed only at module level"))
+			}
+		case *ast.ExternBlockStatement:
+			r.addError(fmt.Errorf("extern declarations are allowed only at module level"))
+		case *ast.ImportStatement:
+			r.addError(fmt.Errorf("imports are allowed only at module level"))
+		}
+	}
 	switch s := stmt.(type) {
 	case *ast.ConstStatement:
 		r.resolveConstStatement(s)
@@ -246,6 +280,14 @@ func (r *Resolver) resolveStatement(stmt ast.Statement) {
 
 	case *ast.TypeAliasStatement:
 		r.defineImmutable(s.Name, SymbolType)
+
+	case *ast.ExternBlockStatement:
+		r.resolveExternBlock(s)
+
+	case *ast.UnsafeStatement:
+		r.unsafeDepth++
+		r.resolveBlockStatement(s.Body, true)
+		r.unsafeDepth--
 
 	case *ast.VarStatement:
 		r.resolveVarStatement(s)
@@ -294,6 +336,22 @@ func (r *Resolver) resolveImportStatement(stmt *ast.ImportStatement) {
 
 	if stmt.Path != nil {
 		r.resolveExpression(stmt.Path)
+	}
+}
+
+func (r *Resolver) resolveExternBlock(stmt *ast.ExternBlockStatement) {
+	if stmt == nil {
+		return
+	}
+	for _, fn := range stmt.Functions {
+		if fn == nil || fn.Name == nil {
+			continue
+		}
+		r.externals[fn.Name.Value] = true
+		err := r.scope.Define(Symbol{Name: fn.Name.Value, Kind: SymbolExternal, Depth: r.scope.Depth, Mutable: false, OriginDepth: r.scope.Depth})
+		if err != nil {
+			r.addError(ErrDuplicateSymbolAt(fn.Name.Value, fn.Name.Token))
+		}
 	}
 }
 
@@ -390,6 +448,9 @@ func (r *Resolver) resolveExpression(exp ast.Expression) {
 		r.resolveFunctionLiteral(e)
 
 	case *ast.CallExpression:
+		if identifier, ok := e.Function.(*ast.Identifier); ok && r.externals[identifier.Value] && r.unsafeDepth == 0 {
+			r.addError(fmt.Errorf("external function %s must be called inside unsafe { ... }", identifier.Value))
+		}
 		if e.Function != nil {
 			r.resolveExpression(e.Function)
 		}
@@ -520,7 +581,9 @@ func (r *Resolver) resolveFunctionLiteralWithName(fn *ast.FunctionLiteral, decla
 			Mutable:     false,
 			IsFree:      false,
 			OriginDepth: r.scope.Depth,
-			Used:        false,
+			// This is the implicit self-name used only for recursion. The
+			// user-facing declaration is tracked in the enclosing scope.
+			Used: true,
 		})
 		if err != nil {
 			r.addError(ErrDuplicateSymbol(fn.Name))

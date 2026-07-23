@@ -1,6 +1,8 @@
 #ifndef ZUMBRA_RUNTIME_H
 #define ZUMBRA_RUNTIME_H
 
+#define ZUMBRA_NATIVE_ABI_VERSION 1u
+
 #include <stdbool.h>
 #include <stddef.h>
 #include <stdint.h>
@@ -27,7 +29,8 @@ typedef enum {
     ZK_DICT,
     ZK_STRUCT,
     ZK_ENUM,
-    ZK_FUNCTION
+    ZK_FUNCTION,
+    ZK_POINTER
 } ZKind;
 
 typedef enum {
@@ -47,7 +50,8 @@ typedef enum {
     ZV_BOUND_METHOD,
     ZV_BUILTIN,
     ZV_STRUCT_TYPE,
-    ZV_ENUM_TYPE
+    ZV_ENUM_TYPE,
+    ZV_POINTER
 } ZTag;
 
 typedef struct ZValue ZValue;
@@ -73,6 +77,7 @@ struct ZValue {
         ZBuffer *buffer;
         ZStruct *structure;
         ZBoundMethod *method;
+        void *p;
         int id;
     } as;
 };
@@ -113,6 +118,7 @@ struct ZBoundMethod {
     ZStruct *receiver;
 };
 
+uint32_t z_abi_version(void);
 void z_runtime_init(void);
 void z_runtime_shutdown(void);
 void z_fatal(const char *format, ...);
@@ -126,6 +132,7 @@ ZValue z_signed(int64_t value, ZKind kind);
 ZValue z_float(double value);
 ZValue z_bool(bool value);
 ZValue z_string(const char *value);
+ZValue z_pointer(void *value);
 ZValue z_function(int id);
 ZValue z_builtin(const char *name);
 ZValue z_struct_type(int id);
@@ -138,6 +145,12 @@ bool z_equal(ZValue left, ZValue right);
 ZValue z_unary(const char *op, ZValue value, ZKind target);
 ZValue z_binary(const char *op, ZValue left, ZValue right, ZKind target);
 ZValue z_convert(ZValue value, ZKind target);
+int64_t z_as_i64(ZValue value);
+uint64_t z_as_u64(ZValue value);
+double z_as_f64(ZValue value);
+bool z_as_bool(ZValue value);
+const char *z_as_cstring(ZValue value);
+void *z_as_pointer(ZValue value);
 
 ZValue z_array_from(const ZValue *items, size_t count);
 ZValue z_pair(ZValue key, ZValue value);

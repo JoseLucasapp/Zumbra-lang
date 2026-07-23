@@ -131,7 +131,13 @@ func (v *ArityValidator) visitStatement(stmt ast.Statement) {
 			v.visitExpression(method.Function)
 		}
 
-	case *ast.EnumStatement, *ast.TypeAliasStatement, *ast.ImportStatement:
+	case *ast.UnsafeStatement:
+		if node.Body != nil {
+			v.pushScope()
+			v.visitStatementList(node.Body.Statements)
+			v.popScope()
+		}
+	case *ast.ExternBlockStatement, *ast.EnumStatement, *ast.TypeAliasStatement, *ast.ImportStatement:
 		return
 	}
 }

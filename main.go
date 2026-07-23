@@ -5,9 +5,12 @@ import (
 	"os"
 	"os/user"
 	"path/filepath"
+	"sort"
 	"strings"
 
+	"zumbra/cbinding"
 	"zumbra/compiler"
+	"zumbra/modules"
 	"zumbra/nativec"
 	"zumbra/object"
 	"zumbra/object/builtins"
@@ -16,7 +19,7 @@ import (
 	"zumbra/vm"
 )
 
-const version = "0.1.7"
+const version = "0.1.8"
 
 func main() {
 	currentUser, err := user.Current()
@@ -69,6 +72,27 @@ func main() {
 			checkFile(args[1])
 			return
 
+		case "modules":
+			if len(args) < 2 {
+				printUsage()
+				os.Exit(1)
+			}
+			dumpModules(args[1])
+			return
+
+		case "bind-c":
+			header, output, options, err := parseBindCArguments(args[1:])
+			if err != nil {
+				fmt.Printf("Binding arguments error: %s\n", err)
+				printUsage()
+				os.Exit(1)
+			}
+			if err := generateCBinding(header, output, options); err != nil {
+				fmt.Printf("C binding error: %s\n", err)
+				os.Exit(1)
+			}
+			return
+
 		case "version", "--version", "-v":
 			fmt.Println(version)
 			return
@@ -93,9 +117,11 @@ func printUsage() {
 	fmt.Println("Usage:")
 	fmt.Println("  zumbra <file.zum>")
 	fmt.Println("  zumbra run <file.zum>")
-	fmt.Println("  zumbra build [--release] [--emit-c] [--compiler <name>] [-o <path>] <file.zum>")
+	fmt.Println("  zumbra build [--release] [--emit-c] [--compiler <name>] [--link <file>] [--include <dir>] [--library-dir <dir>] [-l <name>] [-o <path>] <file.zum>")
 	fmt.Println("  zumbra check <file.zum>")
+	fmt.Println("  zumbra modules <file.zum>")
 	fmt.Println("  zumbra ir <file.zum> [hir|mir|optimized]")
+	fmt.Println("  zumbra bind-c [--link <path>] [--pub] [-o <file.zum>] <header.h>")
 	fmt.Println("  zumbra version")
 }
 
@@ -172,6 +198,120 @@ func dumpIR(filename, mode string) {
 	}
 }
 
+func dumpModules(filename string) {
+	result, diagnostics := pipeline.BuildFile(filename, pipeline.Options{Optimize: false})
+	if len(diagnostics) > 0 {
+		printPipelineDiagnostics(filename, diagnostics)
+		return
+	}
+	if result == nil || result.Modules == nil {
+		fmt.Printf("No module graph for %s\n", filename)
+		return
+	}
+	base, _ := filepath.Abs(".")
+	fmt.Printf("module graph %s\n", displayPath(result.Modules.Entry, base))
+	for _, unit := range result.Modules.Units {
+		kind := "module"
+		if unit.Entry {
+			kind = "entry"
+		}
+		fmt.Printf("  %s %s\n", kind, displayPath(unit.Path, base))
+		imports := append([]modules.Import(nil), unit.Imports...)
+		sort.Slice(imports, func(i, j int) bool { return imports[i].Path < imports[j].Path })
+		for _, imported := range imports {
+			label := imported.Alias
+			if label == "" {
+				label = "<legacy>"
+			}
+			fmt.Printf("    import %s as %s\n", displayPath(imported.Path, base), label)
+		}
+		exports := make([]string, 0, len(unit.Exports))
+		for name := range unit.Exports {
+			exports = append(exports, name)
+		}
+		sort.Strings(exports)
+		if len(exports) > 0 {
+			fmt.Printf("    exports %s\n", strings.Join(exports, ", "))
+		}
+	}
+	for _, link := range result.Modules.Links {
+		fmt.Printf("  link %s\n", displayPath(link, base))
+	}
+}
+
+func displayPath(path, base string) string {
+	if relative, err := filepath.Rel(base, path); err == nil && !strings.HasPrefix(relative, "..") {
+		return filepath.ToSlash(relative)
+	}
+	return filepath.ToSlash(path)
+}
+
+type bindCArguments struct {
+	Link   string
+	Public bool
+}
+
+func parseBindCArguments(arguments []string) (string, string, bindCArguments, error) {
+	options := bindCArguments{}
+	header := ""
+	output := ""
+	for index := 0; index < len(arguments); index++ {
+		switch argument := arguments[index]; argument {
+		case "--link":
+			index++
+			if index >= len(arguments) {
+				return "", "", options, fmt.Errorf("--link requires a source, object or library path")
+			}
+			options.Link = arguments[index]
+		case "--pub":
+			options.Public = true
+		case "-o", "--output":
+			index++
+			if index >= len(arguments) {
+				return "", "", options, fmt.Errorf("%s requires an output path", argument)
+			}
+			output = arguments[index]
+		default:
+			if strings.HasPrefix(argument, "-") {
+				return "", "", options, fmt.Errorf("unknown bind-c option %s", argument)
+			}
+			if header != "" {
+				return "", "", options, fmt.Errorf("multiple C headers are not supported in one invocation")
+			}
+			header = argument
+		}
+	}
+	if header == "" {
+		return "", "", options, fmt.Errorf("missing C header")
+	}
+	return header, output, options, nil
+}
+
+func generateCBinding(header, output string, cli bindCArguments) error {
+	result, err := cbinding.GenerateFile(header, cbinding.Options{Link: cli.Link, Public: cli.Public})
+	if err != nil {
+		return err
+	}
+	for _, diagnostic := range result.Diagnostics {
+		fmt.Printf("binding warning: %s\n", diagnostic.Error())
+	}
+	if len(result.Functions) == 0 {
+		return fmt.Errorf("no supported C functions found in %s", header)
+	}
+	if output == "" {
+		fmt.Print(result.Source)
+		return nil
+	}
+	if err := os.MkdirAll(filepath.Dir(output), 0o755); err != nil && filepath.Dir(output) != "." {
+		return fmt.Errorf("create binding output directory: %w", err)
+	}
+	if err := os.WriteFile(output, []byte(result.Source), 0o644); err != nil {
+		return fmt.Errorf("write binding: %w", err)
+	}
+	fmt.Printf("Generated Zumbra C binding: %s\n", output)
+	return nil
+}
+
 func printPipelineDiagnostics(filename string, diagnostics []pipeline.Diagnostic) {
 	fmt.Printf("Pipeline errors in %s:\n", filename)
 	for _, diagnostic := range diagnostics {
@@ -180,10 +320,14 @@ func printPipelineDiagnostics(filename string, diagnostics []pipeline.Diagnostic
 }
 
 type nativeBuildArguments struct {
-	Release   bool
-	EmitCOnly bool
-	Compiler  string
-	Output    string
+	Release     bool
+	EmitCOnly   bool
+	Compiler    string
+	Output      string
+	Links       []string
+	IncludeDirs []string
+	LibraryDirs []string
+	Libraries   []string
 }
 
 func parseBuildArguments(arguments []string) (string, nativeBuildArguments, error) {
@@ -202,6 +346,30 @@ func parseBuildArguments(arguments []string) (string, nativeBuildArguments, erro
 				return "", options, fmt.Errorf("--compiler requires clang, gcc, cc or auto")
 			}
 			options.Compiler = arguments[index]
+		case "--link":
+			index++
+			if index >= len(arguments) {
+				return "", options, fmt.Errorf("--link requires a source, object or library path")
+			}
+			options.Links = append(options.Links, arguments[index])
+		case "--include":
+			index++
+			if index >= len(arguments) {
+				return "", options, fmt.Errorf("--include requires a directory")
+			}
+			options.IncludeDirs = append(options.IncludeDirs, arguments[index])
+		case "--library-dir":
+			index++
+			if index >= len(arguments) {
+				return "", options, fmt.Errorf("--library-dir requires a directory")
+			}
+			options.LibraryDirs = append(options.LibraryDirs, arguments[index])
+		case "-l", "--library":
+			index++
+			if index >= len(arguments) {
+				return "", options, fmt.Errorf("%s requires a library name", argument)
+			}
+			options.Libraries = append(options.Libraries, arguments[index])
 		case "-o", "--output":
 			index++
 			if index >= len(arguments) {
@@ -232,11 +400,15 @@ func buildZumbra(filename string, cli nativeBuildArguments) error {
 	baseName := strings.TrimSuffix(filepath.Base(filename), filepath.Ext(filename))
 	buildDir := filepath.Join("build", "native", baseName)
 	buildResult, nativeDiagnostics, err := nativec.Build(result.MIR, nativec.BuildOptions{
-		Release:   cli.Release,
-		EmitCOnly: cli.EmitCOnly,
-		Compiler:  cli.Compiler,
-		Output:    cli.Output,
-		BuildDir:  buildDir,
+		Release:     cli.Release,
+		EmitCOnly:   cli.EmitCOnly,
+		Compiler:    cli.Compiler,
+		Output:      cli.Output,
+		BuildDir:    buildDir,
+		Links:       cli.Links,
+		IncludeDirs: cli.IncludeDirs,
+		LibraryDirs: cli.LibraryDirs,
+		Libraries:   cli.Libraries,
 	})
 	if err != nil {
 		return err

@@ -145,3 +145,23 @@ go run ./benchmark -engine native -release=true
 ```
 
 Os números devem ser comparados na mesma máquina e com o mesmo código. Tempo de build e tempo de execução são métricas diferentes.
+
+## Linking de módulos nativos no Z8
+
+Arquivos declarados por um bloco `extern "C" from "..."` entram automaticamente no comando do compilador:
+
+```zumbra
+extern "C" from "../native/math.c" {
+    fct add(left: i32, right: i32) -> i32;
+}
+```
+
+Dependências adicionais podem ser informadas no CLI:
+
+```bash
+zumbra build --link native/math.o app.zum
+zumbra build --link native/libmath.a app.zum
+zumbra build --include native/include --library-dir native/lib -l math app.zum
+```
+
+Use `zumbra modules app.zum` para verificar os links descobertos pelo grafo. A sintaxe, os tipos C e as regras de `unsafe` estão documentados em [`modulos-abi-e-ffi.md`](./modulos-abi-e-ffi.md).

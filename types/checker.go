@@ -58,13 +58,15 @@ func (s *scope) resolve(name string) (*Type, bool) {
 }
 
 type Checker struct {
-	global    *scope
-	scope     *scope
-	errors    []error
-	aliases   map[string]*Type
-	structs   map[string]*Type
-	enums     map[string]*Type
-	nodeTypes map[ast.Node]*Type
+	global      *scope
+	scope       *scope
+	errors      []error
+	aliases     map[string]*Type
+	structs     map[string]*Type
+	enums       map[string]*Type
+	externals   map[string]*Type
+	unsafeDepth int
+	nodeTypes   map[ast.Node]*Type
 }
 
 func NewChecker() *Checker {
@@ -76,6 +78,7 @@ func NewChecker() *Checker {
 		aliases:   map[string]*Type{},
 		structs:   map[string]*Type{},
 		enums:     map[string]*Type{},
+		externals: map[string]*Type{},
 		nodeTypes: map[ast.Node]*Type{},
 	}
 	c.installBuiltins()
@@ -117,6 +120,8 @@ func (c *Checker) ResetForNextRun() {
 	c.aliases = map[string]*Type{}
 	c.structs = map[string]*Type{}
 	c.enums = map[string]*Type{}
+	c.externals = map[string]*Type{}
+	c.unsafeDepth = 0
 	c.nodeTypes = map[ast.Node]*Type{}
 }
 
@@ -246,6 +251,20 @@ func (c *Checker) checkStatement(stmt ast.Statement) {
 
 	case *ast.EnumStatement:
 		c.checkEnumStatement(s)
+
+	case *ast.ExternBlockStatement:
+		c.checkExternBlock(s)
+
+	case *ast.UnsafeStatement:
+		c.unsafeDepth++
+		if s.Body != nil {
+			c.pushScope()
+			for _, inner := range s.Body.Statements {
+				c.checkStatement(inner)
+			}
+			c.popScope()
+		}
+		c.unsafeDepth--
 
 	case *ast.VarStatement:
 		var t *Type = Simple(Unknown)
@@ -1195,8 +1214,8 @@ func (c *Checker) inferExpressionImpl(exp ast.Expression) *Type {
 					if paramType.Kind == Unknown || argType.Kind == Unknown {
 						continue
 					}
-					if !Same(paramType, argType) {
-						c.addError(fmt.Errorf("argument %d expects %s, got %s", i+1, paramType.Kind, argType.Kind))
+					if !Compatible(paramType, argType) {
+						c.addError(fmt.Errorf("argument %d expects %s, got %s", i+1, paramType.String(), argType.String()))
 					}
 				}
 			}
@@ -1369,10 +1388,64 @@ func (c *Checker) typeFromName(name string) *Type {
 		return value
 	}
 	switch Kind(name) {
-	case Int, U8, U16, U32, U64, I8, I16, I32, I64, Float, Bool, String:
+	case Int, U8, U16, U32, U64, I8, I16, I32, I64, Float, Bool, String, Pointer, Null:
 		return Simple(Kind(name))
 	default:
 		return Simple(Unknown)
+	}
+}
+
+func (c *Checker) checkExternBlock(stmt *ast.ExternBlockStatement) {
+	if stmt == nil {
+		return
+	}
+	if stmt.ABI != "C" {
+		c.addError(fmt.Errorf("unsupported extern ABI %q", stmt.ABI))
+	}
+	for _, fn := range stmt.Functions {
+		if fn == nil || fn.Name == nil {
+			continue
+		}
+		params := make([]*Type, 0, len(fn.Parameters))
+		for _, param := range fn.Parameters {
+			t := c.typeFromExtern(param.Type)
+			if t.Kind == Unknown {
+				c.addError(fmt.Errorf("extern function %s uses unsupported parameter type %s", fn.Name.Value, param.Type.String()))
+			}
+			params = append(params, t)
+		}
+		ret := c.typeFromExtern(fn.ReturnType)
+		if ret.Kind == Unknown {
+			c.addError(fmt.Errorf("extern function %s uses unsupported return type %s", fn.Name.Value, fn.ReturnType.String()))
+		}
+		functionType := FuncOf(params, ret)
+		c.externals[fn.Name.Value] = functionType
+		c.scope.defineImmutable(fn.Name.Value, functionType)
+	}
+}
+
+func (c *Checker) typeFromExtern(t *ast.ExternType) *Type {
+	if t == nil {
+		return Simple(Null)
+	}
+	if t.Name == "callback" {
+		params := make([]*Type, 0, len(t.CallbackParams))
+		for _, param := range t.CallbackParams {
+			params = append(params, c.typeFromExtern(param))
+		}
+		return FuncOf(params, c.typeFromExtern(t.CallbackReturn))
+	}
+	switch t.Name {
+	case "void":
+		return Simple(Null)
+	case "cstring", "string":
+		return Simple(String)
+	case "ptr":
+		return Simple(Pointer)
+	case "usize":
+		return Simple(U64)
+	default:
+		return c.typeFromName(t.Name)
 	}
 }
 

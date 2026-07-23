@@ -37,6 +37,7 @@ const (
 	BOUND_METHOD_OBJ      = "BOUND_METHOD"
 	ENUM_DEF_OBJ          = "ENUM_DEFINITION"
 	ENUM_VALUE_OBJ        = "ENUM_VALUE"
+	EXTERNAL_FUNCTION_OBJ = "EXTERNAL_FUNCTION"
 )
 
 type Object interface {
@@ -98,6 +99,11 @@ func (f *Function) Inspect() string {
 	out.WriteString("\n}")
 	return out.String()
 }
+
+type ExternalFunction struct{ Name string }
+
+func (f *ExternalFunction) Type() ObjectType { return EXTERNAL_FUNCTION_OBJ }
+func (f *ExternalFunction) Inspect() string  { return "extern C " + f.Name }
 
 type String struct {
 	Value string

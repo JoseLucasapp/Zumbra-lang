@@ -36,6 +36,11 @@ const (
 	MATCH    = "MATCH"
 	CASE     = "CASE"
 	TYPE     = "TYPE"
+	PUB      = "PUB"
+	AS       = "AS"
+	EXTERN   = "EXTERN"
+	FROM     = "FROM"
+	UNSAFE   = "UNSAFE"
 
 	// Operators
 	ASSIGN     = "<<"
@@ -56,6 +61,7 @@ const (
 	MINUSMINUS = "--"
 	DOT        = "."
 	DOTDOT     = ".."
+	ARROW      = "->"
 
 	// Logical
 	OR  = "or"
@@ -120,6 +126,11 @@ var keywords = map[string]TokenType{
 	"match":    MATCH,
 	"case":     CASE,
 	"type":     TYPE,
+	"pub":      PUB,
+	"as":       AS,
+	"extern":   EXTERN,
+	"from":     FROM,
+	"unsafe":   UNSAFE,
 }
 
 func LookupIdent(ident string) TokenType {

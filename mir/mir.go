@@ -49,6 +49,8 @@ const (
 	OpTry         Op = "try"
 	OpHandler     Op = "error_handler"
 	OpImport      Op = "import"
+	OpExtern      Op = "extern"
+	OpUnsafe      Op = "unsafe"
 	OpTypeAlias   Op = "type_alias"
 	OpStruct      Op = "struct"
 	OpStructField Op = "struct_field"
@@ -193,6 +195,22 @@ func (l *lowerer) lowerStatement(region *Region, node *hir.Node) {
 		l.emit(region, inst)
 	case hir.ImportKind:
 		l.module.Declarations = append(l.module.Declarations, l.newInstruction(OpImport, node))
+	case hir.ExternKind:
+		for _, child := range node.Children {
+			declaration := l.newInstruction(OpExtern, child)
+			for key, value := range node.Meta {
+				if _, exists := declaration.Meta[key]; !exists {
+					declaration.Meta[key] = value
+				}
+			}
+			l.module.Declarations = append(l.module.Declarations, declaration)
+		}
+	case hir.UnsafeKind:
+		inst := l.newInstruction(OpUnsafe, node)
+		if len(node.Children) > 0 {
+			inst.Regions = append(inst.Regions, l.lowerBlock("unsafe", node.Children[0]))
+		}
+		l.emit(region, inst)
 	case hir.TypeAliasKind:
 		l.module.Declarations = append(l.module.Declarations, l.newInstruction(OpTypeAlias, node))
 	case hir.StructKind:

@@ -21,6 +21,7 @@ type StructMethod struct {
 // StructStatement declares a compact named data shape and its methods.
 type StructStatement struct {
 	Token       token.Token
+	Public      bool
 	Name        *Identifier
 	Fields      []*StructField
 	Methods     []*StructMethod
@@ -31,6 +32,9 @@ func (ss *StructStatement) statementNode()       {}
 func (ss *StructStatement) TokenLiteral() string { return ss.Token.Literal }
 func (ss *StructStatement) String() string {
 	var out bytes.Buffer
+	if ss.Public {
+		out.WriteString("pub ")
+	}
 	out.WriteString("struct ")
 	if ss.Name != nil {
 		out.WriteString(ss.Name.String())

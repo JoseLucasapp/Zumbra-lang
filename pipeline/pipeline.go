@@ -12,6 +12,7 @@ import (
 	"zumbra/hir"
 	"zumbra/lexer"
 	"zumbra/mir"
+	"zumbra/modules"
 	"zumbra/parser"
 	"zumbra/semantic"
 	"zumbra/types"
@@ -21,6 +22,7 @@ type Stage string
 
 const (
 	StageParser   Stage = "parser"
+	StageModules  Stage = "modules"
 	StageSemantic Stage = "semantic"
 	StageTypes    Stage = "types"
 	StageHIR      Stage = "hir"
@@ -43,6 +45,7 @@ type Result struct {
 	Filename string
 	Source   string
 	Program  *ast.Program
+	Modules  *modules.Graph
 	Semantic *semantic.Result
 	Types    *types.Analysis
 	HIR      *hir.Module
@@ -64,7 +67,32 @@ func Build(filename, source string, options Options) (*Result, []Diagnostic) {
 		return result, diagnostics
 	}
 
-	semResult, semErrs := semantic.AnalyzeModule(filename, program)
+	flattened, moduleGraph, moduleDiagnostics := modules.Resolve(filename, program)
+	result.Program = flattened
+	result.Modules = moduleGraph
+	if len(moduleDiagnostics) > 0 {
+		hasModuleErrors := false
+		for _, item := range moduleDiagnostics {
+			diagnostic := Diagnostic{Stage: StageModules, Message: item.Error(), Warning: item.Warning}
+			if item.Warning {
+				result.Warnings = append(result.Warnings, diagnostic)
+			} else {
+				hasModuleErrors = true
+			}
+		}
+		if hasModuleErrors {
+			diagnostics := []Diagnostic{}
+			for _, item := range moduleDiagnostics {
+				if !item.Warning {
+					diagnostics = append(diagnostics, Diagnostic{Stage: StageModules, Message: item.Error()})
+				}
+			}
+			return result, diagnostics
+		}
+	}
+	program = flattened
+
+	semResult, semErrs := semantic.Analyze(program)
 	result.Semantic = semResult
 	if len(semErrs) > 0 {
 		return result, errorDiagnostics(StageSemantic, semErrs)
@@ -75,7 +103,7 @@ func Build(filename, source string, options Options) (*Result, []Diagnostic) {
 		}
 	}
 
-	typeInfo, typeErrs := types.AnalyzeModuleWithInfo(filename, program)
+	typeInfo, typeErrs := types.AnalyzeWithInfo(program)
 	result.Types = typeInfo
 	if len(typeErrs) > 0 {
 		return result, errorDiagnostics(StageTypes, typeErrs)

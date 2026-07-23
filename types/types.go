@@ -25,6 +25,7 @@ const (
 	Func       Kind = "function"
 	Struct     Kind = "struct"
 	Enum       Kind = "enum"
+	Pointer    Kind = "ptr"
 )
 
 type Type struct {
@@ -117,6 +118,46 @@ func Same(a, b *Type) bool {
 	}
 
 	return true
+}
+
+// Compatible accepts partially inferred types while preserving concrete ABI and
+// structured type requirements. It is used for function and callback calls.
+func Compatible(expected, actual *Type) bool {
+	if expected == nil || actual == nil {
+		return false
+	}
+	if expected.Kind == Unknown || actual.Kind == Unknown {
+		return true
+	}
+	if expected.Kind != actual.Kind {
+		return false
+	}
+	switch expected.Kind {
+	case Array, ByteArray, TypedArray, Slice:
+		if expected.Elem == nil || actual.Elem == nil {
+			return true
+		}
+		return Compatible(expected.Elem, actual.Elem)
+	case Dict:
+		return Compatible(expected.Key, actual.Key) && Compatible(expected.Value, actual.Value)
+	case Struct, Enum:
+		return expected.Name == actual.Name
+	case Func:
+		if len(expected.Params) != len(actual.Params) {
+			return false
+		}
+		for index := range expected.Params {
+			if !Compatible(expected.Params[index], actual.Params[index]) {
+				return false
+			}
+		}
+		if expected.Return == nil || actual.Return == nil {
+			return true
+		}
+		return Compatible(expected.Return, actual.Return)
+	default:
+		return true
+	}
 }
 
 func IsNumeric(t *Type) bool {

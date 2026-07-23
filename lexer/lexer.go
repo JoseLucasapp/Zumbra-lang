@@ -113,6 +113,14 @@ func (l *Lexer) NextToken() token.Token {
 				Type:    token.MINUSMINUS,
 				Literal: string(ch) + string(l.ch),
 			}
+		} else if l.peekChar() == '>' {
+			ch := l.ch
+			l.readChar()
+			tok = token.Token{
+				Pos:     pos,
+				Type:    token.ARROW,
+				Literal: string(ch) + string(l.ch),
+			}
 		} else {
 			tok = token.Token{Pos: pos, Type: token.MINUS, Literal: string(l.ch)}
 		}

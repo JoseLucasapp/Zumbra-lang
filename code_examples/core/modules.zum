@@ -1,0 +1,5 @@
+import "../modules/math.zum" as math;
+
+var point << math.Point(10, 5);
+show(math.add(math.BASE, 2));
+show(point.sum());

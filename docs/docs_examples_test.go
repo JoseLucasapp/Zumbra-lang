@@ -1,6 +1,8 @@
 package main
 
 import (
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 
@@ -75,5 +77,54 @@ show(memory[0]);
 	}
 	if !strings.Contains(string(sources.Program), "Generated from Zumbra MIR") {
 		t.Fatal("native C marker not found")
+	}
+}
+
+func TestZ8ModuleDocumentationExample(t *testing.T) {
+	dir := t.TempDir()
+	module := filepath.Join(dir, "math.zum")
+	entry := filepath.Join(dir, "app.zum")
+	if err := os.WriteFile(module, []byte(`
+        pub const BASE << 40;
+        const SECRET << 99;
+        pub fct add(left, right) { left + right; }
+    `), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(entry, []byte(`
+        import "math.zum" as math;
+        show(math.add(math.BASE, 2));
+    `), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	result, diagnostics := pipeline.BuildFile(entry, pipeline.Options{Optimize: true})
+	if len(diagnostics) != 0 {
+		t.Fatalf("module documentation failed: %s", pipeline.FormatDiagnostics(diagnostics))
+	}
+	if result.Modules == nil || len(result.Modules.Units) != 2 {
+		t.Fatalf("module graph missing: %#v", result.Modules)
+	}
+}
+
+func TestZ8FFIDocumentationExampleGeneratesC(t *testing.T) {
+	source := `
+        extern "C" {
+            fct add(left: i32, right: i32) -> i32 as "native_add";
+            fct apply(value: i32, cb: callback(i32) -> i32) -> i32;
+        }
+        var double << fct(value) { value * 2i32; };
+        unsafe { show(add(20i32, 22i32)); show(apply(21i32, double)); }
+    `
+	result, diagnostics := pipeline.Build("ffi-docs.zum", source, pipeline.Options{Optimize: true})
+	if len(diagnostics) != 0 {
+		t.Fatalf("FFI documentation pipeline failed: %s", pipeline.FormatDiagnostics(diagnostics))
+	}
+	sources, nativeDiagnostics := nativec.Generate(result.MIR)
+	if len(nativeDiagnostics) != 0 {
+		t.Fatalf("FFI documentation generation failed: %v", nativeDiagnostics)
+	}
+	generated := string(sources.Program)
+	if !strings.Contains(generated, "extern int32_t native_add") || !strings.Contains(generated, "zffi_trampoline") {
+		t.Fatalf("FFI declarations were not generated:\n%s", generated)
 	}
 }

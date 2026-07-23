@@ -2,6 +2,7 @@ package transpiler
 
 import (
 	"fmt"
+	"zumbra/mir"
 	"zumbra/pipeline"
 )
 
@@ -12,5 +13,10 @@ func ZumbraTranspilerPipeline(result *pipeline.Result) (string, error) {
 	if result == nil || result.Program == nil || result.MIR == nil {
 		return "", fmt.Errorf("transpiler received an incomplete pipeline result")
 	}
-	return ZumbraTranspiler(result.Source)
+	for _, declaration := range result.MIR.Declarations {
+		if declaration.Op == mir.OpExtern {
+			return "", fmt.Errorf("extern C is available only in the native backend")
+		}
+	}
+	return ZumbraTranspiler(result.Program.String())
 }
