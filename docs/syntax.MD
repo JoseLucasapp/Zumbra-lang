@@ -692,3 +692,91 @@ atomicAdd(counter, 1);
 ```
 
 Complete documentation: [`docs/pt-BR/concorrencia-e-tarefas.md`](./pt-BR/concorrencia-e-tarefas.md).
+
+---
+
+## Inferência contextual de chamadas — Z9.1
+
+Funções sem anotações podem receber tipos concretos a partir da primeira chamada válida:
+
+```zumbra
+fct identity(value) {
+    value;
+}
+
+var result << identity(42);
+```
+
+O tipo inferido é:
+
+```text
+fct(int) -> int
+```
+
+A inferência também atravessa `spawn`:
+
+```zumbra
+fct square(value) {
+    value * value;
+}
+
+var task << spawn square(6);
+var result << await task;
+```
+
+Tipos resultantes:
+
+```text
+square: fct(int) -> int
+task: Task<int>
+result: int
+```
+
+Channels e primitivas concorrentes são propagados para os parâmetros:
+
+```zumbra
+fct publish(output, value) {
+    send(output, value);
+    return;
+}
+
+var messages << channel(1);
+var producer << spawn publish(messages, 7);
+```
+
+Depois da chamada:
+
+```text
+publish: fct(Channel<int>, int) -> null
+messages: Channel<int>
+producer: Task<null>
+```
+
+Métodos seguem a mesma regra:
+
+```zumbra
+struct Box {
+    value: int;
+
+    fct echo(input) {
+        input;
+    }
+}
+
+var box << Box(1);
+var result << box.echo(9);
+```
+
+`echo` é inferido como `fct(int) -> int`.
+
+A especialização atual é monomórfica. Depois que uma função é concretizada, reutilizá-la com uma assinatura incompatível produz erro:
+
+```zumbra
+var identity << fct(value) { value; };
+identity(42);
+identity("zumbra"); // erro
+```
+
+A sintaxe não introduz generics explícitos. Polimorfismo real será projetado futuramente sem alterar silenciosamente o contrato monomórfico atual.
+
+Documentação completa: [`docs/pt-BR/inferencia-contextual-de-chamadas.md`](./pt-BR/inferencia-contextual-de-chamadas.md).

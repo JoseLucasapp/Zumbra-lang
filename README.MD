@@ -21,7 +21,7 @@ Designed for clarity, simplicity, and extensibility, Zumbra is the perfect playg
 
 The rebuild now follows a clear direction: systems, emulation, and game development without abandoning Zumbra's simplicity. See the Portuguese design and feature documentation in [`docs/pt-BR/`](./docs/pt-BR/).
 
-Current systems features include readable bitwise operators, fixed-width integers (`u8` through `u64`, `i8` through `i64`), mutable indexes, compact byte memory, typed integer arrays, zero-copy mutable slices, binary file I/O, endian-aware integer access, buffer copying/comparison, SHA-256 hashing, immutable constants, type aliases, structs with methods, enums, and `match`. Z6 adds a canonical typed pipeline with HIR and MIR. Z7 adds a C11 backend that consumes optimized MIR and produces standalone native executables with Clang or GCC. Z8 adds isolated modules with `pub` exports, module graph inspection, typed C FFI, opaque pointers, synchronous callbacks, native linking, and a conservative C-header binding generator. Z8.1 adds contextual callback inference, so callback parameters and returns become concrete in type analysis, HIR, MIR, and native builds without extra annotations. Z9 adds real tasks, `spawn`, `async`/`await`, inferred typed channels, timeouts, cooperative cancellation, mutexes, wait groups, semaphores, and atomics across the VM and pthread-based native runtime. See [`docs/pt-BR/modulos-abi-e-ffi.md`](./docs/pt-BR/modulos-abi-e-ffi.md), [`docs/pt-BR/inferencia-contextual-de-callbacks.md`](./docs/pt-BR/inferencia-contextual-de-callbacks.md), and [`docs/pt-BR/concorrencia-e-tarefas.md`](./docs/pt-BR/concorrencia-e-tarefas.md).
+Current systems features include readable bitwise operators, fixed-width integers (`u8` through `u64`, `i8` through `i64`), mutable indexes, compact byte memory, typed integer arrays, zero-copy mutable slices, binary file I/O, endian-aware integer access, buffer copying/comparison, SHA-256 hashing, immutable constants, type aliases, structs with methods, enums, and `match`. Z6 adds a canonical typed pipeline with HIR and MIR. Z7 adds a C11 backend that consumes optimized MIR and produces standalone native executables with Clang or GCC. Z8 adds isolated modules with `pub` exports, module graph inspection, typed C FFI, opaque pointers, synchronous callbacks, native linking, and a conservative C-header binding generator. Z8.1 adds contextual callback inference, so callback parameters and returns become concrete in type analysis, HIR, MIR, and native builds without extra annotations. Z9 adds real tasks, `spawn`, `async`/`await`, inferred typed channels, timeouts, cooperative cancellation, mutexes, wait groups, semaphores, and atomics across the VM and pthread-based native runtime. Z9.1 extends contextual inference to ordinary calls and `spawn`, so user functions, methods, `Channel<T>`, `Task<T>`, atomics, and return values become concrete without annotations. See [`docs/pt-BR/modulos-abi-e-ffi.md`](./docs/pt-BR/modulos-abi-e-ffi.md), [`docs/pt-BR/inferencia-contextual-de-callbacks.md`](./docs/pt-BR/inferencia-contextual-de-callbacks.md), [`docs/pt-BR/concorrencia-e-tarefas.md`](./docs/pt-BR/concorrencia-e-tarefas.md), and [`docs/pt-BR/inferencia-contextual-de-chamadas.md`](./docs/pt-BR/inferencia-contextual-de-chamadas.md).
 
 <br />
 <a href="./code_examples/"><p style="font-size: 30px; font-weight: 600;">🛠 Code_examples</p></a>
@@ -117,6 +117,16 @@ closeChannel(messages);
 ```
 
 Native builds use pthreads and C11 atomics. Ordinary arrays, dictionaries, structs, and buffers stay lightweight; protect shared mutation with channels, mutexes, or atomics.
+
+
+<p style="font-size: 25px">🔎 Contextual call inference:</p>
+
+```zumbra
+fct square(value) { value * value; }
+var task << spawn square(6);
+```
+
+The first concrete call specializes `square` as `fct(int) -> int`, so the task becomes `Task<int>`. The same propagation applies to methods, channels, atomics, and ordinary calls. A function remains monomorphic: reusing it later with an incompatible argument type is rejected.
 
 <p style="font-size: 25px">⚡ Additional Notes:</p>
 

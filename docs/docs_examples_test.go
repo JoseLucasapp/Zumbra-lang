@@ -37,6 +37,8 @@ func TestCoreSyntaxSnippetsParseAndCompile(t *testing.T) {
 		`fct answer() { 42; } var task << spawn answer(); await task;`,
 		`var messages << channel(2); send(messages, "ready"); var message << receive(messages); closeChannel(messages); message;`,
 		`var counter << atomicInt(0); atomicAdd(counter, 1); atomicLoad(counter);`,
+		`var identity << fct(value) { value; }; var result << identity(42); result;`,
+		`fct publish(output, value) { send(output, value); return; } var messages << channel(1); var task << spawn publish(messages, 7); await task;`,
 		`var run << fct() { 1; }; try run() or err { err; };`,
 	}
 
@@ -158,5 +160,33 @@ func TestZ9ConcurrencyDocumentationGeneratesNativeC(t *testing.T) {
 	generated := string(sources.Program)
 	if !strings.Contains(generated, "z_spawn") || !strings.Contains(generated, "z_task_await") {
 		t.Fatalf("concurrency operations were not generated:\n%s", generated)
+	}
+}
+
+func TestZ91CallInferenceDocumentationIsConcrete(t *testing.T) {
+	source := `
+        fct square(value) { value * value; }
+        fct publish(messages, value) { send(messages, value); return; }
+        var task << spawn square(6);
+        var messages << channel(1);
+        var producer << spawn publish(messages, 7);
+        await producer;
+        await task;
+    `
+	result, diagnostics := pipeline.Build("call-inference-docs.zum", source, pipeline.Options{Optimize: true})
+	if len(diagnostics) != 0 {
+		t.Fatalf("call inference documentation pipeline failed: %s", pipeline.FormatDiagnostics(diagnostics))
+	}
+	for _, dump := range []string{result.DumpHIR(), result.DumpMIR()} {
+		for _, expected := range []string{"fct(int) -> int", "channel<int>", "task<int>"} {
+			if !strings.Contains(dump, expected) {
+				t.Fatalf("missing %q from typed dump:\n%s", expected, dump)
+			}
+		}
+		for _, forbidden := range []string{"function square(value) -> unknown", `name="square" : fct(unknown) -> unknown`} {
+			if strings.Contains(dump, forbidden) {
+				t.Fatalf("call inference documentation retained %q:\n%s", forbidden, dump)
+			}
+		}
 	}
 }

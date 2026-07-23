@@ -10,11 +10,19 @@ type scope struct {
 	values    map[string]*Type
 	mutable   map[string]bool
 	functions map[string]functionBinding
+	origins   map[string]ast.Node
 }
 
 type functionBinding struct {
 	literal          *ast.FunctionLiteral
 	declarationScope *scope
+}
+
+type methodBinding struct {
+	literal          *ast.FunctionLiteral
+	declarationScope *scope
+	owner            *Type
+	name             string
 }
 
 func newScope(parent *scope) *scope {
@@ -23,6 +31,7 @@ func newScope(parent *scope) *scope {
 		values:    make(map[string]*Type),
 		mutable:   make(map[string]bool),
 		functions: make(map[string]functionBinding),
+		origins:   make(map[string]ast.Node),
 	}
 }
 
@@ -31,9 +40,23 @@ func (s *scope) define(name string, t *Type) {
 	s.mutable[name] = true
 }
 
+func (s *scope) defineWithOrigin(name string, t *Type, origin ast.Node) {
+	s.define(name, t)
+	if origin != nil {
+		s.origins[name] = origin
+	}
+}
+
 func (s *scope) defineImmutable(name string, t *Type) {
 	s.values[name] = t
 	s.mutable[name] = false
+}
+
+func (s *scope) defineImmutableWithOrigin(name string, t *Type, origin ast.Node) {
+	s.defineImmutable(name, t)
+	if origin != nil {
+		s.origins[name] = origin
+	}
 }
 
 func (s *scope) canAssign(name string) bool {
@@ -59,6 +82,15 @@ func (s *scope) resolve(name string) (*Type, bool) {
 	for cur := s; cur != nil; cur = cur.parent {
 		if t, ok := cur.values[name]; ok {
 			return t, true
+		}
+	}
+	return nil, false
+}
+
+func (s *scope) resolveOrigin(name string) (ast.Node, bool) {
+	for cur := s; cur != nil; cur = cur.parent {
+		if origin, ok := cur.origins[name]; ok {
+			return origin, true
 		}
 	}
 	return nil, false
@@ -113,6 +145,7 @@ type Checker struct {
 	unsafeDepth int
 	nodeTypes   map[ast.Node]*Type
 	contextual  map[*ast.FunctionLiteral]*Type
+	methods     map[string]methodBinding
 }
 
 func NewChecker() *Checker {
@@ -127,6 +160,7 @@ func NewChecker() *Checker {
 		externals:  map[string]*Type{},
 		nodeTypes:  map[ast.Node]*Type{},
 		contextual: map[*ast.FunctionLiteral]*Type{},
+		methods:    map[string]methodBinding{},
 	}
 	c.installBuiltins()
 	return c
@@ -171,6 +205,7 @@ func (c *Checker) ResetForNextRun() {
 	c.unsafeDepth = 0
 	c.nodeTypes = map[ast.Node]*Type{}
 	c.contextual = map[*ast.FunctionLiteral]*Type{}
+	c.methods = map[string]methodBinding{}
 }
 
 func (c *Checker) Check(program *ast.Program) []error {
@@ -220,6 +255,77 @@ func mergeTypes(current *Type, wanted *Type) *Type {
 	return Simple(Unknown)
 }
 
+// refineType fills unknown portions of current with information from wanted.
+// It deliberately remains monomorphic: once a concrete call specializes a
+// function or collection, a later incompatible use is rejected instead of
+// silently creating a second hidden specialization.
+func refineType(current *Type, wanted *Type) (*Type, bool) {
+	if current == nil {
+		return Clone(wanted), true
+	}
+	if wanted == nil {
+		return Clone(current), true
+	}
+	if current.Kind == Unknown {
+		return Clone(wanted), true
+	}
+	if wanted.Kind == Unknown {
+		return Clone(current), true
+	}
+	if current.Kind != wanted.Kind {
+		return Clone(current), false
+	}
+
+	result := Clone(current)
+	switch current.Kind {
+	case Array, ByteArray, TypedArray, Slice, Task, Channel:
+		refined, ok := refineType(current.Elem, wanted.Elem)
+		if !ok {
+			return result, false
+		}
+		result.Elem = refined
+		return result, true
+
+	case Dict:
+		key, keyOK := refineType(current.Key, wanted.Key)
+		value, valueOK := refineType(current.Value, wanted.Value)
+		if !keyOK || !valueOK {
+			return result, false
+		}
+		result.Key = key
+		result.Value = value
+		return result, true
+
+	case Func:
+		if current.Async != wanted.Async || len(current.Params) != len(wanted.Params) {
+			return result, false
+		}
+		result.Params = make([]*Type, len(current.Params))
+		for index := range current.Params {
+			parameter, ok := refineType(current.Params[index], wanted.Params[index])
+			if !ok {
+				return Clone(current), false
+			}
+			result.Params[index] = parameter
+		}
+		returned, ok := refineType(current.Return, wanted.Return)
+		if !ok {
+			return Clone(current), false
+		}
+		result.Return = returned
+		return result, true
+
+	case Struct, Enum:
+		return result, current.Name == wanted.Name
+	}
+
+	return result, true
+}
+
+func methodBindingKey(owner, name string) string {
+	return owner + "." + name
+}
+
 func unifyReturnTypes(left *Type, right *Type) *Type {
 	if left == nil {
 		return right
@@ -265,13 +371,51 @@ func (c *Checker) constrainIdentifier(expr ast.Expression, wanted *Type) {
 		return
 	}
 
-	if current.Kind == Unknown {
-		_ = c.scope.assign(id.Value, wanted)
+	refined, compatible := refineType(current, wanted)
+	if !compatible {
+		_ = c.scope.assign(id.Value, Simple(Unknown))
+		c.nodeTypes[id] = Simple(Unknown)
 		return
 	}
+	_ = c.scope.assign(id.Value, refined)
+	c.nodeTypes[id] = Clone(refined)
+	if origin, exists := c.scope.resolveOrigin(id.Value); exists {
+		c.nodeTypes[origin] = Clone(refined)
+	}
+}
 
-	merged := mergeTypes(current, wanted)
-	_ = c.scope.assign(id.Value, merged)
+func (c *Checker) constrainExpression(expr ast.Expression, wanted *Type, context string) *Type {
+	if expr == nil || wanted == nil {
+		return c.inferExpression(expr)
+	}
+
+	if identifier, ok := expr.(*ast.Identifier); ok {
+		current, exists := c.scope.resolve(identifier.Value)
+		if !exists || current == nil {
+			return c.inferExpression(expr)
+		}
+		refined, compatible := refineType(current, wanted)
+		if !compatible {
+			c.addError(fmt.Errorf("%s inferred %s as %s and cannot also use it as %s", context, identifier.Value, current.String(), wanted.String()))
+			c.nodeTypes[identifier] = Clone(current)
+			return current
+		}
+		_ = c.scope.assign(identifier.Value, refined)
+		c.nodeTypes[identifier] = Clone(refined)
+		if origin, originExists := c.scope.resolveOrigin(identifier.Value); originExists {
+			c.nodeTypes[origin] = Clone(refined)
+		}
+		return refined
+	}
+
+	actual := c.inferExpression(expr)
+	refined, compatible := refineType(actual, wanted)
+	if !compatible {
+		c.addError(fmt.Errorf("%s expects %s, got %s", context, wanted.String(), actual.String()))
+		return actual
+	}
+	c.nodeTypes[expr] = Clone(refined)
+	return refined
 }
 
 func (c *Checker) checkStatement(stmt ast.Statement) {
@@ -282,7 +426,8 @@ func (c *Checker) checkStatement(stmt ast.Statement) {
 			t = c.inferExpression(s.Value)
 		}
 		if s.Name != nil {
-			c.scope.defineImmutable(s.Name.Value, t)
+			c.scope.defineImmutableWithOrigin(s.Name.Value, t, s.Value)
+			c.nodeTypes[s] = Clone(t)
 			if function, ok := s.Value.(*ast.FunctionLiteral); ok {
 				c.scope.assignFunction(s.Name.Value, function)
 			}
@@ -323,7 +468,8 @@ func (c *Checker) checkStatement(stmt ast.Statement) {
 			t = c.inferExpression(s.Value)
 		}
 		if s.Name != nil {
-			c.scope.define(s.Name.Value, t)
+			c.scope.defineWithOrigin(s.Name.Value, t, s.Value)
+			c.nodeTypes[s] = Clone(t)
 			if function, ok := s.Value.(*ast.FunctionLiteral); ok {
 				c.scope.bindFunction(s.Name.Value, function)
 			}
@@ -341,10 +487,14 @@ func (c *Checker) checkStatement(stmt ast.Statement) {
 					c.addError(fmt.Errorf("assignment expects %s, got %s", current.Kind, valueType.Kind))
 				} else {
 					_ = c.scope.assign(s.Name.Value, valueType)
+					if origin, originExists := c.scope.resolveOrigin(s.Name.Value); originExists {
+						c.nodeTypes[origin] = Clone(valueType)
+					}
 				}
 			} else {
-				c.scope.define(s.Name.Value, valueType)
+				c.scope.defineWithOrigin(s.Name.Value, valueType, s.Value)
 			}
+			c.nodeTypes[s] = Clone(valueType)
 			if function, ok := s.Value.(*ast.FunctionLiteral); ok {
 				c.scope.assignFunction(s.Name.Value, function)
 			} else {
@@ -672,6 +822,10 @@ func (c *Checker) checkBuiltinCall(name string, args []ast.Expression) *Type {
 		}
 		ch := c.inferExpression(args[0])
 		val := c.inferExpression(args[1])
+		if ch.Kind == Unknown {
+			c.constrainIdentifier(args[0], ChannelOf(Clone(val)))
+			ch = c.inferExpression(args[0])
+		}
 		if ch.Kind != Unknown && ch.Kind != Channel {
 			c.addError(fmt.Errorf("send expects Channel, got %s", ch.String()))
 		}
@@ -681,6 +835,7 @@ func (c *Checker) checkBuiltinCall(name string, args []ast.Expression) *Type {
 			} else if val.Kind != Unknown && !Compatible(ch.Elem, val) {
 				c.addError(fmt.Errorf("send expects %s values, got %s", ch.Elem.String(), val.String()))
 			}
+			c.constrainExpression(args[0], ch, "send channel")
 		}
 		return Simple(Null)
 	case "receive":
@@ -689,6 +844,10 @@ func (c *Checker) checkBuiltinCall(name string, args []ast.Expression) *Type {
 			return Simple(Unknown)
 		}
 		ch := c.inferExpression(args[0])
+		if ch.Kind == Unknown {
+			c.constrainIdentifier(args[0], ChannelOf(Simple(Unknown)))
+			ch = c.inferExpression(args[0])
+		}
 		if ch.Kind == Channel && ch.Elem != nil {
 			return ch.Elem
 		}
@@ -735,16 +894,48 @@ func (c *Checker) checkBuiltinCall(name string, args []ast.Expression) *Type {
 		}
 		return Simple(AtomicInt)
 	case "atomicLoad", "atomicAdd", "atomicSwap":
-		for _, arg := range args {
+		if len(args) > 0 {
+			c.constrainExpression(args[0], Simple(AtomicInt), name+" counter")
+		}
+		for _, arg := range args[1:] {
 			c.inferExpression(arg)
 		}
 		return Simple(Int)
 	case "atomicCompareSwap":
-		for _, arg := range args {
+		if len(args) > 0 {
+			c.constrainExpression(args[0], Simple(AtomicInt), name+" counter")
+		}
+		for _, arg := range args[1:] {
 			c.inferExpression(arg)
 		}
 		return Simple(Bool)
-	case "atomicStore", "lock", "unlock", "rLock", "rUnlock", "wgAdd", "wgDone", "wgWait", "acquire", "release":
+	case "atomicStore":
+		if len(args) > 0 {
+			c.constrainExpression(args[0], Simple(AtomicInt), "atomicStore counter")
+		}
+		for _, arg := range args[1:] {
+			c.inferExpression(arg)
+		}
+		return Simple(Null)
+	case "rLock", "rUnlock":
+		if len(args) > 0 {
+			c.constrainExpression(args[0], Simple(RWMutex), name+" guard")
+		}
+		return Simple(Null)
+	case "wgAdd", "wgDone", "wgWait":
+		if len(args) > 0 {
+			c.constrainExpression(args[0], Simple(WaitGroup), name+" group")
+		}
+		for _, arg := range args[1:] {
+			c.inferExpression(arg)
+		}
+		return Simple(Null)
+	case "acquire", "release":
+		if len(args) > 0 {
+			c.constrainExpression(args[0], Simple(Semaphore), name+" semaphore")
+		}
+		return Simple(Null)
+	case "lock", "unlock":
 		for _, arg := range args {
 			c.inferExpression(arg)
 		}
@@ -1264,6 +1455,84 @@ func (c *Checker) inferFunctionLiteral(function *ast.FunctionLiteral, expected *
 	return result
 }
 
+func (c *Checker) expectedCallType(current *Type, arguments []*Type) *Type {
+	params := make([]*Type, len(arguments))
+	for index, argument := range arguments {
+		if current != nil && current.Kind == Func && index < len(current.Params) {
+			refined, compatible := refineType(current.Params[index], argument)
+			if compatible {
+				params[index] = refined
+				continue
+			}
+			params[index] = Clone(current.Params[index])
+			continue
+		}
+		params[index] = Clone(argument)
+	}
+	returned := Simple(Unknown)
+	async := false
+	if current != nil && current.Kind == Func {
+		returned = Clone(current.Return)
+		async = current.Async
+	}
+	result := FuncOf(params, returned)
+	result.Async = async
+	return result
+}
+
+func (c *Checker) refineNamedFunctionCall(identifier *ast.Identifier, binding functionBinding, current *Type, arguments []ast.Expression, argumentTypes []*Type) *Type {
+	if identifier == nil || binding.literal == nil {
+		return current
+	}
+	if len(binding.literal.Parameters) != len(arguments) {
+		return current
+	}
+	expected := c.expectedCallType(current, argumentTypes)
+	refined := c.inferFunctionLiteral(binding.literal, expected, binding.declarationScope)
+	if refined == nil || refined.Kind != Func {
+		return current
+	}
+	_ = c.scope.assign(identifier.Value, refined)
+	c.nodeTypes[identifier] = Clone(refined)
+	c.nodeTypes[binding.literal] = Clone(refined)
+	if origin, exists := c.scope.resolveOrigin(identifier.Value); exists {
+		c.nodeTypes[origin] = Clone(refined)
+	}
+	return refined
+}
+
+func (c *Checker) inferMethodLiteral(binding methodBinding, current *Type, arguments []ast.Expression, argumentTypes []*Type) *Type {
+	if binding.literal == nil || binding.owner == nil {
+		return current
+	}
+	if len(binding.literal.Parameters) != len(arguments)+1 {
+		return current
+	}
+	exposedExpected := c.expectedCallType(current, argumentTypes)
+	fullParams := make([]*Type, 0, len(exposedExpected.Params)+1)
+	fullParams = append(fullParams, Clone(binding.owner))
+	fullParams = append(fullParams, exposedExpected.Params...)
+	fullExpected := FuncOf(fullParams, Clone(exposedExpected.Return))
+	fullExpected.Async = exposedExpected.Async
+	full := c.inferFunctionLiteral(binding.literal, fullExpected, binding.declarationScope)
+	if full == nil || full.Kind != Func || len(full.Params) == 0 {
+		return current
+	}
+	exposed := FuncOf(cloneTypes(full.Params[1:]), Clone(full.Return))
+	exposed.Async = full.Async
+	binding.owner.Methods[binding.name] = exposed
+	c.nodeTypes[binding.literal] = Clone(exposed)
+	return exposed
+}
+
+func cloneTypes(values []*Type) []*Type {
+	result := make([]*Type, len(values))
+	for index, value := range values {
+		result[index] = Clone(value)
+	}
+	return result
+}
+
 func (c *Checker) inferExpression(exp ast.Expression) *Type {
 	value := c.inferExpressionImpl(exp)
 	if exp != nil {
@@ -1499,6 +1768,23 @@ func (c *Checker) inferExpressionImpl(exp ast.Expression) *Type {
 			argTypes = append(argTypes, c.inferExpressionExpected(arg, expected))
 		}
 
+		if identifier, ok := e.Function.(*ast.Identifier); ok {
+			if binding, exists := c.scope.resolveFunction(identifier.Value); exists && containsUnknown(fnType) {
+				fnType = c.refineNamedFunctionCall(identifier, binding, fnType, e.Arguments, argTypes)
+				c.nodeTypes[e.Function] = Clone(fnType)
+			}
+		}
+
+		if attribute, ok := e.Function.(*ast.AttributeAccess); ok {
+			ownerType := c.inferExpression(attribute.Object)
+			if ownerType.Kind == Struct {
+				if binding, exists := c.methods[methodBindingKey(ownerType.Name, attribute.Property.Value)]; exists && containsUnknown(fnType) {
+					fnType = c.inferMethodLiteral(binding, fnType, e.Arguments, argTypes)
+					c.nodeTypes[e.Function] = Clone(fnType)
+				}
+			}
+		}
+
 		if fnType.Kind == Func {
 			if len(fnType.Params) != len(e.Arguments) {
 				c.addError(fmt.Errorf("function expects %d arguments, got %d", len(fnType.Params), len(e.Arguments)))
@@ -1509,6 +1795,10 @@ func (c *Checker) inferExpressionImpl(exp ast.Expression) *Type {
 
 					if paramType == nil || argType == nil {
 						continue
+					}
+					if Compatible(paramType, argType) {
+						argTypes[i] = c.constrainExpression(e.Arguments[i], paramType, fmt.Sprintf("argument %d", i+1))
+						argType = argTypes[i]
 					}
 					if paramType.Kind == Unknown || argType.Kind == Unknown {
 						continue
@@ -1794,6 +2084,7 @@ func (c *Checker) checkStructStatement(stmt *ast.StructStatement) {
 		params = append(params, fields[field.Name.Value])
 	}
 	c.scope.defineImmutable(stmt.Name.Value, FuncOf(params, structType))
+	declarationScope := c.scope
 
 	for _, method := range stmt.Methods {
 		if method == nil || method.Name == nil || method.Function == nil {
@@ -1831,6 +2122,12 @@ func (c *Checker) checkStructStatement(stmt *ast.StructStatement) {
 		methodType.Async = method.Function.Async
 		structType.Methods[method.Name.Value] = methodType
 		c.nodeTypes[method.Function] = Clone(methodType)
+		c.methods[methodBindingKey(structType.Name, method.Name.Value)] = methodBinding{
+			literal:          method.Function,
+			declarationScope: declarationScope,
+			owner:            structType,
+			name:             method.Name.Value,
+		}
 	}
 }
 

@@ -29,6 +29,7 @@ func TestRunnableCodeExamplesParseCompileAndRun(t *testing.T) {
 
 	allowedRunnableFiles := map[string]bool{
 		"attribute_access.zum": true,
+		"call_inference.zum":   true,
 		"concurrency.zum":      true,
 		"date.zum":             true,
 		"for.zum":              true,

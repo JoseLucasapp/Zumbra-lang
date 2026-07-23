@@ -136,3 +136,23 @@ A inferência nunca deve mascarar incompatibilidades: aridade, parâmetros, reto
 
 32. **Integração nativa usa primitivas maduras da plataforma**
     O backend C usa pthreads e atomics C11, mantendo uma camada Zumbra pequena em vez de implementar um sistema operacional dentro do runtime.
+
+## Contrato de inferência contextual de chamadas a partir do Z9.1
+
+33. **Informação concreta deve voltar para a declaração**
+    Quando uma chamada revela o tipo de um parâmetro, o compilador deve atualizar a função, o símbolo, o inicializador original e todos os nós aplicáveis da Type Analysis. HIR e MIR não podem divergir do símbolo refinado.
+
+34. **`spawn` reutiliza a semântica normal de chamada**
+    A chamada interna é inferida primeiro; somente depois seu resultado é envolvido em `Task<T>`. Não deve existir um segundo sistema de tipos exclusivo para tarefas.
+
+35. **Refinamento de tipos compostos é recursivo**
+    `Channel<unknown>`, `Task<unknown>`, arrays e dicionários devem preservar suas partes conhecidas e preencher somente as desconhecidas.
+
+36. **Especialização implícita é monomórfica**
+    A primeira assinatura concreta compatível fixa o contrato da função naquele programa. O compilador não deve gerar versões escondidas para tipos diferentes sem uma futura feature explícita de generics.
+
+37. **Erros de aridade não provocam inferência parcial**
+    Uma chamada com quantidade incorreta de argumentos deve produzir apenas o diagnóstico de aridade. Ela não pode alterar a assinatura da função.
+
+38. **Métodos mantêm `self` como detalhe interno**
+    A inferência do corpo considera o tipo do proprietário, mas a assinatura visível do método contém apenas os argumentos fornecidos pelo usuário.
