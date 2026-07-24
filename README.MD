@@ -182,3 +182,5 @@ var server << api.listen("127.0.0.1", 8080);
 ```
 
 Z11 provides typed HTTP applications, requests and responses; routing, middleware, CORS, cookies, stateless JWT sessions, JSON, multipart uploads, static files, gzip, chunked streams, SSE, HTTP clients, graceful shutdown, WebSockets and WSS. It runs in the evaluator, VM and MIR-based native backend. HTTP reuses Z10 streams and TLS, and native dependencies are enabled only when referenced by the program. See [`docs/pt-BR/http-websockets-e-apis.md`](./docs/pt-BR/http-websockets-e-apis.md).
+
+Z11.1 restores the shared Go/Zumbra value conversion layer used by PostgreSQL, Supabase and platform integrations. Nested JSON values, database driver values, byte buffers and fixed-width integers now convert recursively without depending on private HTTP helpers. See [`docs/pt-BR/correcao-conversores-plataforma-z11-1.md`](./docs/pt-BR/correcao-conversores-plataforma-z11-1.md).
