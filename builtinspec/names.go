@@ -137,6 +137,12 @@ var Names = []string{
 	"mutex", "lock", "unlock", "rwMutex", "rLock", "rUnlock",
 	"waitGroup", "wgAdd", "wgDone", "wgWait", "semaphore", "acquire", "release",
 	"atomicInt", "atomicLoad", "atomicStore", "atomicAdd", "atomicSwap", "atomicCompareSwap",
+	"tcpListen", "tcpConnect", "tcpConnectTimeout", "tlsListen", "tlsConnect", "tlsConnectTimeout",
+	"listenerAccept", "listenerAcceptTimeout", "listenerClose", "listenerClosed", "listenerAddress", "listenerPort",
+	"streamRead", "streamReadExact", "streamReadTimeout", "streamWrite", "streamWriteAll", "streamClose", "streamClosed",
+	"streamShutdownRead", "streamShutdownWrite", "streamLocalAddress", "streamLocalPort", "streamRemoteAddress", "streamRemotePort",
+	"streamSetReadTimeout", "streamSetWriteTimeout", "tcpSetKeepAlive", "dnsLookup", "dnsLookupTimeout",
+	"udpBind", "udpSendTo", "udpReceiveFrom", "udpReceiveFromTimeout", "udpClose", "udpClosed", "udpAddress", "udpPort",
 }
 
 func Contains(name string) bool {

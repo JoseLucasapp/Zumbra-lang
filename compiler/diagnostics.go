@@ -96,7 +96,7 @@ func (a *Analyzer) popScope() {
 }
 
 func isSyntheticName(name string) bool {
-	return strings.HasPrefix(name, "__z_")
+	return strings.HasPrefix(name, "__z_") || strings.HasPrefix(name, "__zm_")
 }
 
 func (a *Analyzer) markDeclared(name string) {

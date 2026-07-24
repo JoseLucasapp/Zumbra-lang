@@ -940,6 +940,256 @@ func (c *Checker) checkBuiltinCall(name string, args []ast.Expression) *Type {
 			c.inferExpression(arg)
 		}
 		return Simple(Null)
+
+	case "tcpListen", "udpBind":
+		if len(args) != 2 {
+			c.addError(fmt.Errorf("%s expects 2 arguments, got %d", name, len(args)))
+		} else {
+			c.requireTypeArgument(name+" host", c.inferExpression(args[0]), String)
+			c.requireIntegerArgument(name+" port", c.inferExpression(args[1]))
+		}
+		if name == "udpBind" {
+			return Simple(UDPSocket)
+		}
+		return Simple(NetListener)
+
+	case "tcpConnect":
+		if len(args) != 2 {
+			c.addError(fmt.Errorf("tcpConnect expects 2 arguments, got %d", len(args)))
+		} else {
+			c.requireTypeArgument("tcpConnect host", c.inferExpression(args[0]), String)
+			c.requireIntegerArgument("tcpConnect port", c.inferExpression(args[1]))
+		}
+		return Simple(NetStream)
+
+	case "tcpConnectTimeout":
+		if len(args) != 3 {
+			c.addError(fmt.Errorf("tcpConnectTimeout expects 3 arguments, got %d", len(args)))
+		} else {
+			c.requireTypeArgument("tcpConnectTimeout host", c.inferExpression(args[0]), String)
+			c.requireIntegerArgument("tcpConnectTimeout port", c.inferExpression(args[1]))
+			c.requireIntegerArgument("tcpConnectTimeout timeout", c.inferExpression(args[2]))
+		}
+		return Simple(NetStream)
+
+	case "tlsListen":
+		if len(args) != 4 {
+			c.addError(fmt.Errorf("tlsListen expects 4 arguments, got %d", len(args)))
+		} else {
+			c.requireTypeArgument("tlsListen host", c.inferExpression(args[0]), String)
+			c.requireIntegerArgument("tlsListen port", c.inferExpression(args[1]))
+			c.requireTypeArgument("tlsListen certificate", c.inferExpression(args[2]), String)
+			c.requireTypeArgument("tlsListen key", c.inferExpression(args[3]), String)
+		}
+		return Simple(NetListener)
+
+	case "tlsConnect", "tlsConnectTimeout":
+		expected := 4
+		if name == "tlsConnectTimeout" {
+			expected = 5
+		}
+		if len(args) != expected {
+			c.addError(fmt.Errorf("%s expects %d arguments, got %d", name, expected, len(args)))
+		} else {
+			c.requireTypeArgument(name+" host", c.inferExpression(args[0]), String)
+			c.requireIntegerArgument(name+" port", c.inferExpression(args[1]))
+			c.requireTypeArgument(name+" serverName", c.inferExpression(args[2]), String)
+			c.requireTypeArgument(name+" insecure", c.inferExpression(args[3]), Bool)
+			if expected == 5 {
+				c.requireIntegerArgument(name+" timeout", c.inferExpression(args[4]))
+			}
+		}
+		return Simple(NetStream)
+
+	case "listenerAccept":
+		if len(args) != 1 {
+			c.addError(fmt.Errorf("listenerAccept expects 1 argument, got %d", len(args)))
+		} else {
+			c.constrainExpression(args[0], Simple(NetListener), "listenerAccept listener")
+		}
+		return Simple(NetStream)
+
+	case "listenerAcceptTimeout":
+		if len(args) != 2 {
+			c.addError(fmt.Errorf("listenerAcceptTimeout expects 2 arguments, got %d", len(args)))
+		} else {
+			c.constrainExpression(args[0], Simple(NetListener), "listenerAcceptTimeout listener")
+			c.requireIntegerArgument("listenerAcceptTimeout timeout", c.inferExpression(args[1]))
+		}
+		return ArrayOf(Simple(Unknown))
+
+	case "listenerClose", "listenerClosed":
+		if len(args) != 1 {
+			c.addError(fmt.Errorf("%s expects 1 argument, got %d", name, len(args)))
+		} else {
+			c.constrainExpression(args[0], Simple(NetListener), name+" listener")
+		}
+		return Simple(Bool)
+
+	case "listenerAddress":
+		if len(args) != 1 {
+			c.addError(fmt.Errorf("listenerAddress expects 1 argument, got %d", len(args)))
+		} else {
+			c.constrainExpression(args[0], Simple(NetListener), "listenerAddress listener")
+		}
+		return Simple(String)
+
+	case "listenerPort":
+		if len(args) != 1 {
+			c.addError(fmt.Errorf("listenerPort expects 1 argument, got %d", len(args)))
+		} else {
+			c.constrainExpression(args[0], Simple(NetListener), "listenerPort listener")
+		}
+		return Simple(Int)
+
+	case "streamRead", "streamReadExact":
+		if len(args) != 2 {
+			c.addError(fmt.Errorf("%s expects 2 arguments, got %d", name, len(args)))
+		} else {
+			c.constrainExpression(args[0], Simple(NetStream), name+" stream")
+			c.requireIntegerArgument(name+" size", c.inferExpression(args[1]))
+		}
+		return ByteArrayOf()
+
+	case "streamReadTimeout":
+		if len(args) != 3 {
+			c.addError(fmt.Errorf("streamReadTimeout expects 3 arguments, got %d", len(args)))
+		} else {
+			c.constrainExpression(args[0], Simple(NetStream), "streamReadTimeout stream")
+			c.requireIntegerArgument("streamReadTimeout size", c.inferExpression(args[1]))
+			c.requireIntegerArgument("streamReadTimeout timeout", c.inferExpression(args[2]))
+		}
+		return ArrayOf(Simple(Unknown))
+
+	case "streamWrite", "streamWriteAll":
+		if len(args) != 2 {
+			c.addError(fmt.Errorf("%s expects 2 arguments, got %d", name, len(args)))
+		} else {
+			c.constrainExpression(args[0], Simple(NetStream), name+" stream")
+			dataType := c.inferExpression(args[1])
+			if dataType.Kind != Unknown && dataType.Kind != String && dataType.Kind != ByteArray && dataType.Kind != TypedArray && dataType.Kind != Slice {
+				c.addError(fmt.Errorf("%s data expects string or byte-compatible buffer, got %s", name, dataType.String()))
+			}
+		}
+		return Simple(Int)
+
+	case "streamClose", "streamClosed", "streamShutdownRead", "streamShutdownWrite":
+		if len(args) != 1 {
+			c.addError(fmt.Errorf("%s expects 1 argument, got %d", name, len(args)))
+		} else {
+			c.constrainExpression(args[0], Simple(NetStream), name+" stream")
+		}
+		return Simple(Bool)
+
+	case "streamLocalAddress", "streamRemoteAddress":
+		if len(args) != 1 {
+			c.addError(fmt.Errorf("%s expects 1 argument, got %d", name, len(args)))
+		} else {
+			c.constrainExpression(args[0], Simple(NetStream), name+" stream")
+		}
+		return Simple(String)
+
+	case "streamLocalPort", "streamRemotePort":
+		if len(args) != 1 {
+			c.addError(fmt.Errorf("%s expects 1 argument, got %d", name, len(args)))
+		} else {
+			c.constrainExpression(args[0], Simple(NetStream), name+" stream")
+		}
+		return Simple(Int)
+
+	case "streamSetReadTimeout", "streamSetWriteTimeout":
+		if len(args) != 2 {
+			c.addError(fmt.Errorf("%s expects 2 arguments, got %d", name, len(args)))
+		} else {
+			c.constrainExpression(args[0], Simple(NetStream), name+" stream")
+			c.requireIntegerArgument(name+" timeout", c.inferExpression(args[1]))
+		}
+		return Simple(Null)
+
+	case "tcpSetKeepAlive":
+		if len(args) != 3 {
+			c.addError(fmt.Errorf("tcpSetKeepAlive expects 3 arguments, got %d", len(args)))
+		} else {
+			c.constrainExpression(args[0], Simple(NetStream), "tcpSetKeepAlive stream")
+			c.requireTypeArgument("tcpSetKeepAlive enabled", c.inferExpression(args[1]), Bool)
+			c.requireIntegerArgument("tcpSetKeepAlive idle", c.inferExpression(args[2]))
+		}
+		return Simple(Null)
+
+	case "dnsLookup":
+		if len(args) != 1 {
+			c.addError(fmt.Errorf("dnsLookup expects 1 argument, got %d", len(args)))
+		} else {
+			c.requireTypeArgument("dnsLookup host", c.inferExpression(args[0]), String)
+		}
+		return ArrayOf(Simple(String))
+
+	case "dnsLookupTimeout":
+		if len(args) != 2 {
+			c.addError(fmt.Errorf("dnsLookupTimeout expects 2 arguments, got %d", len(args)))
+		} else {
+			c.requireTypeArgument("dnsLookupTimeout host", c.inferExpression(args[0]), String)
+			c.requireIntegerArgument("dnsLookupTimeout timeout", c.inferExpression(args[1]))
+		}
+		return ArrayOf(Simple(Unknown))
+
+	case "udpSendTo":
+		if len(args) != 4 {
+			c.addError(fmt.Errorf("udpSendTo expects 4 arguments, got %d", len(args)))
+		} else {
+			c.constrainExpression(args[0], Simple(UDPSocket), "udpSendTo socket")
+			c.requireTypeArgument("udpSendTo host", c.inferExpression(args[1]), String)
+			c.requireIntegerArgument("udpSendTo port", c.inferExpression(args[2]))
+			dataType := c.inferExpression(args[3])
+			if dataType.Kind != Unknown && dataType.Kind != String && dataType.Kind != ByteArray && dataType.Kind != TypedArray && dataType.Kind != Slice {
+				c.addError(fmt.Errorf("udpSendTo data expects string or byte-compatible buffer, got %s", dataType.String()))
+			}
+		}
+		return Simple(Int)
+
+	case "udpReceiveFrom":
+		if len(args) != 2 {
+			c.addError(fmt.Errorf("udpReceiveFrom expects 2 arguments, got %d", len(args)))
+		} else {
+			c.constrainExpression(args[0], Simple(UDPSocket), "udpReceiveFrom socket")
+			c.requireIntegerArgument("udpReceiveFrom size", c.inferExpression(args[1]))
+		}
+		return ArrayOf(Simple(Unknown))
+
+	case "udpReceiveFromTimeout":
+		if len(args) != 3 {
+			c.addError(fmt.Errorf("udpReceiveFromTimeout expects 3 arguments, got %d", len(args)))
+		} else {
+			c.constrainExpression(args[0], Simple(UDPSocket), "udpReceiveFromTimeout socket")
+			c.requireIntegerArgument("udpReceiveFromTimeout size", c.inferExpression(args[1]))
+			c.requireIntegerArgument("udpReceiveFromTimeout timeout", c.inferExpression(args[2]))
+		}
+		return ArrayOf(Simple(Unknown))
+
+	case "udpClose", "udpClosed":
+		if len(args) != 1 {
+			c.addError(fmt.Errorf("%s expects 1 argument, got %d", name, len(args)))
+		} else {
+			c.constrainExpression(args[0], Simple(UDPSocket), name+" socket")
+		}
+		return Simple(Bool)
+
+	case "udpAddress":
+		if len(args) != 1 {
+			c.addError(fmt.Errorf("udpAddress expects 1 argument, got %d", len(args)))
+		} else {
+			c.constrainExpression(args[0], Simple(UDPSocket), "udpAddress socket")
+		}
+		return Simple(String)
+
+	case "udpPort":
+		if len(args) != 1 {
+			c.addError(fmt.Errorf("udpPort expects 1 argument, got %d", len(args)))
+		} else {
+			c.constrainExpression(args[0], Simple(UDPSocket), "udpPort socket")
+		}
+		return Simple(Int)
+
 	case "show":
 		if len(args) != 1 {
 			c.addError(fmt.Errorf("show expects 1 argument, got %d", len(args)))
@@ -1955,6 +2205,12 @@ func (c *Checker) inferExpressionImpl(exp ast.Expression) *Type {
 func (c *Checker) requireIntegerArgument(label string, value *Type) {
 	if value != nil && value.Kind != Unknown && !IsInteger(value) {
 		c.addError(fmt.Errorf("%s must be integer, got %s", label, value.Kind))
+	}
+}
+
+func (c *Checker) requireTypeArgument(label string, value *Type, kind Kind) {
+	if value != nil && value.Kind != Unknown && value.Kind != kind {
+		c.addError(fmt.Errorf("%s must be %s, got %s", label, kind, value.Kind))
 	}
 }
 

@@ -1,7 +1,7 @@
 #ifndef ZUMBRA_RUNTIME_H
 #define ZUMBRA_RUNTIME_H
 
-#define ZUMBRA_NATIVE_ABI_VERSION 2u
+#define ZUMBRA_NATIVE_ABI_VERSION 3u
 
 #include <stdbool.h>
 #include <stddef.h>
@@ -37,7 +37,10 @@ typedef enum {
     ZK_RW_MUTEX,
     ZK_WAIT_GROUP,
     ZK_SEMAPHORE,
-    ZK_ATOMIC_INT
+    ZK_ATOMIC_INT,
+    ZK_NET_LISTENER,
+    ZK_NET_STREAM,
+    ZK_UDP_SOCKET
 } ZKind;
 
 typedef enum {
@@ -65,7 +68,10 @@ typedef enum {
     ZV_RW_MUTEX,
     ZV_WAIT_GROUP,
     ZV_SEMAPHORE,
-    ZV_ATOMIC_INT
+    ZV_ATOMIC_INT,
+    ZV_NET_LISTENER,
+    ZV_NET_STREAM,
+    ZV_UDP_SOCKET
 } ZTag;
 
 typedef struct ZValue ZValue;

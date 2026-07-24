@@ -39,6 +39,8 @@ func TestCoreSyntaxSnippetsParseAndCompile(t *testing.T) {
 		`var counter << atomicInt(0); atomicAdd(counter, 1); atomicLoad(counter);`,
 		`var identity << fct(value) { value; }; var result << identity(42); result;`,
 		`fct publish(output, value) { send(output, value); return; } var messages << channel(1); var task << spawn publish(messages, 7); await task;`,
+		`var listener << tcpListen("127.0.0.1", 0); var port << listenerPort(listener); listenerClose(listener); port;`,
+		`var socket << udpBind("127.0.0.1", 0); udpClose(socket);`,
 		`var run << fct() { 1; }; try run() or err { err; };`,
 	}
 
@@ -188,5 +190,27 @@ func TestZ91CallInferenceDocumentationIsConcrete(t *testing.T) {
 				t.Fatalf("call inference documentation retained %q:\n%s", forbidden, dump)
 			}
 		}
+	}
+}
+
+func TestZ10NetworkDocumentationGeneratesConditionalNativeRuntime(t *testing.T) {
+	result, diagnostics := pipeline.Build("network-docs.zum", `
+        var listener << tcpListen("127.0.0.1", 0);
+        var port << listenerPort(listener);
+        listenerClose(listener);
+        show(port > 0);
+    `, pipeline.Options{Optimize: true})
+	if len(diagnostics) != 0 {
+		t.Fatalf("network documentation pipeline failed: %s", pipeline.FormatDiagnostics(diagnostics))
+	}
+	sources, nativeDiagnostics := nativec.Generate(result.MIR)
+	if len(nativeDiagnostics) != 0 {
+		t.Fatalf("network documentation native generation failed: %v", nativeDiagnostics)
+	}
+	if !strings.Contains(string(sources.Runtime), "#define ZUMBRA_ENABLE_NETWORK 1") {
+		t.Fatal("network documentation did not enable the native network runtime")
+	}
+	if strings.Contains(string(sources.Runtime), "#define ZUMBRA_ENABLE_TLS 1") {
+		t.Fatal("TCP-only documentation unexpectedly enabled TLS")
 	}
 }

@@ -1,0 +1,30 @@
+import "../../std/net.zum" as net;
+
+fct tlsEcho(listener) {
+    var connection << net.accept(listener);
+    var payload << net.readExact(connection, 4);
+    net.writeBytes(connection, payload);
+    net.closeStream(connection);
+    return;
+}
+
+var listener << net.listenTls(
+    "127.0.0.1",
+    0,
+    "code_examples/native/z10_test_cert.pem",
+    "code_examples/native/z10_test_key.pem"
+);
+var server << spawn tlsEcho(listener);
+var client << net.connectTlsTimeout(
+    "127.0.0.1",
+    net.listenerPortNumber(listener),
+    "localhost",
+    true,
+    1000
+);
+net.writeText(client, "tls!");
+var response << net.readExact(client, 4);
+show(sizeOf(response));
+net.closeStream(client);
+await server;
+net.closeListener(listener);

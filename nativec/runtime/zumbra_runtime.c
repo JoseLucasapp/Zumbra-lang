@@ -13,6 +13,29 @@
 #include <stdatomic.h>
 #include <time.h>
 
+#if defined(ZUMBRA_ENABLE_NETWORK)
+#include <arpa/inet.h>
+#include <fcntl.h>
+#include <limits.h>
+#include <netdb.h>
+#include <netinet/in.h>
+#include <netinet/tcp.h>
+#include <poll.h>
+#include <sys/socket.h>
+#include <sys/time.h>
+#include <sys/types.h>
+#include <unistd.h>
+#ifndef NI_MAXHOST
+#define NI_MAXHOST 1025
+#endif
+#endif
+
+#if defined(ZUMBRA_ENABLE_TLS)
+#include <openssl/err.h>
+#include <openssl/ssl.h>
+#include <openssl/x509v3.h>
+#endif
+
 #if defined(_WIN32)
 #include <windows.h>
 #endif
@@ -782,6 +805,11 @@ static void z_show_inner(ZValue value) {
     case ZV_WAIT_GROUP: fputs("WaitGroup", stdout); break;
     case ZV_SEMAPHORE: fputs("Semaphore", stdout); break;
     case ZV_ATOMIC_INT: fprintf(stdout, "AtomicInt<%" PRId64 ">", atomic_load((_Atomic int64_t *)value.as.p)); break;
+#if defined(ZUMBRA_ENABLE_NETWORK)
+    case ZV_NET_LISTENER: fputs("NetListener", stdout); break;
+    case ZV_NET_STREAM: fputs("NetStream", stdout); break;
+    case ZV_UDP_SOCKET: fputs("UDPSocket", stdout); break;
+#endif
     case ZV_ENUM: {
         int type_id = value.as.id >> 16;
         int ordinal = value.as.id & 0xffff;
@@ -963,7 +991,635 @@ static ZValue z_checked_arithmetic(const char *name, ZValue a, ZValue b, char op
     return z_uint((uint64_t)r,kind);
 }
 
+
+#if defined(ZUMBRA_ENABLE_NETWORK)
+
+typedef struct {
+    int fd;
+    bool closed;
+    bool tls;
+#if defined(ZUMBRA_ENABLE_TLS)
+    SSL_CTX *tls_context;
+#endif
+} ZNetListenerNative;
+
+typedef struct {
+    int fd;
+    bool closed;
+    bool tls;
+#if defined(ZUMBRA_ENABLE_TLS)
+    SSL *tls_session;
+    SSL_CTX *owned_context;
+#endif
+} ZNetStreamNative;
+
+typedef struct {
+    int fd;
+    bool closed;
+} ZUDPSocketNative;
+
+static void z_network_require_port(int64_t port, const char *name) {
+    if (port < 0 || port > 65535) z_fatal("%s port must be between 0 and 65535", name);
+}
+
+static void z_network_require_size(int64_t size, const char *name) {
+    if (size <= 0) z_fatal("%s size must be greater than zero", name);
+    if ((uint64_t)size > 64u * 1024u * 1024u) z_fatal("%s size exceeds the 64 MiB safety limit", name);
+}
+
+static int z_network_wait_fd(int fd, short events, int64_t milliseconds) {
+    struct pollfd descriptor;
+    memset(&descriptor, 0, sizeof(descriptor));
+    descriptor.fd = fd;
+    descriptor.events = events;
+    int timeout = milliseconds < 0 ? -1 : (milliseconds > INT_MAX ? INT_MAX : (int)milliseconds);
+    for (;;) {
+        int result = poll(&descriptor, 1, timeout);
+        if (result < 0 && errno == EINTR) continue;
+        return result;
+    }
+}
+
+static void z_network_set_timeout(int fd, int option, int64_t milliseconds) {
+    struct timeval timeout;
+    memset(&timeout, 0, sizeof(timeout));
+    if (milliseconds >= 0) {
+        timeout.tv_sec = (time_t)(milliseconds / 1000);
+        timeout.tv_usec = (suseconds_t)((milliseconds % 1000) * 1000);
+    }
+    if (setsockopt(fd, SOL_SOCKET, option, &timeout, sizeof(timeout)) != 0) {
+        z_fatal("could not configure socket timeout: %s", strerror(errno));
+    }
+}
+
+static struct addrinfo *z_network_resolve(const char *host, int64_t port, int socktype, bool passive, const char *name) {
+    z_network_require_port(port, name);
+    char service[16];
+    snprintf(service, sizeof(service), "%" PRId64, port);
+    struct addrinfo hints;
+    memset(&hints, 0, sizeof(hints));
+    hints.ai_family = AF_UNSPEC;
+    hints.ai_socktype = socktype;
+    hints.ai_flags = passive ? AI_PASSIVE : 0;
+    struct addrinfo *result = NULL;
+    const char *node = host != NULL && host[0] != '\0' ? host : NULL;
+    int status = getaddrinfo(node, service, &hints, &result);
+    if (status != 0) z_fatal("%s could not resolve %s:%" PRId64 ": %s", name, node == NULL ? "*" : node, port, gai_strerror(status));
+    return result;
+}
+
+static int z_network_bound_socket(const char *host, int64_t port, int socktype, bool listening, const char *name) {
+    struct addrinfo *addresses = z_network_resolve(host, port, socktype, true, name);
+    int fd = -1;
+    int last_error = 0;
+    for (struct addrinfo *current = addresses; current != NULL; current = current->ai_next) {
+        fd = socket(current->ai_family, current->ai_socktype, current->ai_protocol);
+        if (fd < 0) { last_error = errno; continue; }
+        int enabled = 1;
+        (void)setsockopt(fd, SOL_SOCKET, SO_REUSEADDR, &enabled, sizeof(enabled));
+        if (bind(fd, current->ai_addr, current->ai_addrlen) != 0) {
+            last_error = errno;
+            close(fd);
+            fd = -1;
+            continue;
+        }
+        if (listening && listen(fd, SOMAXCONN) != 0) {
+            last_error = errno;
+            close(fd);
+            fd = -1;
+            continue;
+        }
+        break;
+    }
+    freeaddrinfo(addresses);
+    if (fd < 0) z_fatal("%s could not bind: %s", name, strerror(last_error));
+    return fd;
+}
+
+static int z_network_connect_socket(const char *host, int64_t port, int64_t timeout_ms, const char *name) {
+    struct addrinfo *addresses = z_network_resolve(host, port, SOCK_STREAM, false, name);
+    int fd = -1;
+    int last_error = 0;
+    for (struct addrinfo *current = addresses; current != NULL; current = current->ai_next) {
+        fd = socket(current->ai_family, current->ai_socktype, current->ai_protocol);
+        if (fd < 0) { last_error = errno; continue; }
+        int flags = fcntl(fd, F_GETFL, 0);
+        if (timeout_ms >= 0 && flags >= 0) (void)fcntl(fd, F_SETFL, flags | O_NONBLOCK);
+        int status = connect(fd, current->ai_addr, current->ai_addrlen);
+        if (status != 0 && timeout_ms >= 0 && errno == EINPROGRESS) {
+            int ready = z_network_wait_fd(fd, POLLOUT, timeout_ms);
+            if (ready > 0) {
+                socklen_t length = sizeof(last_error);
+                if (getsockopt(fd, SOL_SOCKET, SO_ERROR, &last_error, &length) != 0) last_error = errno;
+                status = last_error == 0 ? 0 : -1;
+            } else {
+                last_error = ready == 0 ? ETIMEDOUT : errno;
+                status = -1;
+            }
+        } else if (status != 0) {
+            last_error = errno;
+        }
+        if (timeout_ms >= 0 && flags >= 0) (void)fcntl(fd, F_SETFL, flags);
+        if (status == 0) break;
+        close(fd);
+        fd = -1;
+    }
+    freeaddrinfo(addresses);
+    if (fd < 0) z_fatal("%s could not connect to %s:%" PRId64 ": %s", name, host, port, strerror(last_error));
+    return fd;
+}
+
+static void z_network_address(int fd, bool peer, char *host, size_t host_size, int64_t *port) {
+    struct sockaddr_storage address;
+    socklen_t length = sizeof(address);
+    int status = peer ? getpeername(fd, (struct sockaddr *)&address, &length) : getsockname(fd, (struct sockaddr *)&address, &length);
+    if (status != 0) z_fatal("could not inspect socket address: %s", strerror(errno));
+    char service[32];
+    status = getnameinfo((struct sockaddr *)&address, length, host, (socklen_t)host_size, service, sizeof(service), NI_NUMERICHOST | NI_NUMERICSERV);
+    if (status != 0) z_fatal("could not format socket address: %s", gai_strerror(status));
+    *port = strtoll(service, NULL, 10);
+}
+
+static ZNetListenerNative *z_expect_net_listener(ZValue value) {
+    if (value.tag != ZV_NET_LISTENER || value.as.p == NULL) z_fatal("operation expects NetListener");
+    return (ZNetListenerNative *)value.as.p;
+}
+
+static ZNetStreamNative *z_expect_net_stream(ZValue value) {
+    if (value.tag != ZV_NET_STREAM || value.as.p == NULL) z_fatal("operation expects NetStream");
+    return (ZNetStreamNative *)value.as.p;
+}
+
+static ZUDPSocketNative *z_expect_udp_socket(ZValue value) {
+    if (value.tag != ZV_UDP_SOCKET || value.as.p == NULL) z_fatal("operation expects UDPSocket");
+    return (ZUDPSocketNative *)value.as.p;
+}
+
+static ZValue z_net_listener_value(ZNetListenerNative *listener) {
+    ZValue value = z_value(ZV_NET_LISTENER, ZK_NET_LISTENER);
+    value.as.p = listener;
+    return value;
+}
+
+static ZValue z_net_stream_value(ZNetStreamNative *stream) {
+    ZValue value = z_value(ZV_NET_STREAM, ZK_NET_STREAM);
+    value.as.p = stream;
+    return value;
+}
+
+static ZValue z_udp_socket_value(ZUDPSocketNative *socket_value) {
+    ZValue value = z_value(ZV_UDP_SOCKET, ZK_UDP_SOCKET);
+    value.as.p = socket_value;
+    return value;
+}
+
+static ZValue z_tcp_listen_native(const char *host, int64_t port) {
+    ZNetListenerNative *listener = (ZNetListenerNative *)z_alloc(sizeof(ZNetListenerNative));
+    listener->fd = z_network_bound_socket(host, port, SOCK_STREAM, true, "tcpListen");
+    return z_net_listener_value(listener);
+}
+
+static ZValue z_tcp_connect_native(const char *host, int64_t port, int64_t timeout_ms) {
+    ZNetStreamNative *stream = (ZNetStreamNative *)z_alloc(sizeof(ZNetStreamNative));
+    stream->fd = z_network_connect_socket(host, port, timeout_ms, timeout_ms < 0 ? "tcpConnect" : "tcpConnectTimeout");
+    return z_net_stream_value(stream);
+}
+
+#if defined(ZUMBRA_ENABLE_TLS)
+static pthread_once_t z_tls_once = PTHREAD_ONCE_INIT;
+static void z_tls_global_initialize(void) { (void)OPENSSL_init_ssl(0, NULL); }
+static void z_tls_init_once(void) { pthread_once(&z_tls_once, z_tls_global_initialize); }
+#endif
+
+static ZValue z_tls_listen_native(const char *host, int64_t port, const char *certificate, const char *key) {
+#if defined(ZUMBRA_ENABLE_TLS)
+    z_tls_init_once();
+    SSL_CTX *context = SSL_CTX_new(TLS_server_method());
+    if (context == NULL) z_fatal("tlsListen could not create TLS context");
+    SSL_CTX_set_min_proto_version(context, TLS1_2_VERSION);
+    if (SSL_CTX_use_certificate_chain_file(context, certificate) != 1) {
+        SSL_CTX_free(context);
+        z_fatal("tlsListen could not load certificate %s", certificate);
+    }
+    if (SSL_CTX_use_PrivateKey_file(context, key, SSL_FILETYPE_PEM) != 1 || SSL_CTX_check_private_key(context) != 1) {
+        SSL_CTX_free(context);
+        z_fatal("tlsListen could not load private key %s", key);
+    }
+    ZNetListenerNative *listener = (ZNetListenerNative *)z_alloc(sizeof(ZNetListenerNative));
+    listener->fd = z_network_bound_socket(host, port, SOCK_STREAM, true, "tlsListen");
+    listener->tls = true;
+    listener->tls_context = context;
+    return z_net_listener_value(listener);
+#else
+    (void)host; (void)port; (void)certificate; (void)key;
+    z_fatal("TLS support was not linked into this native build");
+    return z_null();
+#endif
+}
+
+static ZValue z_tls_connect_native(const char *host, int64_t port, const char *server_name, bool insecure, int64_t timeout_ms) {
+#if defined(ZUMBRA_ENABLE_TLS)
+    z_tls_init_once();
+    int fd = z_network_connect_socket(host, port, timeout_ms, timeout_ms < 0 ? "tlsConnect" : "tlsConnectTimeout");
+    SSL_CTX *context = SSL_CTX_new(TLS_client_method());
+    if (context == NULL) { close(fd); z_fatal("tlsConnect could not create TLS context"); }
+    SSL_CTX_set_min_proto_version(context, TLS1_2_VERSION);
+    if (insecure) {
+        SSL_CTX_set_verify(context, SSL_VERIFY_NONE, NULL);
+    } else {
+        SSL_CTX_set_verify(context, SSL_VERIFY_PEER, NULL);
+        if (SSL_CTX_set_default_verify_paths(context) != 1) { SSL_CTX_free(context); close(fd); z_fatal("tlsConnect could not load system trust store"); }
+    }
+    SSL *session = SSL_new(context);
+    if (session == NULL) { SSL_CTX_free(context); close(fd); z_fatal("tlsConnect could not create TLS session"); }
+    const char *identity = server_name != NULL && server_name[0] != '\0' ? server_name : host;
+    if (identity != NULL && identity[0] != '\0') {
+        (void)SSL_set_tlsext_host_name(session, identity);
+        if (!insecure && SSL_set1_host(session, identity) != 1) { SSL_free(session); SSL_CTX_free(context); close(fd); z_fatal("tlsConnect could not set hostname verification"); }
+    }
+    SSL_set_fd(session, fd);
+    if (timeout_ms >= 0) { z_network_set_timeout(fd, SO_RCVTIMEO, timeout_ms); z_network_set_timeout(fd, SO_SNDTIMEO, timeout_ms); }
+    if (SSL_connect(session) != 1) { SSL_free(session); SSL_CTX_free(context); close(fd); z_fatal("tlsConnect handshake failed"); }
+    if (timeout_ms >= 0) { z_network_set_timeout(fd, SO_RCVTIMEO, -1); z_network_set_timeout(fd, SO_SNDTIMEO, -1); }
+    ZNetStreamNative *stream = (ZNetStreamNative *)z_alloc(sizeof(ZNetStreamNative));
+    stream->fd = fd;
+    stream->tls = true;
+    stream->tls_session = session;
+    stream->owned_context = context;
+    return z_net_stream_value(stream);
+#else
+    (void)host; (void)port; (void)server_name; (void)insecure; (void)timeout_ms;
+    z_fatal("TLS support was not linked into this native build");
+    return z_null();
+#endif
+}
+
+static ZValue z_listener_accept_native(ZValue listener_value, int64_t timeout_ms, bool *accepted) {
+    ZNetListenerNative *listener = z_expect_net_listener(listener_value);
+    if (listener->closed) z_fatal("cannot accept on closed listener");
+    if (timeout_ms >= 0) {
+        int ready = z_network_wait_fd(listener->fd, POLLIN, timeout_ms);
+        if (ready == 0) { *accepted = false; return z_null(); }
+        if (ready < 0) z_fatal("listenerAcceptTimeout failed: %s", strerror(errno));
+    }
+    int fd;
+    for (;;) {
+        fd = accept(listener->fd, NULL, NULL);
+        if (fd < 0 && errno == EINTR) continue;
+        break;
+    }
+    if (fd < 0) z_fatal("listenerAccept failed: %s", strerror(errno));
+    ZNetStreamNative *stream = (ZNetStreamNative *)z_alloc(sizeof(ZNetStreamNative));
+    stream->fd = fd;
+#if defined(ZUMBRA_ENABLE_TLS)
+    if (listener->tls) {
+        SSL *session = SSL_new(listener->tls_context);
+        if (session == NULL) { close(fd); z_fatal("TLS accept could not create session"); }
+        SSL_set_fd(session, fd);
+        if (timeout_ms >= 0) { z_network_set_timeout(fd, SO_RCVTIMEO, timeout_ms); z_network_set_timeout(fd, SO_SNDTIMEO, timeout_ms); }
+        if (SSL_accept(session) != 1) { SSL_free(session); close(fd); z_fatal("TLS server handshake failed"); }
+        if (timeout_ms >= 0) { z_network_set_timeout(fd, SO_RCVTIMEO, -1); z_network_set_timeout(fd, SO_SNDTIMEO, -1); }
+        stream->tls = true;
+        stream->tls_session = session;
+    }
+#endif
+    *accepted = true;
+    return z_net_stream_value(stream);
+}
+
+static bool z_listener_close_native(ZValue value) {
+    ZNetListenerNative *listener = z_expect_net_listener(value);
+    if (listener->closed) return false;
+    listener->closed = true;
+    close(listener->fd);
+#if defined(ZUMBRA_ENABLE_TLS)
+    if (listener->tls_context != NULL) { SSL_CTX_free(listener->tls_context); listener->tls_context = NULL; }
+#endif
+    return true;
+}
+
+static ssize_t z_stream_read_once(ZNetStreamNative *stream, void *buffer, size_t length, bool *eof) {
+    *eof = false;
+#if defined(ZUMBRA_ENABLE_TLS)
+    if (stream->tls) {
+        int requested = length > INT_MAX ? INT_MAX : (int)length;
+        int count = SSL_read(stream->tls_session, buffer, requested);
+        if (count > 0) return count;
+        int error = SSL_get_error(stream->tls_session, count);
+        if (error == SSL_ERROR_ZERO_RETURN) { *eof = true; return 0; }
+        if (error == SSL_ERROR_WANT_READ || error == SSL_ERROR_WANT_WRITE || (error == SSL_ERROR_SYSCALL && (errno == EAGAIN || errno == EWOULDBLOCK))) return -2;
+        z_fatal("TLS stream read failed");
+    }
+#endif
+    ssize_t count;
+    do { count = recv(stream->fd, buffer, length, 0); } while (count < 0 && errno == EINTR);
+    if (count == 0) *eof = true;
+    if (count < 0 && (errno == EAGAIN || errno == EWOULDBLOCK)) return -2;
+    if (count < 0) z_fatal("stream read failed: %s", strerror(errno));
+    return count;
+}
+
+static ssize_t z_stream_write_once(ZNetStreamNative *stream, const void *buffer, size_t length) {
+#if defined(ZUMBRA_ENABLE_TLS)
+    if (stream->tls) {
+        int requested = length > INT_MAX ? INT_MAX : (int)length;
+        int count = SSL_write(stream->tls_session, buffer, requested);
+        if (count > 0) return count;
+        int error = SSL_get_error(stream->tls_session, count);
+        if (error == SSL_ERROR_WANT_READ || error == SSL_ERROR_WANT_WRITE || (error == SSL_ERROR_SYSCALL && (errno == EAGAIN || errno == EWOULDBLOCK))) return -2;
+        z_fatal("TLS stream write failed");
+    }
+#endif
+    ssize_t count;
+    do { count = send(stream->fd, buffer, length, 0); } while (count < 0 && errno == EINTR);
+    if (count < 0 && (errno == EAGAIN || errno == EWOULDBLOCK)) return -2;
+    if (count < 0) z_fatal("stream write failed: %s", strerror(errno));
+    return count;
+}
+
+static ZValue z_stream_read_native(ZValue stream_value, int64_t requested, bool exact, int64_t timeout_ms, bool timeout_mode) {
+    z_network_require_size(requested, exact ? "streamReadExact" : timeout_mode ? "streamReadTimeout" : "streamRead");
+    ZNetStreamNative *stream = z_expect_net_stream(stream_value);
+    if (stream->closed) z_fatal("cannot read a closed stream");
+    if (timeout_mode) z_network_set_timeout(stream->fd, SO_RCVTIMEO, timeout_ms);
+    ZValue result = z_bytes((size_t)requested);
+    size_t total = 0;
+    bool eof = false;
+    bool timed_out = false;
+    do {
+        ssize_t count = z_stream_read_once(stream, (uint8_t *)result.as.buffer->data + total, (size_t)requested - total, &eof);
+        if (count == -2) { timed_out = true; break; }
+        total += (size_t)count;
+        if (!exact || eof || count == 0) break;
+    } while (total < (size_t)requested);
+    if (timeout_mode) z_network_set_timeout(stream->fd, SO_RCVTIMEO, -1);
+    result.as.buffer->len = total;
+    if (exact && total != (size_t)requested) z_fatal("streamReadExact expected %" PRId64 " bytes, received %zu", requested, total);
+    if (timeout_mode) {
+        ZValue values[3] = {result, z_bool(!timed_out && total > 0), z_bool(eof)};
+        return z_array_from(values, 3);
+    }
+    return result;
+}
+
+static void z_network_data(ZValue value, const uint8_t **data, size_t *length) {
+    if (value.tag == ZV_STRING) { *data = (const uint8_t *)value.as.s; *length = strlen(value.as.s); return; }
+    ZBuffer *buffer = z_expect_byte_buffer(value);
+    *data = (const uint8_t *)buffer->data;
+    *length = buffer->len;
+}
+
+static ZValue z_stream_write_native(ZValue stream_value, ZValue data_value, bool all) {
+    ZNetStreamNative *stream = z_expect_net_stream(stream_value);
+    if (stream->closed) z_fatal("cannot write a closed stream");
+    const uint8_t *data = NULL;
+    size_t length = 0;
+    z_network_data(data_value, &data, &length);
+    size_t total = 0;
+    while (total < length) {
+        ssize_t count = z_stream_write_once(stream, data + total, length - total);
+        if (count == -2) z_fatal("stream write timed out");
+        if (count == 0) z_fatal("stream write made no progress");
+        total += (size_t)count;
+        if (!all) break;
+    }
+    return z_int((int64_t)total);
+}
+
+static bool z_stream_close_native(ZValue value) {
+    ZNetStreamNative *stream = z_expect_net_stream(value);
+    if (stream->closed) return false;
+    stream->closed = true;
+#if defined(ZUMBRA_ENABLE_TLS)
+    if (stream->tls_session != NULL) { (void)SSL_shutdown(stream->tls_session); SSL_free(stream->tls_session); stream->tls_session = NULL; }
+    if (stream->owned_context != NULL) { SSL_CTX_free(stream->owned_context); stream->owned_context = NULL; }
+#endif
+    close(stream->fd);
+    return true;
+}
+
+static ZValue z_dns_lookup_sync(const char *host) {
+    struct addrinfo hints;
+    memset(&hints, 0, sizeof(hints));
+    hints.ai_family = AF_UNSPEC;
+    hints.ai_socktype = SOCK_STREAM;
+    struct addrinfo *addresses = NULL;
+    int status = getaddrinfo(host, NULL, &hints, &addresses);
+    if (status != 0) z_fatal("dnsLookup %s: %s", host, gai_strerror(status));
+    ZValue *items = NULL;
+    size_t count = 0;
+    size_t capacity = 0;
+    for (struct addrinfo *current = addresses; current != NULL; current = current->ai_next) {
+        char text[NI_MAXHOST];
+        status = getnameinfo(current->ai_addr, current->ai_addrlen, text, sizeof(text), NULL, 0, NI_NUMERICHOST);
+        if (status != 0) continue;
+        bool duplicate = false;
+        for (size_t index = 0; index < count; index++) if (strcmp(items[index].as.s, text) == 0) { duplicate = true; break; }
+        if (duplicate) continue;
+        if (count == capacity) {
+            size_t next = capacity == 0 ? 4 : capacity * 2;
+            ZValue *grown = (ZValue *)realloc(items, next * sizeof(ZValue));
+            if (grown == NULL) { free(items); freeaddrinfo(addresses); z_fatal("out of memory resolving DNS"); }
+            items = grown;
+            capacity = next;
+        }
+        items[count++] = z_string(text);
+    }
+    freeaddrinfo(addresses);
+    ZValue result = z_array_from(items, count);
+    free(items);
+    return result;
+}
+
+typedef struct {
+    pthread_mutex_t mutex;
+    pthread_cond_t condition;
+    char *host;
+    bool done;
+    bool abandoned;
+    int status;
+    struct addrinfo *addresses;
+} ZDNSRequest;
+
+static void *z_dns_worker(void *raw) {
+    ZDNSRequest *request = (ZDNSRequest *)raw;
+    struct addrinfo hints;
+    memset(&hints, 0, sizeof(hints));
+    hints.ai_family = AF_UNSPEC;
+    hints.ai_socktype = SOCK_STREAM;
+    struct addrinfo *addresses = NULL;
+    int status = getaddrinfo(request->host, NULL, &hints, &addresses);
+    pthread_mutex_lock(&request->mutex);
+    if (request->abandoned) {
+        pthread_mutex_unlock(&request->mutex);
+        if (addresses != NULL) freeaddrinfo(addresses);
+        free(request->host);
+        pthread_cond_destroy(&request->condition);
+        pthread_mutex_destroy(&request->mutex);
+        free(request);
+    } else {
+        request->status = status;
+        request->addresses = addresses;
+        request->done = true;
+        pthread_cond_signal(&request->condition);
+        pthread_mutex_unlock(&request->mutex);
+    }
+    pthread_mutex_lock(&z_task_count_mutex);
+    z_active_tasks--;
+    pthread_cond_broadcast(&z_task_count_condition);
+    pthread_mutex_unlock(&z_task_count_mutex);
+    return NULL;
+}
+
+static ZValue z_dns_lookup_timeout_native(const char *host, int64_t timeout_ms) {
+    if (timeout_ms < 0) z_fatal("dnsLookupTimeout timeout must be non-negative");
+    ZDNSRequest *request = (ZDNSRequest *)calloc(1, sizeof(ZDNSRequest));
+    if (request == NULL) z_fatal("out of memory starting DNS lookup");
+    pthread_mutex_init(&request->mutex, NULL);
+    pthread_cond_init(&request->condition, NULL);
+    request->host = strdup(host);
+    if (request->host == NULL) z_fatal("out of memory copying DNS host");
+    pthread_t thread;
+    pthread_mutex_lock(&z_task_count_mutex);
+    z_active_tasks++;
+    pthread_mutex_unlock(&z_task_count_mutex);
+    if (pthread_create(&thread, NULL, z_dns_worker, request) != 0) z_fatal("could not create DNS worker");
+    pthread_detach(thread);
+    struct timespec deadline = z_deadline_after_ms(timeout_ms);
+    pthread_mutex_lock(&request->mutex);
+    int status = 0;
+    while (!request->done && status != ETIMEDOUT) status = pthread_cond_timedwait(&request->condition, &request->mutex, &deadline);
+    if (!request->done) {
+        request->abandoned = true;
+        pthread_mutex_unlock(&request->mutex);
+        ZValue values[2] = {z_array_from(NULL, 0), z_bool(false)};
+        return z_array_from(values, 2);
+    }
+    int lookup_status = request->status;
+    struct addrinfo *addresses = request->addresses;
+    pthread_mutex_unlock(&request->mutex);
+    free(request->host);
+    pthread_cond_destroy(&request->condition);
+    pthread_mutex_destroy(&request->mutex);
+    free(request);
+    if (lookup_status != 0) { if (addresses != NULL) freeaddrinfo(addresses); z_fatal("dnsLookupTimeout %s: %s", host, gai_strerror(lookup_status)); }
+    ZValue *items = NULL;
+    size_t count = 0, capacity = 0;
+    for (struct addrinfo *current = addresses; current != NULL; current = current->ai_next) {
+        char text[NI_MAXHOST];
+        if (getnameinfo(current->ai_addr, current->ai_addrlen, text, sizeof(text), NULL, 0, NI_NUMERICHOST) != 0) continue;
+        bool duplicate = false;
+        for (size_t index = 0; index < count; index++) if (strcmp(items[index].as.s, text) == 0) { duplicate = true; break; }
+        if (duplicate) continue;
+        if (count == capacity) {
+            size_t next = capacity == 0 ? 4 : capacity * 2;
+            ZValue *grown = (ZValue *)realloc(items, next * sizeof(ZValue));
+            if (grown == NULL) { free(items); freeaddrinfo(addresses); z_fatal("out of memory resolving DNS"); }
+            items = grown;
+            capacity = next;
+        }
+        items[count++] = z_string(text);
+    }
+    freeaddrinfo(addresses);
+    ZValue resolved = z_array_from(items, count);
+    free(items);
+    ZValue values[2] = {resolved, z_bool(true)};
+    return z_array_from(values, 2);
+}
+
+static ZValue z_udp_bind_native(const char *host, int64_t port) {
+    ZUDPSocketNative *socket_value = (ZUDPSocketNative *)z_alloc(sizeof(ZUDPSocketNative));
+    socket_value->fd = z_network_bound_socket(host, port, SOCK_DGRAM, false, "udpBind");
+    return z_udp_socket_value(socket_value);
+}
+
+static ZValue z_udp_send_to_native(ZValue socket_value, const char *host, int64_t port, ZValue data_value) {
+    ZUDPSocketNative *socket_object = z_expect_udp_socket(socket_value);
+    if (socket_object->closed) z_fatal("cannot send from a closed UDP socket");
+    struct addrinfo *addresses = z_network_resolve(host, port, SOCK_DGRAM, false, "udpSendTo");
+    const uint8_t *data = NULL;
+    size_t length = 0;
+    z_network_data(data_value, &data, &length);
+    ssize_t written = sendto(socket_object->fd, data, length, 0, addresses->ai_addr, addresses->ai_addrlen);
+    int error = errno;
+    freeaddrinfo(addresses);
+    if (written < 0) z_fatal("udpSendTo failed: %s", strerror(error));
+    return z_int((int64_t)written);
+}
+
+static ZValue z_udp_receive_from_native(ZValue socket_value, int64_t requested, int64_t timeout_ms, bool timeout_mode) {
+    z_network_require_size(requested, timeout_mode ? "udpReceiveFromTimeout" : "udpReceiveFrom");
+    ZUDPSocketNative *socket_object = z_expect_udp_socket(socket_value);
+    if (socket_object->closed) z_fatal("cannot receive from a closed UDP socket");
+    if (timeout_mode) z_network_set_timeout(socket_object->fd, SO_RCVTIMEO, timeout_ms);
+    ZValue bytes = z_bytes((size_t)requested);
+    struct sockaddr_storage source;
+    socklen_t source_length = sizeof(source);
+    ssize_t count;
+    do { count = recvfrom(socket_object->fd, bytes.as.buffer->data, (size_t)requested, 0, (struct sockaddr *)&source, &source_length); } while (count < 0 && errno == EINTR);
+    if (timeout_mode) z_network_set_timeout(socket_object->fd, SO_RCVTIMEO, -1);
+    if (count < 0 && timeout_mode && (errno == EAGAIN || errno == EWOULDBLOCK)) {
+        ZValue values[4] = {z_bytes(0), z_string(""), z_int(0), z_bool(false)};
+        return z_array_from(values, 4);
+    }
+    if (count < 0) z_fatal("udpReceiveFrom failed: %s", strerror(errno));
+    bytes.as.buffer->len = (size_t)count;
+    char host[NI_MAXHOST];
+    char service[32];
+    int status = getnameinfo((struct sockaddr *)&source, source_length, host, sizeof(host), service, sizeof(service), NI_NUMERICHOST | NI_NUMERICSERV);
+    if (status != 0) z_fatal("udpReceiveFrom could not format source: %s", gai_strerror(status));
+    ZValue values[4] = {bytes, z_string(host), z_int(strtoll(service, NULL, 10)), z_bool(true)};
+    return z_array_from(values, timeout_mode ? 4 : 3);
+}
+
+static bool z_udp_close_native(ZValue value) {
+    ZUDPSocketNative *socket_value = z_expect_udp_socket(value);
+    if (socket_value->closed) return false;
+    socket_value->closed = true;
+    close(socket_value->fd);
+    return true;
+}
+
+#endif
+
 ZValue z_call_builtin(const char *name, const ZValue *args, size_t argc) {
+#if defined(ZUMBRA_ENABLE_NETWORK)
+    if(strcmp(name,"tcpListen")==0){z_expect_args(name,argc,2);return z_tcp_listen_native(z_as_cstring(args[0]),z_as_i64(args[1]));}
+    if(strcmp(name,"tcpConnect")==0){z_expect_args(name,argc,2);return z_tcp_connect_native(z_as_cstring(args[0]),z_as_i64(args[1]),-1);}
+    if(strcmp(name,"tcpConnectTimeout")==0){z_expect_args(name,argc,3);return z_tcp_connect_native(z_as_cstring(args[0]),z_as_i64(args[1]),z_as_i64(args[2]));}
+    if(strcmp(name,"tlsListen")==0){z_expect_args(name,argc,4);return z_tls_listen_native(z_as_cstring(args[0]),z_as_i64(args[1]),z_as_cstring(args[2]),z_as_cstring(args[3]));}
+    if(strcmp(name,"tlsConnect")==0){z_expect_args(name,argc,4);return z_tls_connect_native(z_as_cstring(args[0]),z_as_i64(args[1]),z_as_cstring(args[2]),z_as_bool(args[3]),-1);}
+    if(strcmp(name,"tlsConnectTimeout")==0){z_expect_args(name,argc,5);return z_tls_connect_native(z_as_cstring(args[0]),z_as_i64(args[1]),z_as_cstring(args[2]),z_as_bool(args[3]),z_as_i64(args[4]));}
+    if(strcmp(name,"listenerAccept")==0){z_expect_args(name,argc,1);bool accepted=false;return z_listener_accept_native(args[0],-1,&accepted);}
+    if(strcmp(name,"listenerAcceptTimeout")==0){z_expect_args(name,argc,2);bool accepted=false;ZValue stream=z_listener_accept_native(args[0],z_as_i64(args[1]),&accepted);ZValue values[2]={stream,z_bool(accepted)};return z_array_from(values,2);}
+    if(strcmp(name,"listenerClose")==0){z_expect_args(name,argc,1);return z_bool(z_listener_close_native(args[0]));}
+    if(strcmp(name,"listenerClosed")==0){z_expect_args(name,argc,1);return z_bool(z_expect_net_listener(args[0])->closed);}
+    if(strcmp(name,"listenerAddress")==0||strcmp(name,"listenerPort")==0){z_expect_args(name,argc,1);ZNetListenerNative*l=z_expect_net_listener(args[0]);char host[NI_MAXHOST];int64_t port=0;z_network_address(l->fd,false,host,sizeof(host),&port);return strcmp(name,"listenerPort")==0?z_int(port):z_string(host);}
+    if(strcmp(name,"streamRead")==0){z_expect_args(name,argc,2);return z_stream_read_native(args[0],z_as_i64(args[1]),false,-1,false);}
+    if(strcmp(name,"streamReadExact")==0){z_expect_args(name,argc,2);return z_stream_read_native(args[0],z_as_i64(args[1]),true,-1,false);}
+    if(strcmp(name,"streamReadTimeout")==0){z_expect_args(name,argc,3);return z_stream_read_native(args[0],z_as_i64(args[1]),false,z_as_i64(args[2]),true);}
+    if(strcmp(name,"streamWrite")==0){z_expect_args(name,argc,2);return z_stream_write_native(args[0],args[1],false);}
+    if(strcmp(name,"streamWriteAll")==0){z_expect_args(name,argc,2);return z_stream_write_native(args[0],args[1],true);}
+    if(strcmp(name,"streamClose")==0){z_expect_args(name,argc,1);return z_bool(z_stream_close_native(args[0]));}
+    if(strcmp(name,"streamClosed")==0){z_expect_args(name,argc,1);return z_bool(z_expect_net_stream(args[0])->closed);}
+    if(strcmp(name,"streamShutdownRead")==0||strcmp(name,"streamShutdownWrite")==0){z_expect_args(name,argc,1);ZNetStreamNative*s=z_expect_net_stream(args[0]);int how=strcmp(name,"streamShutdownWrite")==0?SHUT_WR:SHUT_RD;if(shutdown(s->fd,how)!=0)z_fatal("%s failed: %s",name,strerror(errno));return z_bool(true);}
+    if(strcmp(name,"streamLocalAddress")==0||strcmp(name,"streamLocalPort")==0||strcmp(name,"streamRemoteAddress")==0||strcmp(name,"streamRemotePort")==0){z_expect_args(name,argc,1);ZNetStreamNative*s=z_expect_net_stream(args[0]);bool remote=strstr(name,"Remote")!=NULL;bool want_port=strstr(name,"Port")!=NULL;char host[NI_MAXHOST];int64_t port=0;z_network_address(s->fd,remote,host,sizeof(host),&port);return want_port?z_int(port):z_string(host);}
+    if(strcmp(name,"streamSetReadTimeout")==0||strcmp(name,"streamSetWriteTimeout")==0){z_expect_args(name,argc,2);ZNetStreamNative*s=z_expect_net_stream(args[0]);z_network_set_timeout(s->fd,strcmp(name,"streamSetReadTimeout")==0?SO_RCVTIMEO:SO_SNDTIMEO,z_as_i64(args[1]));return z_null();}
+    if(strcmp(name,"tcpSetKeepAlive")==0){z_expect_args(name,argc,3);ZNetStreamNative*s=z_expect_net_stream(args[0]);int enabled=z_as_bool(args[1])?1:0;if(setsockopt(s->fd,SOL_SOCKET,SO_KEEPALIVE,&enabled,sizeof(enabled))!=0)z_fatal("tcpSetKeepAlive failed: %s",strerror(errno));
+#ifdef TCP_KEEPIDLE
+        if(enabled){int seconds=(int)((z_as_i64(args[2])+999)/1000);if(seconds<1)seconds=1;if(setsockopt(s->fd,IPPROTO_TCP,TCP_KEEPIDLE,&seconds,sizeof(seconds))!=0)z_fatal("tcpSetKeepAlive idle failed: %s",strerror(errno));}
+#endif
+        return z_null();}
+    if(strcmp(name,"dnsLookup")==0){z_expect_args(name,argc,1);return z_dns_lookup_sync(z_as_cstring(args[0]));}
+    if(strcmp(name,"dnsLookupTimeout")==0){z_expect_args(name,argc,2);return z_dns_lookup_timeout_native(z_as_cstring(args[0]),z_as_i64(args[1]));}
+    if(strcmp(name,"udpBind")==0){z_expect_args(name,argc,2);return z_udp_bind_native(z_as_cstring(args[0]),z_as_i64(args[1]));}
+    if(strcmp(name,"udpSendTo")==0){z_expect_args(name,argc,4);return z_udp_send_to_native(args[0],z_as_cstring(args[1]),z_as_i64(args[2]),args[3]);}
+    if(strcmp(name,"udpReceiveFrom")==0){z_expect_args(name,argc,2);return z_udp_receive_from_native(args[0],z_as_i64(args[1]),-1,false);}
+    if(strcmp(name,"udpReceiveFromTimeout")==0){z_expect_args(name,argc,3);return z_udp_receive_from_native(args[0],z_as_i64(args[1]),z_as_i64(args[2]),true);}
+    if(strcmp(name,"udpClose")==0){z_expect_args(name,argc,1);return z_bool(z_udp_close_native(args[0]));}
+    if(strcmp(name,"udpClosed")==0){z_expect_args(name,argc,1);return z_bool(z_expect_udp_socket(args[0])->closed);}
+    if(strcmp(name,"udpAddress")==0||strcmp(name,"udpPort")==0){z_expect_args(name,argc,1);ZUDPSocketNative*u=z_expect_udp_socket(args[0]);char host[NI_MAXHOST];int64_t port=0;z_network_address(u->fd,false,host,sizeof(host),&port);return strcmp(name,"udpPort")==0?z_int(port):z_string(host);}
+#endif
     if(strcmp(name,"join")==0){z_expect_args(name,argc,1);return z_task_await(args[0]);}
     if(strcmp(name,"cancel")==0){z_expect_args(name,argc,1);return z_bool(z_task_cancel(args[0]));}
     if(strcmp(name,"taskDone")==0){z_expect_args(name,argc,1);return z_bool(z_task_done(args[0]));}

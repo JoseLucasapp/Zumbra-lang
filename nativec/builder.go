@@ -127,6 +127,9 @@ func Build(module *mir.Module, options BuildOptions) (*BuildResult, []Diagnostic
 	for _, library := range options.Libraries {
 		args = append(args, "-l"+library)
 	}
+	if UsesTLS(module) {
+		args = append(args, "-lssl", "-lcrypto")
+	}
 	args = append(args, "-lm", "-pthread", "-o", output)
 	command := exec.Command(compiler, args...)
 	command.Stdout = os.Stdout

@@ -780,3 +780,69 @@ identity("zumbra"); // erro
 A sintaxe não introduz generics explícitos. Polimorfismo real será projetado futuramente sem alterar silenciosamente o contrato monomórfico atual.
 
 Documentação completa: [`docs/pt-BR/inferencia-contextual-de-chamadas.md`](./pt-BR/inferencia-contextual-de-chamadas.md).
+
+---
+
+## Rede, streams e TLS — Z10
+
+O módulo de conveniência atual é importado por caminho:
+
+```zumbra
+import "../../std/net.zum" as net;
+```
+
+Servidor e cliente TCP local:
+
+```zumbra
+fct echo(listener) {
+    var connection << net.accept(listener);
+    var payload << net.readExact(connection, 4);
+    net.writeBytes(connection, payload);
+    net.closeStream(connection);
+    return;
+}
+
+var listener << net.listen("127.0.0.1", 0);
+var server << spawn echo(listener);
+var client << net.connectTimeout(
+    "127.0.0.1",
+    net.listenerPortNumber(listener),
+    1000
+);
+
+net.writeText(client, "ping");
+var response << net.readExact(client, 4);
+```
+
+APIs de baixo nível:
+
+```zumbra
+tcpListen(host, port);
+tcpConnect(host, port);
+tcpConnectTimeout(host, port, timeoutMs);
+listenerAccept(listener);
+listenerAcceptTimeout(listener, timeoutMs);
+
+streamRead(stream, maximumBytes);
+streamReadExact(stream, amount);
+streamReadTimeout(stream, maximumBytes, timeoutMs);
+streamWrite(stream, data);
+streamWriteAll(stream, data);
+streamShutdownRead(stream);
+streamShutdownWrite(stream);
+streamClose(stream);
+
+dnsLookup(host);
+dnsLookupTimeout(host, timeoutMs);
+
+udpBind(host, port);
+udpSendTo(socket, host, port, data);
+udpReceiveFrom(socket, maximumBytes);
+udpReceiveFromTimeout(socket, maximumBytes, timeoutMs);
+
+tlsListen(host, port, certificate, key);
+tlsConnect(host, port, serverName, insecure);
+tlsConnectTimeout(host, port, serverName, insecure, timeoutMs);
+```
+
+Documentação completa: [`docs/pt-BR/rede-tcp-udp-dns-tls.md`](./pt-BR/rede-tcp-udp-dns-tls.md).

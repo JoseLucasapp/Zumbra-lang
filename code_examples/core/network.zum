@@ -1,0 +1,38 @@
+import "../../std/net.zum" as net;
+
+fct echoServer(listener) {
+    var connection << net.accept(listener);
+    var payload << net.readExact(connection, 4);
+    net.writeBytes(connection, payload);
+    net.closeStream(connection);
+    return;
+}
+
+var listener << net.listen("127.0.0.1", 0);
+var server << spawn echoServer(listener);
+var client << net.connectTimeout("127.0.0.1", net.listenerPortNumber(listener), 1000);
+net.writeText(client, "ping");
+var response << net.readExact(client, 4);
+
+var expected << bytes(4);
+expected[0] << 112u8;
+expected[1] << 105u8;
+expected[2] << 110u8;
+expected[3] << 103u8;
+show(bytesEqual(response, expected));
+
+net.closeStream(client);
+await server;
+net.closeListener(listener);
+
+var receiver << net.bindUdp("127.0.0.1", 0);
+var sender << net.bindUdp("127.0.0.1", 0);
+net.sendUdpText(sender, "127.0.0.1", net.udpPortNumber(receiver), "ok");
+var packet << net.receiveUdpTimeout(receiver, 16, 1000);
+show(packet[3]);
+show(sizeOf(packet[0]));
+net.closeUdp(sender);
+net.closeUdp(receiver);
+
+var addresses << net.lookup("localhost");
+show(sizeOf(addresses) > 0);

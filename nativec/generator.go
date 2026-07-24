@@ -58,6 +58,15 @@ var supportedBuiltins = map[string]bool{
 	"mutex": true, "lock": true, "unlock": true, "rwMutex": true, "rLock": true, "rUnlock": true,
 	"waitGroup": true, "wgAdd": true, "wgDone": true, "wgWait": true, "semaphore": true, "acquire": true, "release": true,
 	"atomicInt": true, "atomicLoad": true, "atomicStore": true, "atomicAdd": true, "atomicSwap": true, "atomicCompareSwap": true,
+	"tcpListen": true, "tcpConnect": true, "tcpConnectTimeout": true,
+	"tlsListen": true, "tlsConnect": true, "tlsConnectTimeout": true,
+	"listenerAccept": true, "listenerAcceptTimeout": true, "listenerClose": true, "listenerClosed": true, "listenerAddress": true, "listenerPort": true,
+	"streamRead": true, "streamReadExact": true, "streamReadTimeout": true, "streamWrite": true, "streamWriteAll": true,
+	"streamClose": true, "streamClosed": true, "streamShutdownRead": true, "streamShutdownWrite": true,
+	"streamLocalAddress": true, "streamLocalPort": true, "streamRemoteAddress": true, "streamRemotePort": true,
+	"streamSetReadTimeout": true, "streamSetWriteTimeout": true, "tcpSetKeepAlive": true,
+	"dnsLookup": true, "dnsLookupTimeout": true,
+	"udpBind": true, "udpSendTo": true, "udpReceiveFrom": true, "udpReceiveFromTimeout": true, "udpClose": true, "udpClosed": true, "udpAddress": true, "udpPort": true,
 }
 
 type structInfo struct {
@@ -122,6 +131,16 @@ func Generate(module *mir.Module) (*Sources, []Diagnostic) {
 	runtimeSource, err := runtimeFiles.ReadFile("runtime/zumbra_runtime.c")
 	if err != nil {
 		return nil, []Diagnostic{{Message: "could not load embedded native runtime: " + err.Error()}}
+	}
+	prefix := ""
+	if UsesNetwork(module) {
+		prefix += "#define ZUMBRA_ENABLE_NETWORK 1\n"
+	}
+	if UsesTLS(module) {
+		prefix += "#define ZUMBRA_ENABLE_TLS 1\n"
+	}
+	if prefix != "" {
+		runtimeSource = append([]byte(prefix), runtimeSource...)
 	}
 	header, err := runtimeFiles.ReadFile("runtime/zumbra_runtime.h")
 	if err != nil {
@@ -226,7 +245,7 @@ func (g *generator) emitProgram() {
 	g.line("#include \"zumbra_runtime.h\"")
 	g.line("#include <stdio.h>")
 	g.line("#include <string.h>")
-	g.line("_Static_assert(ZUMBRA_NATIVE_ABI_VERSION == 2u, \"unsupported Zumbra native ABI\");")
+	g.line("_Static_assert(ZUMBRA_NATIVE_ABI_VERSION == 3u, \"unsupported Zumbra native ABI\");")
 	g.line("")
 	g.emitFFIDeclarations()
 	for _, name := range sortedKeys(g.globals) {
@@ -987,4 +1006,75 @@ func max(a, b int) int {
 		return a
 	}
 	return b
+}
+
+var networkBuiltins = map[string]bool{
+	"tcpListen": true, "tcpConnect": true, "tcpConnectTimeout": true,
+	"tlsListen": true, "tlsConnect": true, "tlsConnectTimeout": true,
+	"listenerAccept": true, "listenerAcceptTimeout": true, "listenerClose": true, "listenerClosed": true, "listenerAddress": true, "listenerPort": true,
+	"streamRead": true, "streamReadExact": true, "streamReadTimeout": true, "streamWrite": true, "streamWriteAll": true,
+	"streamClose": true, "streamClosed": true, "streamShutdownRead": true, "streamShutdownWrite": true,
+	"streamLocalAddress": true, "streamLocalPort": true, "streamRemoteAddress": true, "streamRemotePort": true,
+	"streamSetReadTimeout": true, "streamSetWriteTimeout": true, "tcpSetKeepAlive": true,
+	"dnsLookup": true, "dnsLookupTimeout": true,
+	"udpBind": true, "udpSendTo": true, "udpReceiveFrom": true, "udpReceiveFromTimeout": true,
+	"udpClose": true, "udpClosed": true, "udpAddress": true, "udpPort": true,
+}
+
+var tlsBuiltins = map[string]bool{
+	"tlsListen": true, "tlsConnect": true, "tlsConnectTimeout": true,
+}
+
+// UsesNetwork reports whether the MIR references any Z10 networking builtin.
+func UsesNetwork(module *mir.Module) bool { return moduleUsesAnyBuiltin(module, networkBuiltins) }
+
+// UsesTLS reports whether the MIR references any TLS builtin and therefore
+// requires OpenSSL during native compilation.
+func UsesTLS(module *mir.Module) bool { return moduleUsesAnyBuiltin(module, tlsBuiltins) }
+
+func moduleUsesAnyBuiltin(module *mir.Module, names map[string]bool) bool {
+	if module == nil {
+		return false
+	}
+	for _, declaration := range module.Declarations {
+		if instructionUsesBuiltin(declaration, names) {
+			return true
+		}
+	}
+	if regionUsesBuiltin(module.Entry, names) {
+		return true
+	}
+	for _, function := range module.Functions {
+		if function != nil && regionUsesBuiltin(function.Body, names) {
+			return true
+		}
+	}
+	return false
+}
+
+func regionUsesBuiltin(region *mir.Region, names map[string]bool) bool {
+	if region == nil {
+		return false
+	}
+	for _, instruction := range region.Instructions {
+		if instructionUsesBuiltin(instruction, names) {
+			return true
+		}
+	}
+	return false
+}
+
+func instructionUsesBuiltin(instruction *mir.Instruction, names map[string]bool) bool {
+	if instruction == nil {
+		return false
+	}
+	if instruction.Op == mir.OpLoad && names[instruction.Name] {
+		return true
+	}
+	for _, region := range instruction.Regions {
+		if regionUsesBuiltin(region, names) {
+			return true
+		}
+	}
+	return false
 }

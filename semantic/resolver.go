@@ -2,6 +2,7 @@ package semantic
 
 import (
 	"fmt"
+	"strings"
 	"zumbra/ast"
 	"zumbra/builtinspec"
 )
@@ -184,6 +185,9 @@ func (r *Resolver) collectWarningsFromScope(scope *Scope) {
 	}
 
 	for _, sym := range scope.Symbols {
+		if strings.HasPrefix(sym.Name, "__zm_") || strings.HasPrefix(sym.Name, "__z_") {
+			continue
+		}
 		switch sym.Kind {
 		case SymbolVar, SymbolParam, SymbolFunction, SymbolImport:
 			if !sym.Used {

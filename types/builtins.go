@@ -117,6 +117,63 @@ func builtinType(name string) (*Type, bool) {
 	case "lock", "unlock", "rLock", "rUnlock", "wgAdd", "wgDone", "wgWait", "acquire", "release":
 		return FuncOf([]*Type{Simple(Unknown)}, Simple(Null)), true
 
+	case "tcpListen":
+		return FuncOf([]*Type{Simple(String), Simple(Int)}, Simple(NetListener)), true
+	case "tcpConnect":
+		return FuncOf([]*Type{Simple(String), Simple(Int)}, Simple(NetStream)), true
+	case "tcpConnectTimeout":
+		return FuncOf([]*Type{Simple(String), Simple(Int), Simple(Int)}, Simple(NetStream)), true
+	case "tlsListen":
+		return FuncOf([]*Type{Simple(String), Simple(Int), Simple(String), Simple(String)}, Simple(NetListener)), true
+	case "tlsConnect":
+		return FuncOf([]*Type{Simple(String), Simple(Int), Simple(String), Simple(Bool)}, Simple(NetStream)), true
+	case "tlsConnectTimeout":
+		return FuncOf([]*Type{Simple(String), Simple(Int), Simple(String), Simple(Bool), Simple(Int)}, Simple(NetStream)), true
+	case "listenerAccept":
+		return FuncOf([]*Type{Simple(NetListener)}, Simple(NetStream)), true
+	case "listenerAcceptTimeout":
+		return FuncOf([]*Type{Simple(NetListener), Simple(Int)}, ArrayOf(Simple(Unknown))), true
+	case "listenerClose", "listenerClosed":
+		return FuncOf([]*Type{Simple(NetListener)}, Simple(Bool)), true
+	case "listenerAddress":
+		return FuncOf([]*Type{Simple(NetListener)}, Simple(String)), true
+	case "listenerPort":
+		return FuncOf([]*Type{Simple(NetListener)}, Simple(Int)), true
+	case "streamRead", "streamReadExact":
+		return FuncOf([]*Type{Simple(NetStream), Simple(Int)}, ByteArrayOf()), true
+	case "streamReadTimeout":
+		return FuncOf([]*Type{Simple(NetStream), Simple(Int), Simple(Int)}, ArrayOf(Simple(Unknown))), true
+	case "streamWrite", "streamWriteAll":
+		return FuncOf([]*Type{Simple(NetStream), Simple(Unknown)}, Simple(Int)), true
+	case "streamClose", "streamClosed", "streamShutdownRead", "streamShutdownWrite":
+		return FuncOf([]*Type{Simple(NetStream)}, Simple(Bool)), true
+	case "streamLocalAddress", "streamRemoteAddress":
+		return FuncOf([]*Type{Simple(NetStream)}, Simple(String)), true
+	case "streamLocalPort", "streamRemotePort":
+		return FuncOf([]*Type{Simple(NetStream)}, Simple(Int)), true
+	case "streamSetReadTimeout", "streamSetWriteTimeout":
+		return FuncOf([]*Type{Simple(NetStream), Simple(Int)}, Simple(Null)), true
+	case "tcpSetKeepAlive":
+		return FuncOf([]*Type{Simple(NetStream), Simple(Bool), Simple(Int)}, Simple(Null)), true
+	case "dnsLookup":
+		return FuncOf([]*Type{Simple(String)}, ArrayOf(Simple(String))), true
+	case "dnsLookupTimeout":
+		return FuncOf([]*Type{Simple(String), Simple(Int)}, ArrayOf(Simple(Unknown))), true
+	case "udpBind":
+		return FuncOf([]*Type{Simple(String), Simple(Int)}, Simple(UDPSocket)), true
+	case "udpSendTo":
+		return FuncOf([]*Type{Simple(UDPSocket), Simple(String), Simple(Int), Simple(Unknown)}, Simple(Int)), true
+	case "udpReceiveFrom":
+		return FuncOf([]*Type{Simple(UDPSocket), Simple(Int)}, ArrayOf(Simple(Unknown))), true
+	case "udpReceiveFromTimeout":
+		return FuncOf([]*Type{Simple(UDPSocket), Simple(Int), Simple(Int)}, ArrayOf(Simple(Unknown))), true
+	case "udpClose", "udpClosed":
+		return FuncOf([]*Type{Simple(UDPSocket)}, Simple(Bool)), true
+	case "udpAddress":
+		return FuncOf([]*Type{Simple(UDPSocket)}, Simple(String)), true
+	case "udpPort":
+		return FuncOf([]*Type{Simple(UDPSocket)}, Simple(Int)), true
+
 	case "first":
 		return FuncOf([]*Type{ArrayOf(Simple(Unknown))}, Simple(Unknown)), true
 

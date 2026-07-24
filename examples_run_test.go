@@ -35,6 +35,8 @@ func TestRunnableCodeExamplesParseCompileAndRun(t *testing.T) {
 		"for.zum":              true,
 		"functions.zum":        true,
 		"native_build.zum":     true,
+		"network.zum":          true,
+		"network_tls.zum":      true,
 		"hello_world.zum":      true,
 		"parse.zum":            true,
 		"show.zum":             true,

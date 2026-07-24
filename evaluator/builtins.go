@@ -67,6 +67,15 @@ func init() {
 		"atomicInt", "atomicLoad", "atomicStore", "atomicAdd", "atomicSwap", "atomicCompareSwap",
 	}
 
+	network := []string{
+		"tcpListen", "tcpConnect", "tcpConnectTimeout", "tlsListen", "tlsConnect", "tlsConnectTimeout",
+		"listenerAccept", "listenerAcceptTimeout", "listenerClose", "listenerClosed", "listenerAddress", "listenerPort",
+		"streamRead", "streamReadExact", "streamReadTimeout", "streamWrite", "streamWriteAll", "streamClose", "streamClosed",
+		"streamShutdownRead", "streamShutdownWrite", "streamLocalAddress", "streamLocalPort", "streamRemoteAddress", "streamRemotePort",
+		"streamSetReadTimeout", "streamSetWriteTimeout", "tcpSetKeepAlive", "dnsLookup", "dnsLookupTimeout",
+		"udpBind", "udpSendTo", "udpReceiveFrom", "udpReceiveFromTimeout", "udpClose", "udpClosed", "udpAddress", "udpPort",
+	}
+
 	fixedIntegers := []string{
 		"u8", "u16", "u32", "u64", "i8", "i16", "i32", "i64",
 		"wrapAdd", "wrapSub", "wrapMul",
@@ -85,6 +94,7 @@ func init() {
 	allBuiltins = append(allBuiltins, memoryCollections...)
 	allBuiltins = append(allBuiltins, binaryIO...)
 	allBuiltins = append(allBuiltins, concurrency...)
+	allBuiltins = append(allBuiltins, network...)
 	allBuiltins = append(allBuiltins, stringUtils...)
 	allBuiltins = append(allBuiltins, numbersUtils...)
 	allBuiltins = append(allBuiltins, ioUtils...)

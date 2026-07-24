@@ -45,6 +45,9 @@ const (
 	WAIT_GROUP_OBJ        = "WAIT_GROUP"
 	SEMAPHORE_OBJ         = "SEMAPHORE"
 	ATOMIC_INT_OBJ        = "ATOMIC_INT"
+	NET_LISTENER_OBJ      = "NET_LISTENER"
+	NET_STREAM_OBJ        = "NET_STREAM"
+	UDP_SOCKET_OBJ        = "UDP_SOCKET"
 )
 
 type Object interface {
