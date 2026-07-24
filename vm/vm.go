@@ -527,6 +527,24 @@ func (vm *VM) Run() error {
 					}
 				}
 
+			case *object.HttpApp:
+				val := builtins.AppMethod(d, attrName.Value)
+				if val == nil {
+					return fmt.Errorf("unknown method %s for HttpApp", attrName.Value)
+				}
+				if err := vm.push(val); err != nil {
+					return err
+				}
+
+			case *object.HttpServer:
+				val := builtins.ServerMethod(d, attrName.Value)
+				if val == nil {
+					return fmt.Errorf("unknown method %s for HttpServer", attrName.Value)
+				}
+				if err := vm.push(val); err != nil {
+					return err
+				}
+
 			case *object.HttpRequest:
 				val := builtins.RequestAttr(d, attrName.Value)
 				if val == nil {
@@ -540,6 +558,24 @@ func (vm *VM) Run() error {
 				val := builtins.ResponseMethod(d, attrName.Value)
 				if val == nil {
 					return fmt.Errorf("unknown attribute %s for HttpResponse", attrName.Value)
+				}
+				if err := vm.push(val); err != nil {
+					return err
+				}
+
+			case *object.HttpClientResponse:
+				val := builtins.ClientResponseAttr(d, attrName.Value)
+				if val == nil {
+					return fmt.Errorf("unknown attribute %s for HttpClientResponse", attrName.Value)
+				}
+				if err := vm.push(val); err != nil {
+					return err
+				}
+
+			case *object.HttpUploadedFile:
+				val := builtins.HTTPFileAttr(d, attrName.Value)
+				if val == nil {
+					return fmt.Errorf("unknown attribute %s for HttpFile", attrName.Value)
 				}
 				if err := vm.push(val); err != nil {
 					return err

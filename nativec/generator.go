@@ -17,7 +17,7 @@ import (
 	"zumbra/types"
 )
 
-//go:embed runtime/zumbra_runtime.c runtime/zumbra_runtime.h
+//go:embed runtime/zumbra_runtime.c runtime/zumbra_runtime.h runtime/zumbra_http.inc
 var runtimeFiles embed.FS
 
 type Sources struct {
@@ -39,7 +39,7 @@ func (d Diagnostic) Error() string {
 }
 
 var supportedBuiltins = map[string]bool{
-	"show": true, "sizeOf": true,
+	"show": true, "sizeOf": true, "toString": true,
 	"u8": true, "u16": true, "u32": true, "u64": true,
 	"i8": true, "i16": true, "i32": true, "i64": true,
 	"toInt": true, "toFloat": true, "toBool": true,
@@ -67,6 +67,13 @@ var supportedBuiltins = map[string]bool{
 	"streamSetReadTimeout": true, "streamSetWriteTimeout": true, "tcpSetKeepAlive": true,
 	"dnsLookup": true, "dnsLookupTimeout": true,
 	"udpBind": true, "udpSendTo": true, "udpReceiveFrom": true, "udpReceiveFromTimeout": true, "udpClose": true, "udpClosed": true, "udpAddress": true, "udpPort": true,
+	"httpApp": true, "httpRoute": true, "httpUse": true, "httpStatic": true, "httpLimitBody": true, "httpCompression": true, "httpCors": true,
+	"httpServe": true, "httpServeTLS": true, "httpShutdown": true, "httpServerPort": true, "httpServerAddress": true, "httpServerRunning": true,
+	"httpText": true, "httpJson": true, "httpHtml": true, "httpRedirect": true, "httpFile": true, "httpHeader": true, "httpCookie": true,
+	"httpStream": true, "httpSSE": true, "sseEvent": true, "httpRequest": true, "httpStatus": true, "httpBody": true, "httpBodyBytes": true, "httpBodyJSON": true, "httpHeaders": true,
+	"jsonStringify": true, "jsonParse": true, "jwtSignHS256": true, "jwtVerifyHS256": true,
+	"webSocketUpgrade": true, "webSocketConnect": true, "webSocketRead": true, "webSocketReadTimeout": true,
+	"webSocketWriteText": true, "webSocketWriteBinary": true, "webSocketPing": true, "webSocketClose": true, "webSocketClosed": true,
 }
 
 type structInfo struct {
@@ -133,11 +140,22 @@ func Generate(module *mir.Module) (*Sources, []Diagnostic) {
 		return nil, []Diagnostic{{Message: "could not load embedded native runtime: " + err.Error()}}
 	}
 	prefix := ""
-	if UsesNetwork(module) {
+	if UsesNetwork(module) || UsesHTTP(module) {
 		prefix += "#define ZUMBRA_ENABLE_NETWORK 1\n"
 	}
-	if UsesTLS(module) {
+	if UsesTLS(module) || UsesHTTP(module) {
 		prefix += "#define ZUMBRA_ENABLE_TLS 1\n"
+	}
+	if UsesHTTP(module) {
+		prefix += "#define ZUMBRA_ENABLE_HTTP 1\n"
+	}
+	if UsesHTTP(module) {
+		httpRuntime, readErr := runtimeFiles.ReadFile("runtime/zumbra_http.inc")
+		if readErr != nil {
+			return nil, []Diagnostic{{Message: "could not load embedded HTTP runtime: " + readErr.Error()}}
+		}
+		runtimeSource = append(runtimeSource, '\n')
+		runtimeSource = append(runtimeSource, httpRuntime...)
 	}
 	if prefix != "" {
 		runtimeSource = append([]byte(prefix), runtimeSource...)
@@ -245,7 +263,7 @@ func (g *generator) emitProgram() {
 	g.line("#include \"zumbra_runtime.h\"")
 	g.line("#include <stdio.h>")
 	g.line("#include <string.h>")
-	g.line("_Static_assert(ZUMBRA_NATIVE_ABI_VERSION == 3u, \"unsupported Zumbra native ABI\");")
+	g.line("_Static_assert(ZUMBRA_NATIVE_ABI_VERSION == 4u, \"unsupported Zumbra native ABI\");")
 	g.line("")
 	g.emitFFIDeclarations()
 	for _, name := range sortedKeys(g.globals) {
@@ -1027,6 +1045,19 @@ var tlsBuiltins = map[string]bool{
 
 // UsesNetwork reports whether the MIR references any Z10 networking builtin.
 func UsesNetwork(module *mir.Module) bool { return moduleUsesAnyBuiltin(module, networkBuiltins) }
+
+var httpBuiltins = map[string]bool{
+	"httpApp": true, "httpRoute": true, "httpUse": true, "httpStatic": true, "httpLimitBody": true, "httpCompression": true, "httpCors": true,
+	"httpServe": true, "httpServeTLS": true, "httpShutdown": true, "httpServerPort": true, "httpServerAddress": true, "httpServerRunning": true,
+	"httpText": true, "httpJson": true, "httpHtml": true, "httpRedirect": true, "httpFile": true, "httpHeader": true, "httpCookie": true,
+	"httpStream": true, "httpSSE": true, "sseEvent": true, "httpRequest": true, "httpStatus": true, "httpBody": true, "httpBodyBytes": true, "httpBodyJSON": true, "httpHeaders": true,
+	"jsonStringify": true, "jsonParse": true, "jwtSignHS256": true, "jwtVerifyHS256": true,
+	"webSocketUpgrade": true, "webSocketConnect": true, "webSocketRead": true, "webSocketReadTimeout": true, "webSocketWriteText": true,
+	"webSocketWriteBinary": true, "webSocketPing": true, "webSocketClose": true, "webSocketClosed": true,
+}
+
+// UsesHTTP reports whether the MIR references Z11 HTTP, SSE, JWT or WebSocket APIs.
+func UsesHTTP(module *mir.Module) bool { return moduleUsesAnyBuiltin(module, httpBuiltins) }
 
 // UsesTLS reports whether the MIR references any TLS builtin and therefore
 // requires OpenSSL during native compilation.

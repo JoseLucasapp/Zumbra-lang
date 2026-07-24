@@ -19,7 +19,7 @@ import (
 	"zumbra/vm"
 )
 
-const version = "0.3.0"
+const version = "0.4.0"
 
 func main() {
 	currentUser, err := user.Current()
@@ -141,10 +141,6 @@ func runFile(filename string) {
 	for i, v := range builtins.Builtins {
 		symbolTable.DefineBuiltin(i, v.Name)
 	}
-	builtins.SetRouteInvoker(func(handler object.Object, args ...object.Object) (object.Object, error) {
-		return vm.InvokeFunction(handler, args, constants, globals)
-	})
-
 	absPath, err := filepath.Abs(filename)
 	if err != nil {
 		fmt.Printf("Path error: %s\n", err)
@@ -163,6 +159,9 @@ func runFile(filename string) {
 	}
 
 	code := comp.Bytecode()
+	builtins.SetRouteInvoker(func(handler object.Object, args ...object.Object) (object.Object, error) {
+		return vm.InvokeFunction(handler, args, code.Constants, globals)
+	})
 	machine := vm.NewWithGlobalsStore(code, globals)
 	if err := machine.Run(); err != nil {
 		fmt.Printf("Error on VM execution: %s\n", err)

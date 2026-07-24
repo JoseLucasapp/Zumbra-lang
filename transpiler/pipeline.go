@@ -37,6 +37,14 @@ func ZumbraTranspilerPipeline(result *pipeline.Result) (string, error) {
 	if mirRegionHasNetwork(result.MIR.Entry) {
 		return "", fmt.Errorf("Z10 networking is supported by the VM and native backend; the legacy Go transpiler does not provide socket streams")
 	}
+	for _, function := range result.MIR.Functions {
+		if function != nil && mirRegionHasHTTP(function.Body) {
+			return "", fmt.Errorf("Z11 HTTP and WebSockets are supported by the VM and native backend; the legacy Go transpiler does not provide the HTTP runtime")
+		}
+	}
+	if mirRegionHasHTTP(result.MIR.Entry) {
+		return "", fmt.Errorf("Z11 HTTP and WebSockets are supported by the VM and native backend; the legacy Go transpiler does not provide the HTTP runtime")
+	}
 	return ZumbraTranspiler(result.Program.String())
 }
 
@@ -87,6 +95,39 @@ func mirRegionHasConcurrency(region *mir.Region) bool {
 		}
 		for _, child := range instruction.Regions {
 			if mirRegionHasConcurrency(child) {
+				return true
+			}
+		}
+	}
+	return false
+}
+
+var httpBuiltinNames = map[string]bool{
+	"httpApp": true, "httpRoute": true, "httpUse": true, "httpStatic": true, "httpLimitBody": true,
+	"httpCompression": true, "httpCors": true, "httpServe": true, "httpServeTLS": true, "httpShutdown": true,
+	"httpServerPort": true, "httpServerAddress": true, "httpServerRunning": true,
+	"httpText": true, "httpJson": true, "httpHtml": true, "httpRedirect": true, "httpFile": true,
+	"httpHeader": true, "httpCookie": true, "httpStream": true, "httpSSE": true, "sseEvent": true,
+	"httpRequest": true, "httpStatus": true, "httpBody": true, "httpBodyBytes": true, "httpBodyJSON": true,
+	"httpHeaders": true, "jsonStringify": true, "jsonParse": true, "jwtSignHS256": true, "jwtVerifyHS256": true,
+	"webSocketUpgrade": true, "webSocketConnect": true, "webSocketRead": true, "webSocketReadTimeout": true,
+	"webSocketWriteText": true, "webSocketWriteBinary": true, "webSocketPing": true,
+	"webSocketClose": true, "webSocketClosed": true,
+}
+
+func mirRegionHasHTTP(region *mir.Region) bool {
+	if region == nil {
+		return false
+	}
+	for _, instruction := range region.Instructions {
+		if instruction == nil {
+			continue
+		}
+		if instruction.Op == mir.OpLoad && httpBuiltinNames[instruction.Name] {
+			return true
+		}
+		for _, child := range instruction.Regions {
+			if mirRegionHasHTTP(child) {
 				return true
 			}
 		}

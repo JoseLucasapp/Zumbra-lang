@@ -34,9 +34,11 @@ func TestRunnableCodeExamplesParseCompileAndRun(t *testing.T) {
 		"date.zum":             true,
 		"for.zum":              true,
 		"functions.zum":        true,
+		"http_api.zum":         true,
 		"native_build.zum":     true,
 		"network.zum":          true,
 		"network_tls.zum":      true,
+		"websocket.zum":        true,
 		"hello_world.zum":      true,
 		"parse.zum":            true,
 		"show.zum":             true,
@@ -102,7 +104,12 @@ func TestRunnableCodeExamplesParseCompileAndRun(t *testing.T) {
 				t.Fatalf("compiler error in %s: %s", path, err)
 			}
 
-			machine := vm.New(comp.Bytecode())
+			code := comp.Bytecode()
+			globals := make([]object.Object, vm.GlobalSize)
+			builtins.SetRouteInvoker(func(handler object.Object, args ...object.Object) (object.Object, error) {
+				return vm.InvokeFunction(handler, args, code.Constants, globals)
+			})
+			machine := vm.NewWithGlobalsStore(code, globals)
 			if err := machine.Run(); err != nil {
 				t.Fatalf("vm error in %s: %s", path, err)
 			}
@@ -120,4 +127,39 @@ func normalizeExampleTestName(path string) string {
 	name := strings.ReplaceAll(path, string(filepath.Separator), "_")
 	name = strings.TrimSuffix(name, filepath.Ext(name))
 	return name
+}
+
+func TestZ11HTTPExamplesParseCompileAndRun(t *testing.T) {
+	for _, path := range []string{
+		"code_examples/core/http_api.zum",
+		"code_examples/core/websocket.zum",
+	} {
+		t.Run(normalizeExampleTestName(path), func(t *testing.T) {
+			sourceBytes, err := os.ReadFile(path)
+			if err != nil {
+				t.Fatal(err)
+			}
+			result, diagnostics := pipeline.Build(path, string(sourceBytes), pipeline.Options{Optimize: true})
+			if len(diagnostics) > 0 {
+				t.Fatalf("pipeline errors in %s:\n\t%s", path, pipeline.FormatDiagnostics(diagnostics))
+			}
+			symbolTable := compiler.NewSymbolTable()
+			for index, builtin := range builtins.Builtins {
+				symbolTable.DefineBuiltin(index, builtin.Name)
+			}
+			comp := compiler.NewWithStateAndDir(symbolTable, []object.Object{}, filepath.Dir(path))
+			if err := comp.CompilePipeline(result); err != nil {
+				t.Fatal(err)
+			}
+			code := comp.Bytecode()
+			globals := make([]object.Object, vm.GlobalSize)
+			builtins.SetRouteInvoker(func(handler object.Object, args ...object.Object) (object.Object, error) {
+				return vm.InvokeFunction(handler, args, code.Constants, globals)
+			})
+			machine := vm.NewWithGlobalsStore(code, globals)
+			if err := machine.Run(); err != nil {
+				t.Fatal(err)
+			}
+		})
+	}
 }

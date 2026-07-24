@@ -21,7 +21,7 @@ Designed for clarity, simplicity, and extensibility, Zumbra is the perfect playg
 
 The rebuild now follows a clear direction: systems, emulation, and game development without abandoning Zumbra's simplicity. See the Portuguese design and feature documentation in [`docs/pt-BR/`](./docs/pt-BR/).
 
-Current systems features include readable bitwise operators, fixed-width integers (`u8` through `u64`, `i8` through `i64`), mutable indexes, compact byte memory, typed integer arrays, zero-copy mutable slices, binary file I/O, endian-aware integer access, buffer copying/comparison, SHA-256 hashing, immutable constants, type aliases, structs with methods, enums, and `match`. Z6 adds a canonical typed pipeline with HIR and MIR. Z7 adds a C11 backend that consumes optimized MIR and produces standalone native executables with Clang or GCC. Z8 adds isolated modules with `pub` exports, module graph inspection, typed C FFI, opaque pointers, synchronous callbacks, native linking, and a conservative C-header binding generator. Z8.1 adds contextual callback inference, so callback parameters and returns become concrete in type analysis, HIR, MIR, and native builds without extra annotations. Z9 adds real tasks, `spawn`, `async`/`await`, inferred typed channels, timeouts, cooperative cancellation, mutexes, wait groups, semaphores, and atomics across the VM and pthread-based native runtime. Z9.1 extends contextual inference to ordinary calls and `spawn`, so user functions, methods, `Channel<T>`, `Task<T>`, atomics, and return values become concrete without annotations. Z10 adds local-first TCP, UDP, IPv4/IPv6 DNS, TLS 1.2+, common byte streams, accept/connect/read timeouts, half-close, keepalive, and conditional native linking through POSIX sockets and OpenSSL. See [`docs/pt-BR/modulos-abi-e-ffi.md`](./docs/pt-BR/modulos-abi-e-ffi.md), [`docs/pt-BR/inferencia-contextual-de-callbacks.md`](./docs/pt-BR/inferencia-contextual-de-callbacks.md), [`docs/pt-BR/concorrencia-e-tarefas.md`](./docs/pt-BR/concorrencia-e-tarefas.md), [`docs/pt-BR/inferencia-contextual-de-chamadas.md`](./docs/pt-BR/inferencia-contextual-de-chamadas.md), and [`docs/pt-BR/rede-tcp-udp-dns-tls.md`](./docs/pt-BR/rede-tcp-udp-dns-tls.md).
+Current systems features include readable bitwise operators, fixed-width integers (`u8` through `u64`, `i8` through `i64`), mutable indexes, compact byte memory, typed integer arrays, zero-copy mutable slices, binary file I/O, endian-aware integer access, buffer copying/comparison, SHA-256 hashing, immutable constants, type aliases, structs with methods, enums, and `match`. Z6 adds a canonical typed pipeline with HIR and MIR. Z7 adds a C11 backend that consumes optimized MIR and produces standalone native executables with Clang or GCC. Z8 adds isolated modules with `pub` exports, module graph inspection, typed C FFI, opaque pointers, synchronous callbacks, native linking, and a conservative C-header binding generator. Z8.1 adds contextual callback inference, so callback parameters and returns become concrete in type analysis, HIR, MIR, and native builds without extra annotations. Z9 adds real tasks, `spawn`, `async`/`await`, inferred typed channels, timeouts, cooperative cancellation, mutexes, wait groups, semaphores, and atomics across the VM and pthread-based native runtime. Z9.1 extends contextual inference to ordinary calls and `spawn`, so user functions, methods, `Channel<T>`, `Task<T>`, atomics, and return values become concrete without annotations. Z10 adds local-first TCP, UDP, IPv4/IPv6 DNS, TLS 1.2+, common byte streams, accept/connect/read timeouts, half-close, keepalive, and conditional native linking through POSIX sockets and OpenSSL. Z11 adds typed HTTP/1.1 applications, routing, middleware, JSON, cookies, stateless JWT sessions, multipart uploads, static files, gzip, streaming/SSE, HTTP clients, graceful shutdown and RFC 6455 WebSockets/WSS across the VM and native runtime. See [`docs/pt-BR/modulos-abi-e-ffi.md`](./docs/pt-BR/modulos-abi-e-ffi.md), [`docs/pt-BR/inferencia-contextual-de-callbacks.md`](./docs/pt-BR/inferencia-contextual-de-callbacks.md), [`docs/pt-BR/concorrencia-e-tarefas.md`](./docs/pt-BR/concorrencia-e-tarefas.md), [`docs/pt-BR/inferencia-contextual-de-chamadas.md`](./docs/pt-BR/inferencia-contextual-de-chamadas.md), and [`docs/pt-BR/rede-tcp-udp-dns-tls.md`](./docs/pt-BR/rede-tcp-udp-dns-tls.md).
 
 <br />
 <a href="./code_examples/"><p style="font-size: 30px; font-weight: 600;">🛠 Code_examples</p></a>
@@ -165,3 +165,20 @@ net.closeStream(connection);
 ```
 
 The repository examples use a relative import (`../../std/net.zum`) because package-name imports are reserved for the future package manager. TCP, UDP, DNS and TLS are available in the evaluator, VM and native backend. Native builds compile network support only when the MIR references a network builtin, and OpenSSL is linked only for TLS programs.
+
+## Z11 HTTP and WebSocket quick start
+
+```zumbra
+import "std/http.zum" as http;
+
+var api << http.app();
+api.get("/health", fct(request, response) {
+    request;
+    response;
+    http.json(200, {"status": "ok"});
+});
+
+var server << api.listen("127.0.0.1", 8080);
+```
+
+Z11 provides typed HTTP applications, requests and responses; routing, middleware, CORS, cookies, stateless JWT sessions, JSON, multipart uploads, static files, gzip, chunked streams, SSE, HTTP clients, graceful shutdown, WebSockets and WSS. It runs in the evaluator, VM and MIR-based native backend. HTTP reuses Z10 streams and TLS, and native dependencies are enabled only when referenced by the program. See [`docs/pt-BR/http-websockets-e-apis.md`](./docs/pt-BR/http-websockets-e-apis.md).

@@ -156,3 +156,35 @@ A inferência nunca deve mascarar incompatibilidades: aridade, parâmetros, reto
 
 38. **Métodos mantêm `self` como detalhe interno**
     A inferência do corpo considera o tipo do proprietário, mas a assinatura visível do método contém apenas os argumentos fornecidos pelo usuário.
+
+## Contrato de HTTP e APIs a partir do Z11
+
+39. **HTTP reutiliza a rede existente**
+    Cliente, servidor, HTTPS e WebSocket devem usar `NetStream`, TLS, tasks e channels. Não deve existir uma pilha de sockets paralela.
+
+40. **Aplicações não compartilham router global**
+    Rotas, middleware, CORS, arquivos estáticos e limites pertencem a um `HttpApp` específico. Vários apps podem coexistir no mesmo processo.
+
+41. **Requests e responses são tipos próprios**
+    Objetos HTTP não devem ser representados por dicionários sem contrato. Campos dinâmicos como JSON, query e headers continuam disponíveis dentro de tipos definidos.
+
+42. **Limites são aplicados antes do parsing**
+    JSON, formulários, multipart e frames WebSocket precisam respeitar limites antes de alocar ou interpretar conteúdo controlado pelo cliente.
+
+43. **Middleware não perde alterações**
+    Headers e cookies acumulados por middleware devem sobreviver quando a rota retorna uma nova resposta.
+
+44. **Sessões não criam estado global oculto**
+    O Z11 fornece cookies e sessões stateless assinadas. Sessões persistentes pertencem à camada de dados do Z12.
+
+45. **Streaming usa channels**
+    SSE e respostas chunked reutilizam a semântica de channels do Z9, incluindo fechamento e backpressure previsível.
+
+46. **WebSocket segue o protocolo, não apenas um socket aberto**
+    Mascaramento, fragmentação, ping/pong, close handshake, limites de frame e TLS devem seguir RFC 6455.
+
+47. **Graceful shutdown é parte da API**
+    O servidor deve parar novos accepts, acompanhar handlers ativos e obedecer ao timeout antes de liberar recursos.
+
+48. **Dependências continuam condicionais**
+    Código sem HTTP não recebe o runtime HTTP. OpenSSL só entra para HTTPS/WSS, e bibliotecas auxiliares só são linkadas quando necessárias.

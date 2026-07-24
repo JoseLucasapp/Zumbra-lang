@@ -214,3 +214,47 @@ func TestZ10NetworkDocumentationGeneratesConditionalNativeRuntime(t *testing.T) 
 		t.Fatal("TCP-only documentation unexpectedly enabled TLS")
 	}
 }
+
+func TestZ11HTTPDocumentationGeneratesConditionalNativeRuntime(t *testing.T) {
+	result, diagnostics := pipeline.Build("http-docs.zum", `
+        var app << httpApp();
+        app.get("/health", fct(request, response) {
+            request;
+            response;
+            httpJson(200, {"status":"ok"});
+        });
+        var server << app.listen("127.0.0.1", 0);
+        httpShutdown(server, 1000);
+    `, pipeline.Options{Optimize: true})
+	if len(diagnostics) != 0 {
+		t.Fatalf("HTTP documentation pipeline failed: %s", pipeline.FormatDiagnostics(diagnostics))
+	}
+	sources, nativeDiagnostics := nativec.Generate(result.MIR)
+	if len(nativeDiagnostics) != 0 {
+		t.Fatalf("HTTP documentation native generation failed: %v", nativeDiagnostics)
+	}
+	runtimeSource := string(sources.Runtime)
+	if !strings.Contains(runtimeSource, "#define ZUMBRA_ENABLE_HTTP 1") {
+		t.Fatal("HTTP documentation did not enable the native HTTP runtime")
+	}
+	if !strings.Contains(runtimeSource, "#define ZUMBRA_ENABLE_NETWORK 1") {
+		t.Fatal("HTTP documentation did not enable the native network runtime")
+	}
+}
+
+func TestZ11JSONAndWebSocketDocumentationTypes(t *testing.T) {
+	result, diagnostics := pipeline.Build("http-types-docs.zum", `
+        var payload << jsonParse(jsonStringify({"name":"zumbra", "value":42}));
+        var socket << webSocketConnect("ws://127.0.0.1:1/socket", {}, 1);
+        payload;
+        socket;
+    `, pipeline.Options{Optimize: true})
+	if len(diagnostics) != 0 {
+		t.Fatalf("HTTP type documentation failed: %s", pipeline.FormatDiagnostics(diagnostics))
+	}
+	for _, dump := range []string{result.DumpHIR(), result.DumpMIR()} {
+		if !strings.Contains(dump, "web_socket") {
+			t.Fatalf("WebSocket type is missing:\n%s", dump)
+		}
+	}
+}

@@ -8,10 +8,12 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <strings.h>
 #include <pthread.h>
 #include <setjmp.h>
 #include <stdatomic.h>
 #include <time.h>
+#include <ctype.h>
 
 #if defined(ZUMBRA_ENABLE_NETWORK)
 #include <arpa/inet.h>
@@ -21,6 +23,7 @@
 #include <netinet/in.h>
 #include <netinet/tcp.h>
 #include <poll.h>
+#include <signal.h>
 #include <sys/socket.h>
 #include <sys/time.h>
 #include <sys/types.h>
@@ -34,6 +37,14 @@
 #include <openssl/err.h>
 #include <openssl/ssl.h>
 #include <openssl/x509v3.h>
+#include <openssl/evp.h>
+#include <openssl/hmac.h>
+#include <openssl/sha.h>
+#include <openssl/rand.h>
+#endif
+
+#if defined(ZUMBRA_ENABLE_HTTP)
+#include <zlib.h>
 #endif
 
 #if defined(_WIN32)
@@ -55,9 +66,29 @@ static _Thread_local char z_task_error_message[1024];
 
 uint32_t z_abi_version(void) { return ZUMBRA_NATIVE_ABI_VERSION; }
 
-void z_runtime_init(void) { z_allocations = NULL; z_active_tasks = 0; }
+#if defined(ZUMBRA_ENABLE_HTTP)
+static void z_http_runtime_init(void);
+static void z_http_runtime_shutdown(void);
+static ZValue z_http_call_builtin(const char *name, const ZValue *args, size_t argc, bool *handled);
+static ZValue z_http_get_field(ZValue value, const char *name, bool *handled);
+static ZValue z_http_call_native_method(ZValue callable, const ZValue *args, size_t argc);
+#endif
+
+void z_runtime_init(void) {
+    z_allocations = NULL;
+    z_active_tasks = 0;
+#if defined(ZUMBRA_ENABLE_NETWORK)
+    signal(SIGPIPE, SIG_IGN);
+#endif
+#if defined(ZUMBRA_ENABLE_HTTP)
+    z_http_runtime_init();
+#endif
+}
 
 void z_runtime_shutdown(void) {
+#if defined(ZUMBRA_ENABLE_HTTP)
+    z_http_runtime_shutdown();
+#endif
     pthread_mutex_lock(&z_task_count_mutex);
     while (z_active_tasks != 0) pthread_cond_wait(&z_task_count_condition, &z_task_count_mutex);
     pthread_mutex_unlock(&z_task_count_mutex);
@@ -564,6 +595,11 @@ size_t z_size_of(ZValue value) {
 }
 
 ZValue z_get_field(ZValue object, const char *name) {
+#if defined(ZUMBRA_ENABLE_HTTP)
+    bool http_handled = false;
+    ZValue http_value = z_http_get_field(object, name, &http_handled);
+    if (http_handled) return http_value;
+#endif
     if (object.tag == ZV_STRUCT) {
         int field = z_struct_field_index(object.as.structure->type_id, name);
         if (field >= 0) return object.as.structure->fields[field];
@@ -619,6 +655,9 @@ typedef struct { pthread_mutex_t mutex; pthread_cond_t condition; int64_t count;
 typedef struct { pthread_mutex_t mutex; pthread_cond_t condition; int64_t available; int64_t capacity; } ZSemaphoreNative;
 
 static ZValue z_call_sync(ZValue callable, const ZValue *args, size_t argc) {
+#if defined(ZUMBRA_ENABLE_HTTP)
+    if (callable.tag == ZV_NATIVE_METHOD) return z_http_call_native_method(callable, args, argc);
+#endif
     if (callable.tag == ZV_FUNCTION) return z_dispatch_function(callable.as.id, args, argc);
     if (callable.tag == ZV_BUILTIN) return z_call_builtin(callable.as.s, args, argc);
     if (callable.tag == ZV_STRUCT_TYPE) return z_construct_struct(callable.as.id, args, argc);
@@ -773,6 +812,9 @@ static bool z_channel_close(ZValue channelValue){ZChannelNative *c=z_expect_chan
 static void z_sleep_ms(int64_t milliseconds){if(milliseconds<0)z_fatal("sleepMs expects non-negative milliseconds");struct timespec request;request.tv_sec=(time_t)(milliseconds/1000);request.tv_nsec=(long)((milliseconds%1000)*1000000);nanosleep(&request,NULL);}
 
 ZValue z_call(ZValue callable, const ZValue *args, size_t argc) {
+#if defined(ZUMBRA_ENABLE_HTTP)
+    if (callable.tag == ZV_NATIVE_METHOD) return z_http_call_native_method(callable, args, argc);
+#endif
     if (callable.tag == ZV_FUNCTION) { if (z_function_is_async(callable.as.id)) return z_spawn(callable,args,argc); return z_dispatch_function(callable.as.id, args, argc); }
     if (callable.tag == ZV_BUILTIN) return z_call_builtin(callable.as.s, args, argc);
     if (callable.tag == ZV_STRUCT_TYPE) return z_construct_struct(callable.as.id, args, argc);
@@ -810,6 +852,16 @@ static void z_show_inner(ZValue value) {
     case ZV_NET_STREAM: fputs("NetStream", stdout); break;
     case ZV_UDP_SOCKET: fputs("UDPSocket", stdout); break;
 #endif
+#if defined(ZUMBRA_ENABLE_HTTP)
+    case ZV_HTTP_APP: fputs("HttpApp", stdout); break;
+    case ZV_HTTP_SERVER: fputs("HttpServer", stdout); break;
+    case ZV_HTTP_REQUEST: fputs("HttpRequest", stdout); break;
+    case ZV_HTTP_RESPONSE: fputs("HttpResponse", stdout); break;
+    case ZV_HTTP_CLIENT_RESPONSE: fputs("HttpClientResponse", stdout); break;
+    case ZV_HTTP_STREAM: fputs("HttpStream", stdout); break;
+    case ZV_HTTP_FILE: fputs("HttpFile", stdout); break;
+    case ZV_WEB_SOCKET: fputs("WebSocket", stdout); break;
+#endif
     case ZV_ENUM: {
         int type_id = value.as.id >> 16;
         int ordinal = value.as.id & 0xffff;
@@ -840,6 +892,37 @@ static void z_show_inner(ZValue value) {
 }
 
 void z_show(ZValue value) { z_show_inner(value); fputc('\n', stdout); }
+
+static ZValue z_to_string_value(ZValue value) {
+    char buffer[160];
+    switch (value.tag) {
+    case ZV_STRING: return value;
+    case ZV_NULL: return z_string("null");
+    case ZV_INT: snprintf(buffer, sizeof(buffer), "%" PRId64, value.as.i); return z_string(buffer);
+    case ZV_UINT: snprintf(buffer, sizeof(buffer), "%" PRIu64, value.as.u); return z_string(buffer);
+    case ZV_FLOAT: snprintf(buffer, sizeof(buffer), "%.15g", value.as.f); return z_string(buffer);
+    case ZV_BOOL: return z_string(value.as.b ? "true" : "false");
+    case ZV_POINTER: snprintf(buffer, sizeof(buffer), "%p", value.as.p); return z_string(buffer);
+    case ZV_ENUM: {
+        int type_id = value.as.id >> 16;
+        int ordinal = value.as.id & 0xffff;
+        snprintf(buffer, sizeof(buffer), "%s.%s", z_enum_type_name(type_id), z_enum_member_name(type_id, ordinal));
+        return z_string(buffer);
+    }
+    case ZV_STRUCT: snprintf(buffer, sizeof(buffer), "%s{...}", z_struct_type_name(value.as.structure->type_id)); return z_string(buffer);
+    case ZV_TASK: return z_string("Task");
+    case ZV_CHANNEL: return z_string("Channel");
+    case ZV_MUTEX: return z_string("Mutex");
+    case ZV_RW_MUTEX: return z_string("RWMutex");
+    case ZV_WAIT_GROUP: return z_string("WaitGroup");
+    case ZV_SEMAPHORE: return z_string("Semaphore");
+    case ZV_ATOMIC_INT:
+        snprintf(buffer, sizeof(buffer), "AtomicInt<%" PRId64 ">", atomic_load((_Atomic int64_t *)value.as.p));
+        return z_string(buffer);
+    default:
+        return z_string("<value>");
+    }
+}
 
 ZValue z_bytes(size_t size) {
     ZBuffer *buffer = (ZBuffer *)z_alloc(sizeof(ZBuffer));
@@ -1583,6 +1666,11 @@ static bool z_udp_close_native(ZValue value) {
 #endif
 
 ZValue z_call_builtin(const char *name, const ZValue *args, size_t argc) {
+#if defined(ZUMBRA_ENABLE_HTTP)
+    bool http_handled = false;
+    ZValue http_result = z_http_call_builtin(name, args, argc, &http_handled);
+    if (http_handled) return http_result;
+#endif
 #if defined(ZUMBRA_ENABLE_NETWORK)
     if(strcmp(name,"tcpListen")==0){z_expect_args(name,argc,2);return z_tcp_listen_native(z_as_cstring(args[0]),z_as_i64(args[1]));}
     if(strcmp(name,"tcpConnect")==0){z_expect_args(name,argc,2);return z_tcp_connect_native(z_as_cstring(args[0]),z_as_i64(args[1]),-1);}
@@ -1655,6 +1743,7 @@ ZValue z_call_builtin(const char *name, const ZValue *args, size_t argc) {
     if(strcmp(name,"atomicSwap")==0){z_expect_args(name,argc,2);if(args[0].tag!=ZV_ATOMIC_INT)z_fatal("atomicSwap expects AtomicInt");return z_int(atomic_exchange((_Atomic int64_t*)args[0].as.p,z_as_i64(args[1])));}
     if(strcmp(name,"atomicCompareSwap")==0){z_expect_args(name,argc,3);if(args[0].tag!=ZV_ATOMIC_INT)z_fatal("atomicCompareSwap expects AtomicInt");int64_t expected=z_as_i64(args[1]);return z_bool(atomic_compare_exchange_strong((_Atomic int64_t*)args[0].as.p,&expected,z_as_i64(args[2])));}
     if (strcmp(name,"show")==0){z_expect_args(name,argc,1);z_show(args[0]);return z_null();}
+    if (strcmp(name,"toString")==0){z_expect_args(name,argc,1);return z_to_string_value(args[0]);}
     if (strcmp(name,"sizeOf")==0){z_expect_args(name,argc,1);return z_int((int64_t)z_size_of(args[0]));}
     if (strcmp(name,"bytes")==0){z_expect_args(name,argc,1);return z_bytes((size_t)z_as_u64(args[0]));}
     if (strcmp(name,"arrayOf")==0){z_expect_args(name,argc,2);if(args[0].tag!=ZV_STRING)z_fatal("arrayOf type must be a string");return z_array_of(args[0].as.s,(size_t)z_as_u64(args[1]));}

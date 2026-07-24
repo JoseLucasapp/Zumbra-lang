@@ -11,6 +11,7 @@ import (
 	"zumbra/lexer"
 	"zumbra/numeric"
 	"zumbra/object"
+	objectbuiltins "zumbra/object/builtins"
 	"zumbra/parser"
 )
 
@@ -1049,6 +1050,36 @@ func evalAttributeAccess(left object.Object, property string) object.Object {
 			return pair.Value
 		}
 		return NULL
+	case *object.HttpApp:
+		if method := objectbuiltins.AppMethod(value, property); method != nil {
+			return method
+		}
+		return newError("unknown method %s for HttpApp", property)
+	case *object.HttpServer:
+		if method := objectbuiltins.ServerMethod(value, property); method != nil {
+			return method
+		}
+		return newError("unknown method %s for HttpServer", property)
+	case *object.HttpRequest:
+		if value := objectbuiltins.RequestAttr(value, property); value != nil {
+			return value
+		}
+		return newError("unknown attribute %s for HttpRequest", property)
+	case *object.HttpResponse:
+		if value := objectbuiltins.ResponseMethod(value, property); value != nil {
+			return value
+		}
+		return newError("unknown attribute %s for HttpResponse", property)
+	case *object.HttpClientResponse:
+		if value := objectbuiltins.ClientResponseAttr(value, property); value != nil {
+			return value
+		}
+		return newError("unknown attribute %s for HttpClientResponse", property)
+	case *object.HttpUploadedFile:
+		if value := objectbuiltins.HTTPFileAttr(value, property); value != nil {
+			return value
+		}
+		return newError("unknown attribute %s for HttpFile", property)
 	case *object.Date:
 		switch property {
 		case "hour":

@@ -39,3 +39,23 @@ func TestStartSupportsMultilineBlocks(t *testing.T) {
 		t.Fatalf("repl output missing final result. got=%q", got)
 	}
 }
+
+func TestStartSupportsHTTPHandlersAcrossEntries(t *testing.T) {
+	input := strings.Join([]string{
+		`var app << httpApp();`,
+		`app.get("/health", fct(request, response) { request; response; httpText(200, "ok"); });`,
+		`var server << app.listen("127.0.0.1", 0);`,
+		`var response << httpRequest("GET", "http://127.0.0.1:" + toString(server.port()) + "/health", {}, "", 2000);`,
+		`httpBody(response);`,
+		`server.shutdown(2000);`,
+	}, "\n") + "\n"
+	var out bytes.Buffer
+	Start(strings.NewReader(input), &out)
+	got := out.String()
+	if strings.Contains(got, "vm error") || strings.Contains(got, "compiler error") {
+		t.Fatalf("REPL HTTP flow failed: %s", got)
+	}
+	if !strings.Contains(got, "ok") || !strings.Contains(got, "true") {
+		t.Fatalf("REPL HTTP output is incomplete: %s", got)
+	}
+}

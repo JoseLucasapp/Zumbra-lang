@@ -174,6 +174,83 @@ func builtinType(name string) (*Type, bool) {
 	case "udpPort":
 		return FuncOf([]*Type{Simple(UDPSocket)}, Simple(Int)), true
 
+	case "httpApp":
+		return FuncOf(nil, Simple(HttpApp)), true
+	case "httpRoute":
+		handler := FuncOf([]*Type{Simple(HttpRequest), Simple(HttpResponse)}, Simple(Unknown))
+		return FuncOf([]*Type{Simple(HttpApp), Simple(String), Simple(String), handler}, Simple(HttpApp)), true
+	case "httpUse":
+		middleware := FuncOf([]*Type{Simple(HttpRequest), Simple(HttpResponse)}, Simple(Unknown))
+		return FuncOf([]*Type{Simple(HttpApp), middleware}, Simple(HttpApp)), true
+	case "httpStatic":
+		return FuncOf([]*Type{Simple(HttpApp), Simple(String), Simple(String)}, Simple(HttpApp)), true
+	case "httpLimitBody":
+		return FuncOf([]*Type{Simple(HttpApp), Simple(Int)}, Simple(HttpApp)), true
+	case "httpCompression":
+		return FuncOf([]*Type{Simple(HttpApp), Simple(Bool)}, Simple(HttpApp)), true
+	case "httpCors":
+		return FuncOf([]*Type{Simple(HttpApp), ArrayOf(Simple(String)), ArrayOf(Simple(String)), ArrayOf(Simple(String)), Simple(Bool), Simple(Int)}, Simple(HttpApp)), true
+	case "httpServe":
+		return FuncOf([]*Type{Simple(HttpApp), Simple(String), Simple(Int)}, Simple(HttpServer)), true
+	case "httpServeTLS":
+		return FuncOf([]*Type{Simple(HttpApp), Simple(String), Simple(Int), Simple(String), Simple(String)}, Simple(HttpServer)), true
+	case "httpShutdown":
+		return FuncOf([]*Type{Simple(HttpServer), Simple(Int)}, Simple(Bool)), true
+	case "httpServerPort":
+		return FuncOf([]*Type{Simple(HttpServer)}, Simple(Int)), true
+	case "httpServerAddress":
+		return FuncOf([]*Type{Simple(HttpServer)}, Simple(String)), true
+	case "httpServerRunning":
+		return FuncOf([]*Type{Simple(HttpServer)}, Simple(Bool)), true
+	case "httpText", "httpJson", "httpHtml", "httpRedirect", "httpFile":
+		return FuncOf([]*Type{Simple(Int), Simple(Unknown)}, Simple(HttpResponse)), true
+	case "httpHeader":
+		return FuncOf([]*Type{Simple(HttpResponse), Simple(String), Simple(String)}, Simple(HttpResponse)), true
+	case "httpCookie":
+		return FuncOf([]*Type{Simple(HttpResponse), Simple(String), Simple(String), DictOf(Simple(String), Simple(Unknown))}, Simple(HttpResponse)), true
+	case "httpStream":
+		return FuncOf([]*Type{Simple(Int), Simple(String), ChannelOf(Simple(Unknown))}, Simple(HttpResponse)), true
+	case "httpSSE":
+		return FuncOf([]*Type{Simple(Int), ChannelOf(Simple(String))}, Simple(HttpResponse)), true
+	case "sseEvent":
+		return FuncOf([]*Type{Simple(String), Simple(String), Simple(String), Simple(Int)}, Simple(String)), true
+	case "httpRequest":
+		return FuncOf([]*Type{Simple(String), Simple(String), DictOf(Simple(String), Simple(String)), Simple(Unknown), Simple(Int)}, Simple(HttpClientResponse)), true
+	case "httpStatus":
+		return FuncOf([]*Type{Simple(HttpClientResponse)}, Simple(Int)), true
+	case "httpBody":
+		return FuncOf([]*Type{Simple(HttpClientResponse)}, Simple(String)), true
+	case "httpBodyBytes":
+		return FuncOf([]*Type{Simple(HttpClientResponse)}, ByteArrayOf()), true
+	case "httpBodyJSON":
+		return FuncOf([]*Type{Simple(HttpClientResponse)}, Simple(Unknown)), true
+	case "httpHeaders":
+		return FuncOf([]*Type{Simple(HttpClientResponse)}, DictOf(Simple(String), Simple(String))), true
+	case "jsonStringify":
+		return FuncOf([]*Type{Simple(Unknown)}, Simple(String)), true
+	case "jsonParse":
+		return FuncOf([]*Type{Simple(String)}, Simple(Unknown)), true
+	case "jwtSignHS256":
+		return FuncOf([]*Type{DictOf(Simple(String), Simple(Unknown)), Simple(String), Simple(Int)}, Simple(String)), true
+	case "jwtVerifyHS256":
+		return FuncOf([]*Type{Simple(String), Simple(String)}, ArrayOf(Simple(Unknown))), true
+	case "webSocketUpgrade":
+		return FuncOf([]*Type{Simple(HttpRequest)}, Simple(WebSocket)), true
+	case "webSocketConnect":
+		return FuncOf([]*Type{Simple(String), DictOf(Simple(String), Simple(String)), Simple(Int)}, Simple(WebSocket)), true
+	case "webSocketRead":
+		return FuncOf([]*Type{Simple(WebSocket)}, ArrayOf(Simple(Unknown))), true
+	case "webSocketReadTimeout":
+		return FuncOf([]*Type{Simple(WebSocket), Simple(Int)}, ArrayOf(Simple(Unknown))), true
+	case "webSocketWriteText", "webSocketPing":
+		return FuncOf([]*Type{Simple(WebSocket), Simple(String)}, Simple(Int)), true
+	case "webSocketWriteBinary":
+		return FuncOf([]*Type{Simple(WebSocket), Simple(Unknown)}, Simple(Int)), true
+	case "webSocketClose":
+		return FuncOf([]*Type{Simple(WebSocket), Simple(Int), Simple(String)}, Simple(Bool)), true
+	case "webSocketClosed":
+		return FuncOf([]*Type{Simple(WebSocket)}, Simple(Bool)), true
+
 	case "first":
 		return FuncOf([]*Type{ArrayOf(Simple(Unknown))}, Simple(Unknown)), true
 

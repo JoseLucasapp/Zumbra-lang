@@ -1,6 +1,7 @@
 package evaluator
 
 import (
+	"fmt"
 	"zumbra/object"
 	"zumbra/object/builtins"
 )
@@ -76,6 +77,16 @@ func init() {
 		"udpBind", "udpSendTo", "udpReceiveFrom", "udpReceiveFromTimeout", "udpClose", "udpClosed", "udpAddress", "udpPort",
 	}
 
+	httpZ11 := []string{
+		"httpApp", "httpRoute", "httpUse", "httpStatic", "httpLimitBody", "httpCompression", "httpCors",
+		"httpServe", "httpServeTLS", "httpShutdown", "httpServerPort", "httpServerAddress", "httpServerRunning",
+		"httpText", "httpJson", "httpHtml", "httpRedirect", "httpFile", "httpHeader", "httpCookie",
+		"httpStream", "httpSSE", "sseEvent", "httpRequest", "httpStatus", "httpBody", "httpBodyBytes", "httpBodyJSON", "httpHeaders",
+		"jsonStringify", "jsonParse", "jwtSignHS256", "jwtVerifyHS256",
+		"webSocketUpgrade", "webSocketConnect", "webSocketRead", "webSocketReadTimeout", "webSocketWriteText", "webSocketWriteBinary",
+		"webSocketPing", "webSocketClose", "webSocketClosed",
+	}
+
 	fixedIntegers := []string{
 		"u8", "u16", "u32", "u64", "i8", "i16", "i32", "i64",
 		"wrapAdd", "wrapSub", "wrapMul",
@@ -95,6 +106,7 @@ func init() {
 	allBuiltins = append(allBuiltins, binaryIO...)
 	allBuiltins = append(allBuiltins, concurrency...)
 	allBuiltins = append(allBuiltins, network...)
+	allBuiltins = append(allBuiltins, httpZ11...)
 	allBuiltins = append(allBuiltins, stringUtils...)
 	allBuiltins = append(allBuiltins, numbersUtils...)
 	allBuiltins = append(allBuiltins, ioUtils...)
@@ -108,4 +120,11 @@ func init() {
 			builtinsList[name] = builtin
 		}
 	}
+	builtins.SetRouteInvoker(func(handler object.Object, args ...object.Object) (object.Object, error) {
+		result := applyFunctionSync(handler, args)
+		if errObj, ok := result.(*object.Error); ok {
+			return result, fmt.Errorf("%s", errObj.Message)
+		}
+		return result, nil
+	})
 }

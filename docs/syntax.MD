@@ -846,3 +846,50 @@ tlsConnectTimeout(host, port, serverName, insecure, timeoutMs);
 ```
 
 Documentação completa: [`docs/pt-BR/rede-tcp-udp-dns-tls.md`](./pt-BR/rede-tcp-udp-dns-tls.md).
+
+---
+
+## HTTP, WebSockets e APIs — Z11
+
+```zumbra
+import "../../std/http.zum" as http;
+
+var api << http.app();
+
+api.get("/health", fct(request, response) {
+    request;
+    response;
+    http.json(200, {"status": "ok"});
+});
+
+var server << api.listen("127.0.0.1", 8080);
+```
+
+Tipos adicionados:
+
+```text
+HttpApp
+HttpServer
+HttpRequest
+HttpResponse
+HttpClientResponse
+HttpStream
+HttpFile
+WebSocket
+```
+
+Cliente, JSON, JWT e WebSocket:
+
+```zumbra
+var response << http.getUrl("http://127.0.0.1:8080/health", 2000);
+var body << http.bodyJson(response);
+
+var token << http.signJwt({"sub": "local"}, "secret", 60);
+var verified << http.verifyJwt(token, "secret");
+
+var socket << http.connectWebSocket("ws://127.0.0.1:8080/socket", {}, 2000);
+http.writeWebSocketText(socket, "ping");
+var frame << http.readWebSocket(socket);
+```
+
+Documentação completa: [`docs/pt-BR/http-websockets-e-apis.md`](./pt-BR/http-websockets-e-apis.md).

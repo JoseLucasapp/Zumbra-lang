@@ -1190,6 +1190,428 @@ func (c *Checker) checkBuiltinCall(name string, args []ast.Expression) *Type {
 		}
 		return Simple(Int)
 
+	case "httpApp":
+		if len(args) != 0 {
+			c.addError(fmt.Errorf("httpApp expects 0 arguments, got %d", len(args)))
+		}
+		return Simple(HttpApp)
+
+	case "httpRoute":
+		if len(args) != 4 {
+			c.addError(fmt.Errorf("httpRoute expects 4 arguments, got %d", len(args)))
+			for _, arg := range args {
+				c.inferExpression(arg)
+			}
+			return Simple(HttpApp)
+		}
+		c.constrainExpression(args[0], Simple(HttpApp), "httpRoute app")
+		c.requireTypeArgument("httpRoute method", c.inferExpression(args[1]), String)
+		c.requireTypeArgument("httpRoute pattern", c.inferExpression(args[2]), String)
+		handler := FuncOf([]*Type{Simple(HttpRequest), Simple(HttpResponse)}, Simple(Unknown))
+		c.inferExpressionExpected(args[3], handler)
+		return Simple(HttpApp)
+
+	case "httpUse":
+		if len(args) != 2 {
+			c.addError(fmt.Errorf("httpUse expects 2 arguments, got %d", len(args)))
+			for _, arg := range args {
+				c.inferExpression(arg)
+			}
+			return Simple(HttpApp)
+		}
+		c.constrainExpression(args[0], Simple(HttpApp), "httpUse app")
+		middleware := FuncOf([]*Type{Simple(HttpRequest), Simple(HttpResponse)}, Simple(Unknown))
+		c.inferExpressionExpected(args[1], middleware)
+		return Simple(HttpApp)
+
+	case "httpStatic":
+		if len(args) != 3 {
+			c.addError(fmt.Errorf("httpStatic expects 3 arguments, got %d", len(args)))
+		}
+		if len(args) > 0 {
+			c.constrainExpression(args[0], Simple(HttpApp), "httpStatic app")
+		}
+		for index := 1; index < len(args); index++ {
+			c.requireTypeArgument("httpStatic path", c.inferExpression(args[index]), String)
+		}
+		return Simple(HttpApp)
+
+	case "httpLimitBody":
+		if len(args) != 2 {
+			c.addError(fmt.Errorf("httpLimitBody expects 2 arguments, got %d", len(args)))
+		}
+		if len(args) > 0 {
+			c.constrainExpression(args[0], Simple(HttpApp), "httpLimitBody app")
+		}
+		if len(args) > 1 {
+			c.requireIntegerArgument("httpLimitBody limit", c.inferExpression(args[1]))
+		}
+		return Simple(HttpApp)
+
+	case "httpCompression":
+		if len(args) != 2 {
+			c.addError(fmt.Errorf("httpCompression expects 2 arguments, got %d", len(args)))
+		}
+		if len(args) > 0 {
+			c.constrainExpression(args[0], Simple(HttpApp), "httpCompression app")
+		}
+		if len(args) > 1 {
+			c.requireTypeArgument("httpCompression enabled", c.inferExpression(args[1]), Bool)
+		}
+		return Simple(HttpApp)
+
+	case "httpCors":
+		if len(args) != 6 {
+			c.addError(fmt.Errorf("httpCors expects 6 arguments, got %d", len(args)))
+		}
+		if len(args) > 0 {
+			c.constrainExpression(args[0], Simple(HttpApp), "httpCors app")
+		}
+		for index := 1; index <= 3 && index < len(args); index++ {
+			t := c.inferExpression(args[index])
+			if t.Kind != Unknown && t.Kind != Array {
+				c.addError(fmt.Errorf("httpCors argument %d expects array<string>, got %s", index+1, t.String()))
+			}
+		}
+		if len(args) > 4 {
+			c.requireTypeArgument("httpCors credentials", c.inferExpression(args[4]), Bool)
+		}
+		if len(args) > 5 {
+			c.requireIntegerArgument("httpCors maxAge", c.inferExpression(args[5]))
+		}
+		return Simple(HttpApp)
+
+	case "httpServe":
+		if len(args) != 3 {
+			c.addError(fmt.Errorf("httpServe expects 3 arguments, got %d", len(args)))
+		}
+		if len(args) > 0 {
+			c.constrainExpression(args[0], Simple(HttpApp), "httpServe app")
+		}
+		if len(args) > 1 {
+			c.requireTypeArgument("httpServe host", c.inferExpression(args[1]), String)
+		}
+		if len(args) > 2 {
+			c.requireIntegerArgument("httpServe port", c.inferExpression(args[2]))
+		}
+		return Simple(HttpServer)
+
+	case "httpServeTLS":
+		if len(args) != 5 {
+			c.addError(fmt.Errorf("httpServeTLS expects 5 arguments, got %d", len(args)))
+		}
+		if len(args) > 0 {
+			c.constrainExpression(args[0], Simple(HttpApp), "httpServeTLS app")
+		}
+		if len(args) > 1 {
+			c.requireTypeArgument("httpServeTLS host", c.inferExpression(args[1]), String)
+		}
+		if len(args) > 2 {
+			c.requireIntegerArgument("httpServeTLS port", c.inferExpression(args[2]))
+		}
+		for index := 3; index < len(args); index++ {
+			c.requireTypeArgument("httpServeTLS certificate", c.inferExpression(args[index]), String)
+		}
+		return Simple(HttpServer)
+
+	case "httpShutdown":
+		if len(args) != 2 {
+			c.addError(fmt.Errorf("httpShutdown expects 2 arguments, got %d", len(args)))
+		}
+		if len(args) > 0 {
+			c.constrainExpression(args[0], Simple(HttpServer), "httpShutdown server")
+		}
+		if len(args) > 1 {
+			c.requireIntegerArgument("httpShutdown timeout", c.inferExpression(args[1]))
+		}
+		return Simple(Bool)
+
+	case "httpServerPort":
+		if len(args) != 1 {
+			c.addError(fmt.Errorf("httpServerPort expects 1 argument, got %d", len(args)))
+		}
+		if len(args) > 0 {
+			c.constrainExpression(args[0], Simple(HttpServer), "httpServerPort server")
+		}
+		return Simple(Int)
+
+	case "httpServerAddress":
+		if len(args) != 1 {
+			c.addError(fmt.Errorf("httpServerAddress expects 1 argument, got %d", len(args)))
+		}
+		if len(args) > 0 {
+			c.constrainExpression(args[0], Simple(HttpServer), "httpServerAddress server")
+		}
+		return Simple(String)
+
+	case "httpServerRunning":
+		if len(args) != 1 {
+			c.addError(fmt.Errorf("httpServerRunning expects 1 argument, got %d", len(args)))
+		}
+		if len(args) > 0 {
+			c.constrainExpression(args[0], Simple(HttpServer), "httpServerRunning server")
+		}
+		return Simple(Bool)
+
+	case "httpText", "httpJson", "httpHtml", "httpRedirect", "httpFile":
+		if len(args) != 2 {
+			c.addError(fmt.Errorf("%s expects 2 arguments, got %d", name, len(args)))
+		}
+		if len(args) > 0 {
+			c.requireIntegerArgument(name+" status", c.inferExpression(args[0]))
+		}
+		if len(args) > 1 {
+			valueType := c.inferExpression(args[1])
+			if (name == "httpHtml" || name == "httpRedirect" || name == "httpFile") && valueType.Kind != Unknown && valueType.Kind != String {
+				c.addError(fmt.Errorf("%s value expects string, got %s", name, valueType.String()))
+			}
+		}
+		return Simple(HttpResponse)
+
+	case "httpHeader":
+		if len(args) != 3 {
+			c.addError(fmt.Errorf("httpHeader expects 3 arguments, got %d", len(args)))
+		}
+		if len(args) > 0 {
+			c.constrainExpression(args[0], Simple(HttpResponse), "httpHeader response")
+		}
+		for index := 1; index < len(args); index++ {
+			c.requireTypeArgument("httpHeader", c.inferExpression(args[index]), String)
+		}
+		return Simple(HttpResponse)
+
+	case "httpCookie":
+		if len(args) != 4 {
+			c.addError(fmt.Errorf("httpCookie expects 4 arguments, got %d", len(args)))
+		}
+		if len(args) > 0 {
+			c.constrainExpression(args[0], Simple(HttpResponse), "httpCookie response")
+		}
+		for index := 1; index <= 2 && index < len(args); index++ {
+			c.requireTypeArgument("httpCookie", c.inferExpression(args[index]), String)
+		}
+		if len(args) > 3 {
+			c.inferExpression(args[3])
+		}
+		return Simple(HttpResponse)
+
+	case "httpStream":
+		if len(args) != 3 {
+			c.addError(fmt.Errorf("httpStream expects 3 arguments, got %d", len(args)))
+		}
+		if len(args) > 0 {
+			c.requireIntegerArgument("httpStream status", c.inferExpression(args[0]))
+		}
+		if len(args) > 1 {
+			c.requireTypeArgument("httpStream content type", c.inferExpression(args[1]), String)
+		}
+		if len(args) > 2 {
+			c.constrainExpression(args[2], ChannelOf(Simple(Unknown)), "httpStream channel")
+		}
+		return Simple(HttpResponse)
+
+	case "httpSSE":
+		if len(args) != 2 {
+			c.addError(fmt.Errorf("httpSSE expects 2 arguments, got %d", len(args)))
+		}
+		if len(args) > 0 {
+			c.requireIntegerArgument("httpSSE status", c.inferExpression(args[0]))
+		}
+		if len(args) > 1 {
+			c.constrainExpression(args[1], ChannelOf(Simple(String)), "httpSSE channel")
+		}
+		return Simple(HttpResponse)
+
+	case "sseEvent":
+		if len(args) != 4 {
+			c.addError(fmt.Errorf("sseEvent expects 4 arguments, got %d", len(args)))
+		}
+		for index := 0; index < len(args) && index < 3; index++ {
+			c.requireTypeArgument("sseEvent", c.inferExpression(args[index]), String)
+		}
+		if len(args) > 3 {
+			c.requireIntegerArgument("sseEvent retry", c.inferExpression(args[3]))
+		}
+		return Simple(String)
+
+	case "httpRequest":
+		if len(args) != 5 {
+			c.addError(fmt.Errorf("httpRequest expects 5 arguments, got %d", len(args)))
+		}
+		if len(args) > 0 {
+			c.requireTypeArgument("httpRequest method", c.inferExpression(args[0]), String)
+		}
+		if len(args) > 1 {
+			c.requireTypeArgument("httpRequest URL", c.inferExpression(args[1]), String)
+		}
+		for index := 2; index < len(args); index++ {
+			c.inferExpression(args[index])
+		}
+		if len(args) > 4 {
+			c.requireIntegerArgument("httpRequest timeout", c.inferExpression(args[4]))
+		}
+		return Simple(HttpClientResponse)
+
+	case "httpStatus":
+		if len(args) != 1 {
+			c.addError(fmt.Errorf("httpStatus expects 1 argument, got %d", len(args)))
+		}
+		if len(args) > 0 {
+			c.constrainExpression(args[0], Simple(HttpClientResponse), "httpStatus response")
+		}
+		return Simple(Int)
+	case "httpBody":
+		if len(args) != 1 {
+			c.addError(fmt.Errorf("httpBody expects 1 argument, got %d", len(args)))
+		}
+		if len(args) > 0 {
+			c.constrainExpression(args[0], Simple(HttpClientResponse), "httpBody response")
+		}
+		return Simple(String)
+	case "httpBodyBytes":
+		if len(args) != 1 {
+			c.addError(fmt.Errorf("httpBodyBytes expects 1 argument, got %d", len(args)))
+		}
+		if len(args) > 0 {
+			c.constrainExpression(args[0], Simple(HttpClientResponse), "httpBodyBytes response")
+		}
+		return ByteArrayOf()
+	case "httpBodyJSON":
+		if len(args) != 1 {
+			c.addError(fmt.Errorf("httpBodyJSON expects 1 argument, got %d", len(args)))
+		}
+		if len(args) > 0 {
+			c.constrainExpression(args[0], Simple(HttpClientResponse), "httpBodyJSON response")
+		}
+		return Simple(Unknown)
+	case "httpHeaders":
+		if len(args) != 1 {
+			c.addError(fmt.Errorf("httpHeaders expects 1 argument, got %d", len(args)))
+		}
+		if len(args) > 0 {
+			c.constrainExpression(args[0], Simple(HttpClientResponse), "httpHeaders response")
+		}
+		return DictOf(Simple(String), Simple(String))
+
+	case "jsonStringify":
+		if len(args) != 1 {
+			c.addError(fmt.Errorf("jsonStringify expects 1 argument, got %d", len(args)))
+		}
+		if len(args) > 0 {
+			c.inferExpression(args[0])
+		}
+		return Simple(String)
+	case "jsonParse":
+		if len(args) != 1 {
+			c.addError(fmt.Errorf("jsonParse expects 1 argument, got %d", len(args)))
+		}
+		if len(args) > 0 {
+			c.requireTypeArgument("jsonParse value", c.inferExpression(args[0]), String)
+		}
+		return Simple(Unknown)
+	case "jwtSignHS256":
+		if len(args) != 3 {
+			c.addError(fmt.Errorf("jwtSignHS256 expects 3 arguments, got %d", len(args)))
+		}
+		for _, arg := range args {
+			c.inferExpression(arg)
+		}
+		return Simple(String)
+	case "jwtVerifyHS256":
+		if len(args) != 2 {
+			c.addError(fmt.Errorf("jwtVerifyHS256 expects 2 arguments, got %d", len(args)))
+		}
+		for _, arg := range args {
+			c.requireTypeArgument("jwtVerifyHS256", c.inferExpression(arg), String)
+		}
+		return ArrayOf(Simple(Unknown))
+
+	case "webSocketUpgrade":
+		if len(args) != 1 {
+			c.addError(fmt.Errorf("webSocketUpgrade expects 1 argument, got %d", len(args)))
+		}
+		if len(args) > 0 {
+			c.constrainExpression(args[0], Simple(HttpRequest), "webSocketUpgrade request")
+		}
+		return Simple(WebSocket)
+	case "webSocketConnect":
+		if len(args) != 3 {
+			c.addError(fmt.Errorf("webSocketConnect expects 3 arguments, got %d", len(args)))
+		}
+		if len(args) > 0 {
+			c.requireTypeArgument("webSocketConnect URL", c.inferExpression(args[0]), String)
+		}
+		if len(args) > 1 {
+			c.inferExpression(args[1])
+		}
+		if len(args) > 2 {
+			c.requireIntegerArgument("webSocketConnect timeout", c.inferExpression(args[2]))
+		}
+		return Simple(WebSocket)
+	case "webSocketRead":
+		if len(args) != 1 {
+			c.addError(fmt.Errorf("webSocketRead expects 1 argument, got %d", len(args)))
+		}
+		if len(args) > 0 {
+			c.constrainExpression(args[0], Simple(WebSocket), "webSocketRead socket")
+		}
+		return ArrayOf(Simple(Unknown))
+	case "webSocketReadTimeout":
+		if len(args) != 2 {
+			c.addError(fmt.Errorf("webSocketReadTimeout expects 2 arguments, got %d", len(args)))
+		}
+		if len(args) > 0 {
+			c.constrainExpression(args[0], Simple(WebSocket), "webSocketReadTimeout socket")
+		}
+		if len(args) > 1 {
+			c.requireIntegerArgument("webSocketReadTimeout timeout", c.inferExpression(args[1]))
+		}
+		return ArrayOf(Simple(Unknown))
+	case "webSocketWriteText", "webSocketPing":
+		if len(args) != 2 {
+			c.addError(fmt.Errorf("%s expects 2 arguments, got %d", name, len(args)))
+		}
+		if len(args) > 0 {
+			c.constrainExpression(args[0], Simple(WebSocket), name+" socket")
+		}
+		if len(args) > 1 {
+			c.requireTypeArgument(name+" data", c.inferExpression(args[1]), String)
+		}
+		return Simple(Int)
+	case "webSocketWriteBinary":
+		if len(args) != 2 {
+			c.addError(fmt.Errorf("webSocketWriteBinary expects 2 arguments, got %d", len(args)))
+		}
+		if len(args) > 0 {
+			c.constrainExpression(args[0], Simple(WebSocket), "webSocketWriteBinary socket")
+		}
+		if len(args) > 1 {
+			c.requireByteBuffer("webSocketWriteBinary", c.inferExpression(args[1]))
+		}
+		return Simple(Int)
+	case "webSocketClose":
+		if len(args) != 3 {
+			c.addError(fmt.Errorf("webSocketClose expects 3 arguments, got %d", len(args)))
+		}
+		if len(args) > 0 {
+			c.constrainExpression(args[0], Simple(WebSocket), "webSocketClose socket")
+		}
+		if len(args) > 1 {
+			c.requireIntegerArgument("webSocketClose code", c.inferExpression(args[1]))
+		}
+		if len(args) > 2 {
+			c.requireTypeArgument("webSocketClose reason", c.inferExpression(args[2]), String)
+		}
+		return Simple(Bool)
+	case "webSocketClosed":
+		if len(args) != 1 {
+			c.addError(fmt.Errorf("webSocketClosed expects 1 argument, got %d", len(args)))
+		}
+		if len(args) > 0 {
+			c.constrainExpression(args[0], Simple(WebSocket), "webSocketClosed socket")
+		}
+		return Simple(Bool)
+
 	case "show":
 		if len(args) != 1 {
 			c.addError(fmt.Errorf("show expects 1 argument, got %d", len(args)))
@@ -1498,7 +1920,9 @@ func (c *Checker) inferDictLiteral(e *ast.DictLiteral) *Type {
 	}
 
 	if !valueHomogeneous {
-		c.addError(fmt.Errorf("dict literal has mixed value types"))
+		// Heterogeneous values are valid for JSON objects, option bags and
+		// general dynamic records. The key type remains checked, while the
+		// value type intentionally widens to unknown.
 		valueType = Simple(Unknown)
 	}
 
@@ -2094,6 +2518,11 @@ func (c *Checker) inferExpressionImpl(exp ast.Expression) *Type {
 			return Simple(Unknown)
 		}
 
+		if left.Kind == Unknown {
+			// Dynamic values returned by JSON parsing may be indexed with either
+			// string keys or integer positions. Runtime checks remain authoritative.
+			return Simple(Unknown)
+		}
 		if index.Kind != Unknown && !IsInteger(index) {
 			c.addError(fmt.Errorf("array index must be int, got %s", index.Kind))
 		}
@@ -2181,6 +2610,82 @@ func (c *Checker) inferExpressionImpl(exp ast.Expression) *Type {
 
 	case *ast.AttributeAccess:
 		left := c.inferExpression(e.Object)
+		switch left.Kind {
+		case HttpApp:
+			handler := FuncOf([]*Type{Simple(HttpRequest), Simple(HttpResponse)}, Simple(Unknown))
+			switch e.Property.Value {
+			case "route":
+				return FuncOf([]*Type{Simple(String), Simple(String), handler}, Simple(HttpApp))
+			case "get", "post", "put", "patch", "delete":
+				return FuncOf([]*Type{Simple(String), handler}, Simple(HttpApp))
+			case "use":
+				return FuncOf([]*Type{handler}, Simple(HttpApp))
+			case "static":
+				return FuncOf([]*Type{Simple(String), Simple(String)}, Simple(HttpApp))
+			case "bodyLimit":
+				return FuncOf([]*Type{Simple(Int)}, Simple(HttpApp))
+			case "compression":
+				return FuncOf([]*Type{Simple(Bool)}, Simple(HttpApp))
+			case "cors":
+				strings := ArrayOf(Simple(String))
+				return FuncOf([]*Type{strings, strings, strings, Simple(Bool), Simple(Int)}, Simple(HttpApp))
+			case "listen":
+				return FuncOf([]*Type{Simple(String), Simple(Int)}, Simple(HttpServer))
+			case "listenTls":
+				return FuncOf([]*Type{Simple(String), Simple(Int), Simple(String), Simple(String)}, Simple(HttpServer))
+			}
+		case HttpServer:
+			switch e.Property.Value {
+			case "shutdown":
+				return FuncOf([]*Type{Simple(Int)}, Simple(Bool))
+			case "port":
+				return FuncOf(nil, Simple(Int))
+			case "address":
+				return FuncOf(nil, Simple(String))
+			case "running":
+				return FuncOf(nil, Simple(Bool))
+			}
+		case HttpRequest:
+			switch e.Property.Value {
+			case "method", "scheme", "host", "path", "remoteAddress", "rawBody":
+				return Simple(String)
+			case "params", "query", "headers", "cookies", "form", "files":
+				return DictOf(Simple(String), Simple(Unknown))
+			case "body":
+				return Simple(Unknown)
+			case "rawBytes":
+				return ByteArrayOf()
+			}
+		case HttpResponse:
+			switch e.Property.Value {
+			case "status":
+				return FuncOf([]*Type{Simple(Int)}, Simple(HttpResponse))
+			case "header":
+				return FuncOf([]*Type{Simple(String), Simple(String)}, Simple(HttpResponse))
+			case "json", "send", "html":
+				return FuncOf([]*Type{Simple(Unknown)}, Simple(HttpResponse))
+			}
+		case HttpClientResponse:
+			switch e.Property.Value {
+			case "statusCode":
+				return Simple(Int)
+			case "status", "url", "body":
+				return Simple(String)
+			case "headers", "cookies":
+				return DictOf(Simple(String), Simple(String))
+			case "bytes":
+				return ByteArrayOf()
+			}
+		case HttpFile:
+			switch e.Property.Value {
+			case "fieldName", "filename", "contentType":
+				return Simple(String)
+			case "size":
+				return Simple(Int)
+			case "data":
+				return ByteArrayOf()
+			}
+		}
 		if left.Kind == Struct {
 			if field, ok := left.Fields[e.Property.Value]; ok {
 				return field
@@ -2253,7 +2758,7 @@ func (c *Checker) typeFromName(name string) *Type {
 		return value
 	}
 	switch Kind(name) {
-	case Int, U8, U16, U32, U64, I8, I16, I32, I64, Float, Bool, String, Pointer, Null:
+	case Int, U8, U16, U32, U64, I8, I16, I32, I64, Float, Bool, String, Pointer, Null, Task, Channel, Mutex, RWMutex, WaitGroup, Semaphore, AtomicInt, NetListener, NetStream, UDPSocket, HttpApp, HttpServer, HttpRequest, HttpResponse, HttpClientResponse, HttpStream, HttpFile, WebSocket:
 		return Simple(Kind(name))
 	default:
 		return Simple(Unknown)

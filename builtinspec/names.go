@@ -143,6 +143,13 @@ var Names = []string{
 	"streamShutdownRead", "streamShutdownWrite", "streamLocalAddress", "streamLocalPort", "streamRemoteAddress", "streamRemotePort",
 	"streamSetReadTimeout", "streamSetWriteTimeout", "tcpSetKeepAlive", "dnsLookup", "dnsLookupTimeout",
 	"udpBind", "udpSendTo", "udpReceiveFrom", "udpReceiveFromTimeout", "udpClose", "udpClosed", "udpAddress", "udpPort",
+	"httpApp", "httpRoute", "httpUse", "httpStatic", "httpLimitBody", "httpCompression", "httpCors",
+	"httpServe", "httpServeTLS", "httpShutdown", "httpServerPort", "httpServerAddress", "httpServerRunning",
+	"httpText", "httpJson", "httpHtml", "httpRedirect", "httpFile", "httpHeader", "httpCookie",
+	"httpStream", "httpSSE", "sseEvent", "httpRequest", "httpStatus", "httpBody", "httpBodyBytes", "httpBodyJSON", "httpHeaders",
+	"jsonStringify", "jwtSignHS256", "jwtVerifyHS256",
+	"webSocketUpgrade", "webSocketConnect", "webSocketRead", "webSocketReadTimeout", "webSocketWriteText", "webSocketWriteBinary",
+	"webSocketPing", "webSocketClose", "webSocketClosed",
 }
 
 func Contains(name string) bool {
