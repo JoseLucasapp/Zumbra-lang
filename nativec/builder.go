@@ -133,6 +133,9 @@ func Build(module *mir.Module, options BuildOptions) (*BuildResult, []Diagnostic
 	if UsesHTTP(module) {
 		args = append(args, "-lz")
 	}
+	if UsesSQLite(module) {
+		args = append(args, "-lsqlite3")
+	}
 	args = append(args, "-lm", "-pthread", "-o", output)
 	command := exec.Command(compiler, args...)
 	command.Stdout = os.Stdout

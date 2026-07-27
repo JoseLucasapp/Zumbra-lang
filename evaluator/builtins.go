@@ -77,6 +77,12 @@ func init() {
 		"udpBind", "udpSendTo", "udpReceiveFrom", "udpReceiveFromTimeout", "udpClose", "udpClosed", "udpAddress", "udpPort",
 	}
 
+	sqlite := []string{
+		"sqliteOpen", "sqliteMemory", "sqliteExec", "sqliteQuery", "sqlitePrepare", "sqliteBegin", "sqliteClose", "sqliteIsOpen", "sqlitePath",
+		"sqliteStatementExec", "sqliteStatementQuery", "sqliteStatementClose", "sqliteStatementOpen", "sqliteStatementSQL",
+		"sqliteTransactionExec", "sqliteTransactionQuery", "sqliteTransactionPrepare", "sqliteCommit", "sqliteRollback", "sqliteTransactionActive",
+	}
+
 	httpZ11 := []string{
 		"httpApp", "httpRoute", "httpUse", "httpStatic", "httpLimitBody", "httpCompression", "httpCors",
 		"httpServe", "httpServeTLS", "httpShutdown", "httpServerPort", "httpServerAddress", "httpServerRunning",
@@ -107,6 +113,7 @@ func init() {
 	allBuiltins = append(allBuiltins, concurrency...)
 	allBuiltins = append(allBuiltins, network...)
 	allBuiltins = append(allBuiltins, httpZ11...)
+	allBuiltins = append(allBuiltins, sqlite...)
 	allBuiltins = append(allBuiltins, stringUtils...)
 	allBuiltins = append(allBuiltins, numbersUtils...)
 	allBuiltins = append(allBuiltins, ioUtils...)

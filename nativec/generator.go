@@ -17,7 +17,7 @@ import (
 	"zumbra/types"
 )
 
-//go:embed runtime/zumbra_runtime.c runtime/zumbra_runtime.h runtime/zumbra_http.inc
+//go:embed runtime/zumbra_runtime.c runtime/zumbra_runtime.h runtime/zumbra_http.inc runtime/zumbra_sqlite.inc
 var runtimeFiles embed.FS
 
 type Sources struct {
@@ -74,6 +74,9 @@ var supportedBuiltins = map[string]bool{
 	"jsonStringify": true, "jsonParse": true, "jwtSignHS256": true, "jwtVerifyHS256": true,
 	"webSocketUpgrade": true, "webSocketConnect": true, "webSocketRead": true, "webSocketReadTimeout": true,
 	"webSocketWriteText": true, "webSocketWriteBinary": true, "webSocketPing": true, "webSocketClose": true, "webSocketClosed": true,
+	"sqliteOpen": true, "sqliteMemory": true, "sqliteExec": true, "sqliteQuery": true, "sqlitePrepare": true, "sqliteBegin": true, "sqliteClose": true, "sqliteIsOpen": true, "sqlitePath": true,
+	"sqliteStatementExec": true, "sqliteStatementQuery": true, "sqliteStatementClose": true, "sqliteStatementOpen": true, "sqliteStatementSQL": true,
+	"sqliteTransactionExec": true, "sqliteTransactionQuery": true, "sqliteTransactionPrepare": true, "sqliteCommit": true, "sqliteRollback": true, "sqliteTransactionActive": true,
 }
 
 type structInfo struct {
@@ -149,6 +152,9 @@ func Generate(module *mir.Module) (*Sources, []Diagnostic) {
 	if UsesHTTP(module) {
 		prefix += "#define ZUMBRA_ENABLE_HTTP 1\n"
 	}
+	if UsesSQLite(module) {
+		prefix += "#define ZUMBRA_ENABLE_SQLITE 1\n"
+	}
 	if UsesHTTP(module) {
 		httpRuntime, readErr := runtimeFiles.ReadFile("runtime/zumbra_http.inc")
 		if readErr != nil {
@@ -156,6 +162,14 @@ func Generate(module *mir.Module) (*Sources, []Diagnostic) {
 		}
 		runtimeSource = append(runtimeSource, '\n')
 		runtimeSource = append(runtimeSource, httpRuntime...)
+	}
+	if UsesSQLite(module) {
+		sqliteRuntime, readErr := runtimeFiles.ReadFile("runtime/zumbra_sqlite.inc")
+		if readErr != nil {
+			return nil, []Diagnostic{{Message: "could not load embedded SQLite runtime: " + readErr.Error()}}
+		}
+		runtimeSource = append(runtimeSource, '\n')
+		runtimeSource = append(runtimeSource, sqliteRuntime...)
 	}
 	if prefix != "" {
 		runtimeSource = append([]byte(prefix), runtimeSource...)
@@ -963,6 +977,12 @@ func cKind(value *types.Type) string {
 		return "ZK_SEMAPHORE"
 	case types.AtomicInt:
 		return "ZK_ATOMIC_INT"
+	case types.SQLiteDatabase:
+		return "ZK_SQLITE_DATABASE"
+	case types.SQLiteStatement:
+		return "ZK_SQLITE_STATEMENT"
+	case types.SQLiteTransaction:
+		return "ZK_SQLITE_TRANSACTION"
 	default:
 		return "ZK_UNKNOWN"
 	}
@@ -1062,6 +1082,15 @@ func UsesHTTP(module *mir.Module) bool { return moduleUsesAnyBuiltin(module, htt
 // UsesTLS reports whether the MIR references any TLS builtin and therefore
 // requires OpenSSL during native compilation.
 func UsesTLS(module *mir.Module) bool { return moduleUsesAnyBuiltin(module, tlsBuiltins) }
+
+var sqliteBuiltins = map[string]bool{
+	"sqliteOpen": true, "sqliteMemory": true, "sqliteExec": true, "sqliteQuery": true, "sqlitePrepare": true, "sqliteBegin": true, "sqliteClose": true, "sqliteIsOpen": true, "sqlitePath": true,
+	"sqliteStatementExec": true, "sqliteStatementQuery": true, "sqliteStatementClose": true, "sqliteStatementOpen": true, "sqliteStatementSQL": true,
+	"sqliteTransactionExec": true, "sqliteTransactionQuery": true, "sqliteTransactionPrepare": true, "sqliteCommit": true, "sqliteRollback": true, "sqliteTransactionActive": true,
+}
+
+// UsesSQLite reports whether the MIR references the Z12.1 SQLite runtime.
+func UsesSQLite(module *mir.Module) bool { return moduleUsesAnyBuiltin(module, sqliteBuiltins) }
 
 func moduleUsesAnyBuiltin(module *mir.Module, names map[string]bool) bool {
 	if module == nil {

@@ -237,6 +237,28 @@ var Builtins = []struct {
 	{
 		"redisDel", RedisDelBuiltin(),
 	},
+
+	// Z12.1 SQLite embedded persistence
+	{"sqliteOpen", SQLiteOpenBuiltin()},
+	{"sqliteMemory", SQLiteMemoryBuiltin()},
+	{"sqliteExec", SQLiteExecBuiltin()},
+	{"sqliteQuery", SQLiteQueryBuiltin()},
+	{"sqlitePrepare", SQLitePrepareBuiltin()},
+	{"sqliteBegin", SQLiteBeginBuiltin()},
+	{"sqliteClose", SQLiteCloseBuiltin()},
+	{"sqliteIsOpen", SQLiteIsOpenBuiltin()},
+	{"sqlitePath", SQLitePathBuiltin()},
+	{"sqliteStatementExec", SQLiteStatementExecBuiltin()},
+	{"sqliteStatementQuery", SQLiteStatementQueryBuiltin()},
+	{"sqliteStatementClose", SQLiteStatementCloseBuiltin()},
+	{"sqliteStatementOpen", SQLiteStatementOpenBuiltin()},
+	{"sqliteStatementSQL", SQLiteStatementSQLBuiltin()},
+	{"sqliteTransactionExec", SQLiteTransactionExecBuiltin()},
+	{"sqliteTransactionQuery", SQLiteTransactionQueryBuiltin()},
+	{"sqliteTransactionPrepare", SQLiteTransactionPrepareBuiltin()},
+	{"sqliteCommit", SQLiteCommitBuiltin()},
+	{"sqliteRollback", SQLiteRollbackBuiltin()},
+	{"sqliteTransactionActive", SQLiteTransactionActiveBuiltin()},
 	{
 		"supabaseConnection", SupabaseConnectionBuiltin(),
 	},

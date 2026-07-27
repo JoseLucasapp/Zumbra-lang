@@ -1050,6 +1050,21 @@ func evalAttributeAccess(left object.Object, property string) object.Object {
 			return pair.Value
 		}
 		return NULL
+	case *object.SQLiteDatabase:
+		if method := objectbuiltins.SQLiteDatabaseMethod(value, property); method != nil {
+			return method
+		}
+		return newError("unknown method %s for SQLiteDatabase", property)
+	case *object.SQLiteStatement:
+		if method := objectbuiltins.SQLiteStatementMethod(value, property); method != nil {
+			return method
+		}
+		return newError("unknown method %s for SQLiteStatement", property)
+	case *object.SQLiteTransaction:
+		if method := objectbuiltins.SQLiteTransactionMethod(value, property); method != nil {
+			return method
+		}
+		return newError("unknown method %s for SQLiteTransaction", property)
 	case *object.HttpApp:
 		if method := objectbuiltins.AppMethod(value, property); method != nil {
 			return method

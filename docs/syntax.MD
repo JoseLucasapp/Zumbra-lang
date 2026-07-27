@@ -893,3 +893,30 @@ var frame << http.readWebSocket(socket);
 ```
 
 Documentação completa: [`docs/pt-BR/http-websockets-e-apis.md`](./pt-BR/http-websockets-e-apis.md).
+
+
+---
+
+## SQLite e persistência — Z12.1
+
+```zumbra
+import "../../std/database.zum" as database;
+
+var db << database.memory();
+db.exec("create table users(id integer primary key, name text)", []);
+db.exec("insert into users(name) values (?)", ["Lucas"]);
+
+var rows << db.query("select id, name from users", []);
+show(rows[0]["name"]);
+db.close();
+```
+
+Tipos adicionados:
+
+```text
+SQLiteDatabase
+SQLiteStatement
+SQLiteTransaction
+```
+
+Documentação completa: [`docs/pt-BR/sqlite-e-persistencia-z12-1.md`](./pt-BR/sqlite-e-persistencia-z12-1.md).

@@ -42,6 +42,7 @@ func TestRunnableCodeExamplesParseCompileAndRun(t *testing.T) {
 		"hello_world.zum":      true,
 		"parse.zum":            true,
 		"show.zum":             true,
+		"sqlite.zum":           true,
 		"switch_case.zum":      true,
 		"structured_types.zum": true,
 		"typed_ir.zum":         true,

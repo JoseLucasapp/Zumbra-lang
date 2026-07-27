@@ -44,6 +44,9 @@ const (
 	HttpStream         Kind = "http_stream"
 	HttpFile           Kind = "http_file"
 	WebSocket          Kind = "web_socket"
+	SQLiteDatabase     Kind = "sqlite_database"
+	SQLiteStatement    Kind = "sqlite_statement"
+	SQLiteTransaction  Kind = "sqlite_transaction"
 )
 
 type Type struct {

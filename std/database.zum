@@ -1,0 +1,18 @@
+pub fct open(path) { sqliteOpen(path); }
+pub fct memory() { sqliteMemory(); }
+pub fct exec(database, sql, parameters) { sqliteExec(database, sql, parameters); }
+pub fct query(database, sql, parameters) { sqliteQuery(database, sql, parameters); }
+pub fct prepare(database, sql) { sqlitePrepare(database, sql); }
+pub fct begin(database) { sqliteBegin(database); }
+pub fct close(database) { sqliteClose(database); }
+pub fct isOpen(database) { sqliteIsOpen(database); }
+pub fct path(database) { sqlitePath(database); }
+
+pub fct statementExec(statement, parameters) { sqliteStatementExec(statement, parameters); }
+pub fct statementQuery(statement, parameters) { sqliteStatementQuery(statement, parameters); }
+pub fct closeStatement(statement) { sqliteStatementClose(statement); }
+
+pub fct transactionExec(transaction, sql, parameters) { sqliteTransactionExec(transaction, sql, parameters); }
+pub fct transactionQuery(transaction, sql, parameters) { sqliteTransactionQuery(transaction, sql, parameters); }
+pub fct commit(transaction) { sqliteCommit(transaction); }
+pub fct rollback(transaction) { sqliteRollback(transaction); }

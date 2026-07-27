@@ -527,6 +527,33 @@ func (vm *VM) Run() error {
 					}
 				}
 
+			case *object.SQLiteDatabase:
+				val := builtins.SQLiteDatabaseMethod(d, attrName.Value)
+				if val == nil {
+					return fmt.Errorf("unknown method %s for SQLiteDatabase", attrName.Value)
+				}
+				if err := vm.push(val); err != nil {
+					return err
+				}
+
+			case *object.SQLiteStatement:
+				val := builtins.SQLiteStatementMethod(d, attrName.Value)
+				if val == nil {
+					return fmt.Errorf("unknown method %s for SQLiteStatement", attrName.Value)
+				}
+				if err := vm.push(val); err != nil {
+					return err
+				}
+
+			case *object.SQLiteTransaction:
+				val := builtins.SQLiteTransactionMethod(d, attrName.Value)
+				if val == nil {
+					return fmt.Errorf("unknown method %s for SQLiteTransaction", attrName.Value)
+				}
+				if err := vm.push(val); err != nil {
+					return err
+				}
+
 			case *object.HttpApp:
 				val := builtins.AppMethod(d, attrName.Value)
 				if val == nil {

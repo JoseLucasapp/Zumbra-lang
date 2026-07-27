@@ -66,6 +66,14 @@ static _Thread_local char z_task_error_message[1024];
 
 uint32_t z_abi_version(void) { return ZUMBRA_NATIVE_ABI_VERSION; }
 
+#if defined(ZUMBRA_ENABLE_SQLITE)
+static void z_sqlite_runtime_init(void);
+static void z_sqlite_runtime_shutdown(void);
+static ZValue z_sqlite_call_builtin(const char *name, const ZValue *args, size_t argc, bool *handled);
+static ZValue z_sqlite_get_field(ZValue value, const char *name, bool *handled);
+static ZValue z_sqlite_call_method(ZValue callable, const ZValue *args, size_t argc);
+#endif
+
 #if defined(ZUMBRA_ENABLE_HTTP)
 static void z_http_runtime_init(void);
 static void z_http_runtime_shutdown(void);
@@ -83,9 +91,15 @@ void z_runtime_init(void) {
 #if defined(ZUMBRA_ENABLE_HTTP)
     z_http_runtime_init();
 #endif
+#if defined(ZUMBRA_ENABLE_SQLITE)
+    z_sqlite_runtime_init();
+#endif
 }
 
 void z_runtime_shutdown(void) {
+#if defined(ZUMBRA_ENABLE_SQLITE)
+    z_sqlite_runtime_shutdown();
+#endif
 #if defined(ZUMBRA_ENABLE_HTTP)
     z_http_runtime_shutdown();
 #endif
@@ -595,6 +609,11 @@ size_t z_size_of(ZValue value) {
 }
 
 ZValue z_get_field(ZValue object, const char *name) {
+#if defined(ZUMBRA_ENABLE_SQLITE)
+    bool sqlite_handled = false;
+    ZValue sqlite_value = z_sqlite_get_field(object, name, &sqlite_handled);
+    if (sqlite_handled) return sqlite_value;
+#endif
 #if defined(ZUMBRA_ENABLE_HTTP)
     bool http_handled = false;
     ZValue http_value = z_http_get_field(object, name, &http_handled);
@@ -812,6 +831,9 @@ static bool z_channel_close(ZValue channelValue){ZChannelNative *c=z_expect_chan
 static void z_sleep_ms(int64_t milliseconds){if(milliseconds<0)z_fatal("sleepMs expects non-negative milliseconds");struct timespec request;request.tv_sec=(time_t)(milliseconds/1000);request.tv_nsec=(long)((milliseconds%1000)*1000000);nanosleep(&request,NULL);}
 
 ZValue z_call(ZValue callable, const ZValue *args, size_t argc) {
+#if defined(ZUMBRA_ENABLE_SQLITE)
+    if (callable.tag == ZV_SQLITE_METHOD) return z_sqlite_call_method(callable, args, argc);
+#endif
 #if defined(ZUMBRA_ENABLE_HTTP)
     if (callable.tag == ZV_NATIVE_METHOD) return z_http_call_native_method(callable, args, argc);
 #endif
@@ -847,6 +869,11 @@ static void z_show_inner(ZValue value) {
     case ZV_WAIT_GROUP: fputs("WaitGroup", stdout); break;
     case ZV_SEMAPHORE: fputs("Semaphore", stdout); break;
     case ZV_ATOMIC_INT: fprintf(stdout, "AtomicInt<%" PRId64 ">", atomic_load((_Atomic int64_t *)value.as.p)); break;
+#if defined(ZUMBRA_ENABLE_SQLITE)
+    case ZV_SQLITE_DATABASE: fputs("SQLiteDatabase", stdout); break;
+    case ZV_SQLITE_STATEMENT: fputs("SQLiteStatement", stdout); break;
+    case ZV_SQLITE_TRANSACTION: fputs("SQLiteTransaction", stdout); break;
+#endif
 #if defined(ZUMBRA_ENABLE_NETWORK)
     case ZV_NET_LISTENER: fputs("NetListener", stdout); break;
     case ZV_NET_STREAM: fputs("NetStream", stdout); break;
@@ -1666,6 +1693,11 @@ static bool z_udp_close_native(ZValue value) {
 #endif
 
 ZValue z_call_builtin(const char *name, const ZValue *args, size_t argc) {
+#if defined(ZUMBRA_ENABLE_SQLITE)
+    bool sqlite_handled = false;
+    ZValue sqlite_result = z_sqlite_call_builtin(name, args, argc, &sqlite_handled);
+    if (sqlite_handled) return sqlite_result;
+#endif
 #if defined(ZUMBRA_ENABLE_HTTP)
     bool http_handled = false;
     ZValue http_result = z_http_call_builtin(name, args, argc, &http_handled);

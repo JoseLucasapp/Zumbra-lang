@@ -41,6 +41,7 @@ func TestCoreSyntaxSnippetsParseAndCompile(t *testing.T) {
 		`fct publish(output, value) { send(output, value); return; } var messages << channel(1); var task << spawn publish(messages, 7); await task;`,
 		`var listener << tcpListen("127.0.0.1", 0); var port << listenerPort(listener); listenerClose(listener); port;`,
 		`var socket << udpBind("127.0.0.1", 0); udpClose(socket);`,
+		`var db << sqliteMemory(); db.exec("create table test(id integer)", []); db.close();`,
 		`var run << fct() { 1; }; try run() or err { err; };`,
 	}
 

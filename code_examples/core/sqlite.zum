@@ -1,0 +1,24 @@
+import "../../std/database.zum" as database;
+
+var db << database.memory();
+
+db.exec(
+    "create table users (id integer primary key, name text not null, score integer not null)",
+    []
+);
+
+var insertUser << db.prepare("insert into users(name, score) values (?, ?)");
+var inserted << insertUser.exec(["Lucas", 42]);
+show(inserted["rowsAffected"]);
+insertUser.close();
+
+var transaction << db.begin();
+transaction.exec("insert into users(name, score) values (?, ?)", ["Temporary", 1]);
+transaction.rollback();
+
+var users << db.query("select id, name, score from users order by id", []);
+show(users[0]["name"]);
+show(users[0]["score"]);
+show(sizeOf(users));
+show(db.isOpen());
+show(db.close());

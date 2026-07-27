@@ -408,7 +408,7 @@ func (c *Checker) constrainExpression(expr ast.Expression, wanted *Type, context
 		return refined
 	}
 
-	actual := c.inferExpression(expr)
+	actual := c.inferExpressionExpected(expr, wanted)
 	refined, compatible := refineType(actual, wanted)
 	if !compatible {
 		c.addError(fmt.Errorf("%s expects %s, got %s", context, wanted.String(), actual.String()))
@@ -1189,6 +1189,137 @@ func (c *Checker) checkBuiltinCall(name string, args []ast.Expression) *Type {
 			c.constrainExpression(args[0], Simple(UDPSocket), "udpPort socket")
 		}
 		return Simple(Int)
+
+	case "sqliteOpen":
+		if len(args) != 1 {
+			c.addError(fmt.Errorf("sqliteOpen expects 1 argument, got %d", len(args)))
+		}
+		if len(args) > 0 {
+			c.requireTypeArgument("sqliteOpen path", c.inferExpression(args[0]), String)
+		}
+		return Simple(SQLiteDatabase)
+	case "sqliteMemory":
+		if len(args) != 0 {
+			c.addError(fmt.Errorf("sqliteMemory expects 0 arguments, got %d", len(args)))
+		}
+		return Simple(SQLiteDatabase)
+	case "sqliteExec", "sqliteQuery":
+		if len(args) != 3 {
+			c.addError(fmt.Errorf("%s expects 3 arguments, got %d", name, len(args)))
+		}
+		if len(args) > 0 {
+			c.constrainExpression(args[0], Simple(SQLiteDatabase), name+" database")
+		}
+		if len(args) > 1 {
+			c.requireTypeArgument(name+" query", c.inferExpression(args[1]), String)
+		}
+		if len(args) > 2 {
+			p := c.inferExpressionExpected(args[2], ArrayOf(Simple(Unknown)))
+			if p.Kind != Unknown && p.Kind != Array {
+				c.addError(fmt.Errorf("%s parameters must be array, got %s", name, p.String()))
+			}
+		}
+		if name == "sqliteExec" {
+			return DictOf(Simple(String), Simple(Int))
+		}
+		return ArrayOf(DictOf(Simple(String), Simple(Unknown)))
+	case "sqlitePrepare":
+		if len(args) != 2 {
+			c.addError(fmt.Errorf("sqlitePrepare expects 2 arguments, got %d", len(args)))
+		}
+		if len(args) > 0 {
+			c.constrainExpression(args[0], Simple(SQLiteDatabase), "sqlitePrepare database")
+		}
+		if len(args) > 1 {
+			c.requireTypeArgument("sqlitePrepare query", c.inferExpression(args[1]), String)
+		}
+		return Simple(SQLiteStatement)
+	case "sqliteBegin":
+		if len(args) != 1 {
+			c.addError(fmt.Errorf("sqliteBegin expects 1 argument, got %d", len(args)))
+		}
+		if len(args) > 0 {
+			c.constrainExpression(args[0], Simple(SQLiteDatabase), "sqliteBegin database")
+		}
+		return Simple(SQLiteTransaction)
+	case "sqliteClose", "sqliteIsOpen", "sqlitePath":
+		if len(args) != 1 {
+			c.addError(fmt.Errorf("%s expects 1 argument, got %d", name, len(args)))
+		}
+		if len(args) > 0 {
+			c.constrainExpression(args[0], Simple(SQLiteDatabase), name+" database")
+		}
+		if name == "sqlitePath" {
+			return Simple(String)
+		}
+		return Simple(Bool)
+	case "sqliteStatementExec", "sqliteStatementQuery":
+		if len(args) != 2 {
+			c.addError(fmt.Errorf("%s expects 2 arguments, got %d", name, len(args)))
+		}
+		if len(args) > 0 {
+			c.constrainExpression(args[0], Simple(SQLiteStatement), name+" statement")
+		}
+		if len(args) > 1 {
+			p := c.inferExpressionExpected(args[1], ArrayOf(Simple(Unknown)))
+			if p.Kind != Unknown && p.Kind != Array {
+				c.addError(fmt.Errorf("%s parameters must be array, got %s", name, p.String()))
+			}
+		}
+		if name == "sqliteStatementExec" {
+			return DictOf(Simple(String), Simple(Int))
+		}
+		return ArrayOf(DictOf(Simple(String), Simple(Unknown)))
+	case "sqliteStatementClose", "sqliteStatementOpen", "sqliteStatementSQL":
+		if len(args) != 1 {
+			c.addError(fmt.Errorf("%s expects 1 argument, got %d", name, len(args)))
+		}
+		if len(args) > 0 {
+			c.constrainExpression(args[0], Simple(SQLiteStatement), name+" statement")
+		}
+		if name == "sqliteStatementSQL" {
+			return Simple(String)
+		}
+		return Simple(Bool)
+	case "sqliteTransactionExec", "sqliteTransactionQuery":
+		if len(args) != 3 {
+			c.addError(fmt.Errorf("%s expects 3 arguments, got %d", name, len(args)))
+		}
+		if len(args) > 0 {
+			c.constrainExpression(args[0], Simple(SQLiteTransaction), name+" transaction")
+		}
+		if len(args) > 1 {
+			c.requireTypeArgument(name+" query", c.inferExpression(args[1]), String)
+		}
+		if len(args) > 2 {
+			p := c.inferExpressionExpected(args[2], ArrayOf(Simple(Unknown)))
+			if p.Kind != Unknown && p.Kind != Array {
+				c.addError(fmt.Errorf("%s parameters must be array, got %s", name, p.String()))
+			}
+		}
+		if name == "sqliteTransactionExec" {
+			return DictOf(Simple(String), Simple(Int))
+		}
+		return ArrayOf(DictOf(Simple(String), Simple(Unknown)))
+	case "sqliteTransactionPrepare":
+		if len(args) != 2 {
+			c.addError(fmt.Errorf("sqliteTransactionPrepare expects 2 arguments, got %d", len(args)))
+		}
+		if len(args) > 0 {
+			c.constrainExpression(args[0], Simple(SQLiteTransaction), "sqliteTransactionPrepare transaction")
+		}
+		if len(args) > 1 {
+			c.requireTypeArgument("sqliteTransactionPrepare query", c.inferExpression(args[1]), String)
+		}
+		return Simple(SQLiteStatement)
+	case "sqliteCommit", "sqliteRollback", "sqliteTransactionActive":
+		if len(args) != 1 {
+			c.addError(fmt.Errorf("%s expects 1 argument, got %d", name, len(args)))
+		}
+		if len(args) > 0 {
+			c.constrainExpression(args[0], Simple(SQLiteTransaction), name+" transaction")
+		}
+		return Simple(Bool)
 
 	case "httpApp":
 		if len(args) != 0 {
@@ -2022,7 +2153,20 @@ func containsUnknown(value *Type) bool {
 }
 
 func (c *Checker) inferExpressionExpected(exp ast.Expression, expected *Type) *Type {
-	if exp == nil || expected == nil || expected.Kind != Func {
+	if exp == nil || expected == nil {
+		return c.inferExpression(exp)
+	}
+	if expected.Kind == Array && expected.Elem != nil && expected.Elem.Kind == Unknown {
+		if literal, ok := exp.(*ast.ArrayLiteral); ok {
+			for _, element := range literal.Elements {
+				c.inferExpression(element)
+			}
+			result := ArrayOf(Simple(Unknown))
+			c.nodeTypes[literal] = Clone(result)
+			return result
+		}
+	}
+	if expected.Kind != Func {
 		return c.inferExpression(exp)
 	}
 
@@ -2611,6 +2755,43 @@ func (c *Checker) inferExpressionImpl(exp ast.Expression) *Type {
 	case *ast.AttributeAccess:
 		left := c.inferExpression(e.Object)
 		switch left.Kind {
+		case SQLiteDatabase:
+			switch e.Property.Value {
+			case "exec":
+				return FuncOf([]*Type{Simple(String), ArrayOf(Simple(Unknown))}, DictOf(Simple(String), Simple(Int)))
+			case "query":
+				return FuncOf([]*Type{Simple(String), ArrayOf(Simple(Unknown))}, ArrayOf(DictOf(Simple(String), Simple(Unknown))))
+			case "prepare":
+				return FuncOf([]*Type{Simple(String)}, Simple(SQLiteStatement))
+			case "begin":
+				return FuncOf(nil, Simple(SQLiteTransaction))
+			case "close", "isOpen":
+				return FuncOf(nil, Simple(Bool))
+			case "path":
+				return FuncOf(nil, Simple(String))
+			}
+		case SQLiteStatement:
+			switch e.Property.Value {
+			case "exec":
+				return FuncOf([]*Type{ArrayOf(Simple(Unknown))}, DictOf(Simple(String), Simple(Int)))
+			case "query":
+				return FuncOf([]*Type{ArrayOf(Simple(Unknown))}, ArrayOf(DictOf(Simple(String), Simple(Unknown))))
+			case "close", "isOpen":
+				return FuncOf(nil, Simple(Bool))
+			case "sql":
+				return FuncOf(nil, Simple(String))
+			}
+		case SQLiteTransaction:
+			switch e.Property.Value {
+			case "exec":
+				return FuncOf([]*Type{Simple(String), ArrayOf(Simple(Unknown))}, DictOf(Simple(String), Simple(Int)))
+			case "query":
+				return FuncOf([]*Type{Simple(String), ArrayOf(Simple(Unknown))}, ArrayOf(DictOf(Simple(String), Simple(Unknown))))
+			case "prepare":
+				return FuncOf([]*Type{Simple(String)}, Simple(SQLiteStatement))
+			case "commit", "rollback", "active":
+				return FuncOf(nil, Simple(Bool))
+			}
 		case HttpApp:
 			handler := FuncOf([]*Type{Simple(HttpRequest), Simple(HttpResponse)}, Simple(Unknown))
 			switch e.Property.Value {
@@ -2758,7 +2939,7 @@ func (c *Checker) typeFromName(name string) *Type {
 		return value
 	}
 	switch Kind(name) {
-	case Int, U8, U16, U32, U64, I8, I16, I32, I64, Float, Bool, String, Pointer, Null, Task, Channel, Mutex, RWMutex, WaitGroup, Semaphore, AtomicInt, NetListener, NetStream, UDPSocket, HttpApp, HttpServer, HttpRequest, HttpResponse, HttpClientResponse, HttpStream, HttpFile, WebSocket:
+	case Int, U8, U16, U32, U64, I8, I16, I32, I64, Float, Bool, String, Pointer, Null, Task, Channel, Mutex, RWMutex, WaitGroup, Semaphore, AtomicInt, NetListener, NetStream, UDPSocket, HttpApp, HttpServer, HttpRequest, HttpResponse, HttpClientResponse, HttpStream, HttpFile, WebSocket, SQLiteDatabase, SQLiteStatement, SQLiteTransaction:
 		return Simple(Kind(name))
 	default:
 		return Simple(Unknown)

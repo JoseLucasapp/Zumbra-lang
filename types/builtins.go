@@ -174,6 +174,39 @@ func builtinType(name string) (*Type, bool) {
 	case "udpPort":
 		return FuncOf([]*Type{Simple(UDPSocket)}, Simple(Int)), true
 
+	case "sqliteOpen":
+		return FuncOf([]*Type{Simple(String)}, Simple(SQLiteDatabase)), true
+	case "sqliteMemory":
+		return FuncOf(nil, Simple(SQLiteDatabase)), true
+	case "sqliteExec":
+		return FuncOf([]*Type{Simple(SQLiteDatabase), Simple(String), ArrayOf(Simple(Unknown))}, DictOf(Simple(String), Simple(Int))), true
+	case "sqliteQuery":
+		return FuncOf([]*Type{Simple(SQLiteDatabase), Simple(String), ArrayOf(Simple(Unknown))}, ArrayOf(DictOf(Simple(String), Simple(Unknown)))), true
+	case "sqlitePrepare":
+		return FuncOf([]*Type{Simple(SQLiteDatabase), Simple(String)}, Simple(SQLiteStatement)), true
+	case "sqliteBegin":
+		return FuncOf([]*Type{Simple(SQLiteDatabase)}, Simple(SQLiteTransaction)), true
+	case "sqliteClose", "sqliteIsOpen":
+		return FuncOf([]*Type{Simple(SQLiteDatabase)}, Simple(Bool)), true
+	case "sqlitePath":
+		return FuncOf([]*Type{Simple(SQLiteDatabase)}, Simple(String)), true
+	case "sqliteStatementExec":
+		return FuncOf([]*Type{Simple(SQLiteStatement), ArrayOf(Simple(Unknown))}, DictOf(Simple(String), Simple(Int))), true
+	case "sqliteStatementQuery":
+		return FuncOf([]*Type{Simple(SQLiteStatement), ArrayOf(Simple(Unknown))}, ArrayOf(DictOf(Simple(String), Simple(Unknown)))), true
+	case "sqliteStatementClose", "sqliteStatementOpen":
+		return FuncOf([]*Type{Simple(SQLiteStatement)}, Simple(Bool)), true
+	case "sqliteStatementSQL":
+		return FuncOf([]*Type{Simple(SQLiteStatement)}, Simple(String)), true
+	case "sqliteTransactionExec":
+		return FuncOf([]*Type{Simple(SQLiteTransaction), Simple(String), ArrayOf(Simple(Unknown))}, DictOf(Simple(String), Simple(Int))), true
+	case "sqliteTransactionQuery":
+		return FuncOf([]*Type{Simple(SQLiteTransaction), Simple(String), ArrayOf(Simple(Unknown))}, ArrayOf(DictOf(Simple(String), Simple(Unknown)))), true
+	case "sqliteTransactionPrepare":
+		return FuncOf([]*Type{Simple(SQLiteTransaction), Simple(String)}, Simple(SQLiteStatement)), true
+	case "sqliteCommit", "sqliteRollback", "sqliteTransactionActive":
+		return FuncOf([]*Type{Simple(SQLiteTransaction)}, Simple(Bool)), true
+
 	case "httpApp":
 		return FuncOf(nil, Simple(HttpApp)), true
 	case "httpRoute":
