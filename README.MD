@@ -204,3 +204,5 @@ db.close();
 ```
 
 Z12.1 supports file-backed and in-memory SQLite, positional parameters, prepared statements, transactions with commit or rollback, row dictionaries, and binary blobs. The VM/evaluator use the system SQLite C library through the shared builtin layer, while native C11 builds include SQLite support only when a database builtin is referenced and link `-lsqlite3` conditionally. See [`docs/pt-BR/sqlite-e-persistencia-z12-1.md`](./docs/pt-BR/sqlite-e-persistencia-z12-1.md).
+
+Zumbra 0.5.1 widens the VM builtin index operand from 8 to 16 bits. This prevents overflow now that Z12.1 raises the builtin table above 255 entries and restores binary I/O parity between the evaluator and VM. See [`docs/pt-BR/correcao-indice-builtins-0.5.1.md`](./docs/pt-BR/correcao-indice-builtins-0.5.1.md).

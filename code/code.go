@@ -103,7 +103,7 @@ var definitions = map[Opcode]*Definition{
 	OpReturn:             {"OpReturn", []int{}},
 	OpSetLocal:           {"OpSetLocal", []int{1}},
 	OpGetLocal:           {"OpGetLocal", []int{1}},
-	OpGetBuiltin:         {"OpGetBuiltin", []int{1}},
+	OpGetBuiltin:         {"OpGetBuiltin", []int{2}},
 	OpClosure:            {"OpClosure", []int{2, 1}},
 	OpGetFree:            {"OpGetFree", []int{1}},
 	OpCurrentClosure:     {"OpCurrentClosure", []int{}},

@@ -370,8 +370,8 @@ func (vm *VM) Run() error {
 			}
 
 		case code.OpGetBuiltin:
-			builtinIndex := code.ReadUint8(ins[ip+1:])
-			vm.currentFrame().ip += 1
+			builtinIndex := code.ReadUint16(ins[ip+1:])
+			vm.currentFrame().ip += 2
 
 			if int(builtinIndex) >= len(builtins.Builtins) {
 				return fmt.Errorf("builtin index out of range: %d", builtinIndex)

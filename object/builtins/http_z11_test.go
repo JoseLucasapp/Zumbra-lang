@@ -32,7 +32,7 @@ func TestZ11HTTPRouterMiddlewareJSONCookiesAndClient(t *testing.T) {
 	app := requireHTTPValue(t, HTTPAppBuiltin().Fn()).(*object.HttpApp)
 	middleware := &object.Builtin{Fn: func(args ...object.Object) object.Object {
 		response := args[1].(*object.HttpResponse)
-		response.Headers["X-Zumbra"] = []string{"0.5.0"}
+		response.Headers["X-Zumbra"] = []string{"0.5.1"}
 		return NewBoolean(true)
 	}}
 	handler := &object.Builtin{Fn: func(args ...object.Object) object.Object {
@@ -59,7 +59,7 @@ func TestZ11HTTPRouterMiddlewareJSONCookiesAndClient(t *testing.T) {
 	if response.StatusCode != 200 {
 		t.Fatalf("unexpected status %d", response.StatusCode)
 	}
-	if header, ok := httpDictString(response.Headers, "x-zumbra"); !ok || header != "0.5.0" {
+	if header, ok := httpDictString(response.Headers, "x-zumbra"); !ok || header != "0.5.1" {
 		t.Fatalf("middleware header was not preserved: %s", response.Headers.Inspect())
 	}
 	if cookie, ok := httpDictString(response.Cookies, "session"); !ok || cookie != "local" {

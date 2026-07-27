@@ -1,0 +1,265 @@
+diff --git a/README.MD b/README.MD
+index adcfc83..71979d8 100644
+--- a/README.MD
++++ b/README.MD
+@@ -204,3 +204,5 @@ db.close();
+ ```
+ 
+ Z12.1 supports file-backed and in-memory SQLite, positional parameters, prepared statements, transactions with commit or rollback, row dictionaries, and binary blobs. The VM/evaluator use the system SQLite C library through the shared builtin layer, while native C11 builds include SQLite support only when a database builtin is referenced and link `-lsqlite3` conditionally. See [`docs/pt-BR/sqlite-e-persistencia-z12-1.md`](./docs/pt-BR/sqlite-e-persistencia-z12-1.md).
++
++Zumbra 0.5.1 widens the VM builtin index operand from 8 to 16 bits. This prevents overflow now that Z12.1 raises the builtin table above 255 entries and restores binary I/O parity between the evaluator and VM. See [`docs/pt-BR/correcao-indice-builtins-0.5.1.md`](./docs/pt-BR/correcao-indice-builtins-0.5.1.md).
+diff --git a/code/code.go b/code/code.go
+index 15d908a..3a83c82 100644
+--- a/code/code.go
++++ b/code/code.go
+@@ -103,7 +103,7 @@ var definitions = map[Opcode]*Definition{
+ 	OpReturn:             {"OpReturn", []int{}},
+ 	OpSetLocal:           {"OpSetLocal", []int{1}},
+ 	OpGetLocal:           {"OpGetLocal", []int{1}},
+-	OpGetBuiltin:         {"OpGetBuiltin", []int{1}},
++	OpGetBuiltin:         {"OpGetBuiltin", []int{2}},
+ 	OpClosure:            {"OpClosure", []int{2, 1}},
+ 	OpGetFree:            {"OpGetFree", []int{1}},
+ 	OpCurrentClosure:     {"OpCurrentClosure", []int{}},
+diff --git a/code/code_test.go b/code/code_test.go
+index 5050e03..e056b29 100644
+--- a/code/code_test.go
++++ b/code/code_test.go
+@@ -13,6 +13,7 @@ func TestMake(t *testing.T) {
+ 		{OpConstant, []int{65534}, []byte{byte(OpConstant), 255, 254}},
+ 		{OpAdd, []int{}, []byte{byte(OpAdd)}},
+ 		{OpGetLocal, []int{255}, []byte{byte(OpGetLocal), 255}},
++		{OpGetBuiltin, []int{261}, []byte{byte(OpGetBuiltin), 1, 5}},
+ 		{OpClosure, []int{65534, 255}, []byte{byte(OpClosure), 255, 254, 255}},
+ 	}
+ 	for _, tt := range tests {
+@@ -34,6 +35,7 @@ func TestInstructionsString(t *testing.T) {
+ 	instructions := []Instructions{
+ 		Make(OpAdd),
+ 		Make(OpGetLocal, 1),
++		Make(OpGetBuiltin, 261),
+ 		Make(OpConstant, 2),
+ 		Make(OpConstant, 65535),
+ 		Make(OpClosure, 65535, 255),
+@@ -41,9 +43,10 @@ func TestInstructionsString(t *testing.T) {
+ 
+ 	expected := `0000 OpAdd
+ 0001 OpGetLocal 1
+-0003 OpConstant 2
+-0006 OpConstant 65535
+-0009 OpClosure 65535 255
++0003 OpGetBuiltin 261
++0006 OpConstant 2
++0009 OpConstant 65535
++0012 OpClosure 65535 255
+ `
+ 
+ 	concatted := Instructions{}
+@@ -65,6 +68,7 @@ func TestReadOperands(t *testing.T) {
+ 	}{
+ 		{OpConstant, []int{65535}, 2},
+ 		{OpGetLocal, []int{255}, 1},
++		{OpGetBuiltin, []int{261}, 2},
+ 		{OpClosure, []int{65535, 255}, 3},
+ 	}
+ 
+diff --git a/code_examples/core/http_api.zum b/code_examples/core/http_api.zum
+index c8647d5..d7c4b5e 100644
+--- a/code_examples/core/http_api.zum
++++ b/code_examples/core/http_api.zum
+@@ -7,7 +7,7 @@ api.cors(["*"], ["GET", "POST", "OPTIONS"], ["Content-Type", "Authorization"], f
+ 
+ api.use(fct(request, response) {
+     request;
+-    response.header("X-Zumbra", "0.5.0");
++    response.header("X-Zumbra", "0.5.1");
+     true;
+ });
+ 
+diff --git a/mnt/data/zumbra_fix/Zumbra-lang-feature-system-primitives-v1/docs/pt-BR/correcao-indice-builtins-0.5.1.md b/docs/pt-BR/correcao-indice-builtins-0.5.1.md
+new file mode 100644
+index 0000000..6c0bde2
+--- /dev/null
++++ b/docs/pt-BR/correcao-indice-builtins-0.5.1.md
+@@ -0,0 +1,55 @@
++# Zumbra 0.5.1 — correção do índice de builtins na VM
++
++A versão 0.5.1 corrige uma regressão introduzida quando o Z12.1 adicionou os builtins de SQLite.
++
++## Causa
++
++O bytecode `OpGetBuiltin` armazenava o índice do builtin em apenas um byte. Esse formato aceita somente valores de `0` a `255`.
++
++Com o Z12.1, a tabela passou a possuir 263 builtins. As funções localizadas nos índices `256` a `262`, incluindo operações binárias como `copyBytes`, `bytesEqual` e `sha256`, eram truncadas para oito bits durante a geração do bytecode. A VM então carregava outra função da tabela e produzia erros de aridade ou resultados incorretos.
++
++Exemplo do erro anterior:
++
++```text
++ERROR: wrong number of arguments. got=2, want=1
++```
++
++## Correção
++
++`OpGetBuiltin` agora usa um operando unsigned de 16 bits:
++
++```text
++antes:  opcode + uint8
++agora:  opcode + uint16
++```
++
++O compiler já trabalhava com índices inteiros, portanto não foi necessário alterar a resolução de símbolos. A VM passou a ler dois bytes e a avançar o instruction pointer corretamente.
++
++O novo limite teórico do bytecode é de 65.536 posições de builtin, muito acima da tabela atual.
++
++## Testes de regressão
++
++Foram adicionadas verificações para:
++
++- codificação e leitura do operando `OpGetBuiltin` acima de 255;
++- formatação das instruções com índice 261;
++- execução real de `bytesEqual` na VM quando seu índice está acima do limite de um byte;
++- preservação dos testes existentes de I/O binário e conformidade evaluator/VM.
++
++## Compatibilidade
++
++O formato de bytecode ainda é interno ao processo e não existe persistência pública de arquivos de bytecode nesta etapa. Por isso a ampliação do operando não quebra artefatos públicos da linguagem.
++
++## Validação
++
++```bash
++go test ./...
++scripts/test-sqlite.sh
++go run . version
++```
++
++Versão esperada:
++
++```text
++0.5.1
++```
+diff --git a/docs/pt-BR/http-websockets-e-apis.md b/docs/pt-BR/http-websockets-e-apis.md
+index 11e55dc..7b37942 100644
+--- a/docs/pt-BR/http-websockets-e-apis.md
++++ b/docs/pt-BR/http-websockets-e-apis.md
+@@ -148,7 +148,7 @@ response.html(text);
+ ```zumbra
+ api.use(fct(request, response) {
+     request;
+-    response.header("X-Zumbra", "0.5.0");
++    response.header("X-Zumbra", "0.5.1");
+     true;
+ });
+ ```
+diff --git a/main.go b/main.go
+index 091dcec..4c07844 100644
+--- a/main.go
++++ b/main.go
+@@ -19,7 +19,7 @@ import (
+ 	"zumbra/vm"
+ )
+ 
+-const version = "0.5.0"
++const version = "0.5.1"
+ 
+ func main() {
+ 	currentUser, err := user.Current()
+diff --git a/nativec/http_z11_test.go b/nativec/http_z11_test.go
+index 43a01e5..706187a 100644
+--- a/nativec/http_z11_test.go
++++ b/nativec/http_z11_test.go
+@@ -13,7 +13,7 @@ import (
+ 
+ func TestZ11HTTPAPIBuildsAndRunsNatively(t *testing.T) {
+ 	output := buildAndRunZ8(t, "code_examples/core/http_api.zum")
+-	for _, expected := range []string{"200\nok\n0.5.0\nhello zumbra\n201\n42\nlocal\n", "true\nlocal-user\ntrue\n"} {
++	for _, expected := range []string{"200\nok\n0.5.1\nhello zumbra\n201\n42\nlocal\n", "true\nlocal-user\ntrue\n"} {
+ 		if !strings.Contains(output, expected) {
+ 			t.Fatalf("native HTTP output missing %q:\n%s", expected, output)
+ 		}
+diff --git a/object/builtins/http_z11_test.go b/object/builtins/http_z11_test.go
+index 9a98b93..5e8d2d6 100644
+--- a/object/builtins/http_z11_test.go
++++ b/object/builtins/http_z11_test.go
+@@ -32,7 +32,7 @@ func TestZ11HTTPRouterMiddlewareJSONCookiesAndClient(t *testing.T) {
+ 	app := requireHTTPValue(t, HTTPAppBuiltin().Fn()).(*object.HttpApp)
+ 	middleware := &object.Builtin{Fn: func(args ...object.Object) object.Object {
+ 		response := args[1].(*object.HttpResponse)
+-		response.Headers["X-Zumbra"] = []string{"0.5.0"}
++		response.Headers["X-Zumbra"] = []string{"0.5.1"}
+ 		return NewBoolean(true)
+ 	}}
+ 	handler := &object.Builtin{Fn: func(args ...object.Object) object.Object {
+@@ -59,7 +59,7 @@ func TestZ11HTTPRouterMiddlewareJSONCookiesAndClient(t *testing.T) {
+ 	if response.StatusCode != 200 {
+ 		t.Fatalf("unexpected status %d", response.StatusCode)
+ 	}
+-	if header, ok := httpDictString(response.Headers, "x-zumbra"); !ok || header != "0.5.0" {
++	if header, ok := httpDictString(response.Headers, "x-zumbra"); !ok || header != "0.5.1" {
+ 		t.Fatalf("middleware header was not preserved: %s", response.Headers.Inspect())
+ 	}
+ 	if cookie, ok := httpDictString(response.Cookies, "session"); !ok || cookie != "local" {
+diff --git a/mnt/data/zumbra_fix/Zumbra-lang-feature-system-primitives-v1/vm/builtin_index_test.go b/vm/builtin_index_test.go
+new file mode 100644
+index 0000000..da97beb
+--- /dev/null
++++ b/vm/builtin_index_test.go
+@@ -0,0 +1,44 @@
++package vm
++
++import (
++	"testing"
++	"zumbra/compiler"
++	"zumbra/object"
++	"zumbra/object/builtins"
++)
++
++func TestVMSupportsBuiltinIndexesAboveUint8(t *testing.T) {
++	var builtinIndex int = -1
++	for i, builtin := range builtins.Builtins {
++		if builtin.Name == "bytesEqual" {
++			builtinIndex = i
++			break
++		}
++	}
++	if builtinIndex <= 255 {
++		t.Fatalf("regression requires bytesEqual above the uint8 boundary, got index %d", builtinIndex)
++	}
++
++	program := parse(`
++        var left << bytes(2);
++        left[0] << 0x5Au8;
++        var right << bytes(2);
++        copyBytes(right, 0, left, 0, 2);
++        bytesEqual(left, right);
++    `)
++
++	compiled := compiler.New()
++	if err := compiled.Compile(program); err != nil {
++		t.Fatalf("compiler error: %v", err)
++	}
++
++	machine := New(compiled.Bytecode())
++	if err := machine.Run(); err != nil {
++		t.Fatalf("VM error: %v", err)
++	}
++
++	result, ok := machine.LastPoppedStackElem().(*object.Boolean)
++	if !ok || !result.Value {
++		t.Fatalf("expected true from builtin index %d, got %T %v", builtinIndex, machine.LastPoppedStackElem(), machine.LastPoppedStackElem())
++	}
++}
+diff --git a/vm/vm.go b/vm/vm.go
+index 820c72c..fe16639 100644
+--- a/vm/vm.go
++++ b/vm/vm.go
+@@ -370,8 +370,8 @@ func (vm *VM) Run() error {
+ 			}
+ 
+ 		case code.OpGetBuiltin:
+-			builtinIndex := code.ReadUint8(ins[ip+1:])
+-			vm.currentFrame().ip += 1
++			builtinIndex := code.ReadUint16(ins[ip+1:])
++			vm.currentFrame().ip += 2
+ 
+ 			if int(builtinIndex) >= len(builtins.Builtins) {
+ 				return fmt.Errorf("builtin index out of range: %d", builtinIndex)
