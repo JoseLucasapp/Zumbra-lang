@@ -15,7 +15,7 @@ var mainWindow << application.window({
     "highDPI": true
 });
 
-mainWindow.setTitle("Zumbra Desktop 0.9.0");
+mainWindow.setTitle("Zumbra Desktop 0.10.0");
 mainWindow.setSize(960, 640);
 mainWindow.setPosition(40, 50);
 mainWindow.setFullscreen(true);

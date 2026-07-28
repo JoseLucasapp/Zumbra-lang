@@ -1,0 +1,4 @@
+1bedb19721e6547820798efbb0d45ee3f7222640c804cb8158871f017a43b773  zumbra-packaged-app-1.0.0-windows-amd64-setup.exe
+29a3d5a543cf2e525cfce2aa8fcd45159c59856f5b2f8caea1c7fa342b406108  zumbra-packaged-app-1.0.0-windows-amd64-update.json
+75b64b5f5a234865f2e906001d3ff799d2b6abd96eb05cc611b718a629bea7af  zumbra-packaged-app-1.0.0-windows-amd64-portable.zip
+9fd7e67e8f8904d6efec2916c7c0d75fc242941aaf6d0a2209e384946d2ce585  zumbra-packaged-app-1.0.0-windows-amd64-installer.nsi

@@ -4,7 +4,7 @@ import "../../std/ui.zum" as ui;
 var application << desktop.app({
     "backend": "headless",
     "name": "Zumbra Theme Test",
-    "version": "0.9.0",
+    "version": "0.10.0",
     "quitOnLastWindow": false
 });
 var window << application.window({"title": "Theme", "width": 360, "height": 220});

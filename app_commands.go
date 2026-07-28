@@ -7,8 +7,11 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"runtime"
+	"strconv"
 	"strings"
 
+	"zumbra/appdist"
 	"zumbra/appmanifest"
 	"zumbra/nativec"
 	"zumbra/object/builtins"
@@ -16,15 +19,25 @@ import (
 )
 
 type appCLIOptions struct {
-	Manifest string
-	Compiler string
-	Output   string
-	Release  *bool
+	Manifest        string
+	Compiler        string
+	Output          string
+	OutputDir       string
+	Release         *bool
+	Target          string
+	Arch            string
+	Format          string
+	Binary          string
+	AppImageTool    string
+	NSISTool        string
+	SignIdentity    string
+	Symbols         bool
+	SourceDateEpoch int64
 }
 
 func handleAppCommand(arguments []string) error {
 	if len(arguments) == 0 {
-		return fmt.Errorf("missing app command; use inspect, run or build")
+		return fmt.Errorf("missing app command; use inspect, run, build or package")
 	}
 	command := arguments[0]
 	options, err := parseAppOptions(arguments[1:])
@@ -42,8 +55,10 @@ func handleAppCommand(arguments []string) error {
 		return runApp(manifest)
 	case "build":
 		return buildApp(manifest, options)
+	case "package":
+		return packageApp(manifest, options)
 	default:
-		return fmt.Errorf("unknown app command %q; use inspect, run or build", command)
+		return fmt.Errorf("unknown app command %q; use inspect, run, build or package", command)
 	}
 }
 
@@ -75,6 +90,66 @@ func parseAppOptions(arguments []string) (appCLIOptions, error) {
 				return options, fmt.Errorf("%s requires a path", argument)
 			}
 			options.Output = arguments[index]
+		case "--output-dir":
+			index++
+			if index >= len(arguments) {
+				return options, fmt.Errorf("--output-dir requires a path")
+			}
+			options.OutputDir = arguments[index]
+		case "--target":
+			index++
+			if index >= len(arguments) {
+				return options, fmt.Errorf("--target requires linux, windows, macos or host")
+			}
+			options.Target = arguments[index]
+		case "--arch":
+			index++
+			if index >= len(arguments) {
+				return options, fmt.Errorf("--arch requires amd64, arm64 or host")
+			}
+			options.Arch = arguments[index]
+		case "--format":
+			index++
+			if index >= len(arguments) {
+				return options, fmt.Errorf("--format requires a package format")
+			}
+			options.Format = arguments[index]
+		case "--binary":
+			index++
+			if index >= len(arguments) {
+				return options, fmt.Errorf("--binary requires a path")
+			}
+			options.Binary = arguments[index]
+		case "--appimagetool":
+			index++
+			if index >= len(arguments) {
+				return options, fmt.Errorf("--appimagetool requires a path")
+			}
+			options.AppImageTool = arguments[index]
+		case "--makensis":
+			index++
+			if index >= len(arguments) {
+				return options, fmt.Errorf("--makensis requires a path")
+			}
+			options.NSISTool = arguments[index]
+		case "--sign":
+			index++
+			if index >= len(arguments) {
+				return options, fmt.Errorf("--sign requires an identity or key ID")
+			}
+			options.SignIdentity = arguments[index]
+		case "--symbols":
+			options.Symbols = true
+		case "--source-date-epoch":
+			index++
+			if index >= len(arguments) {
+				return options, fmt.Errorf("--source-date-epoch requires an integer")
+			}
+			value, err := strconv.ParseInt(arguments[index], 10, 64)
+			if err != nil || value < 0 {
+				return options, fmt.Errorf("--source-date-epoch must be a non-negative integer")
+			}
+			options.SourceDateEpoch = value
 		default:
 			return options, fmt.Errorf("unknown app option %s", argument)
 		}
@@ -153,15 +228,27 @@ func runApp(manifest *appmanifest.Manifest) error {
 }
 
 func buildApp(manifest *appmanifest.Manifest, cli appCLIOptions) error {
-	assets, err := collectAppAssets(manifest)
+	output, buildResult, assetCount, metadataPath, mode, err := buildAppBinary(manifest, cli)
 	if err != nil {
 		return err
 	}
+	fmt.Printf("Built %s desktop application: %s\n", mode, output)
+	fmt.Printf("Embedded assets: %d\n", assetCount)
+	fmt.Printf("Application metadata: %s\n", metadataPath)
+	fmt.Printf("Target: %s/%s\n", buildResult.TargetOS, buildResult.TargetArch)
+	fmt.Printf("C compiler: %s\n", buildResult.Compiler)
+	return nil
+}
+
+func buildAppBinary(manifest *appmanifest.Manifest, cli appCLIOptions) (string, *nativec.BuildResult, int, string, string, error) {
+	assets, err := collectAppAssets(manifest)
+	if err != nil {
+		return "", nil, 0, "", "", err
+	}
 	result, diagnostics := pipeline.BuildFile(manifest.EntryPath(), pipeline.Options{Optimize: true})
 	if len(diagnostics) > 0 {
-		return fmt.Errorf("pipeline failed:\n%s", pipeline.FormatDiagnostics(diagnostics))
+		return "", nil, 0, "", "", fmt.Errorf("pipeline failed:\n%s", pipeline.FormatDiagnostics(diagnostics))
 	}
-
 	output := manifest.OutputPath()
 	if cli.Output != "" {
 		if filepath.IsAbs(cli.Output) {
@@ -170,58 +257,118 @@ func buildApp(manifest *appmanifest.Manifest, cli appCLIOptions) error {
 			output = filepath.Join(manifest.Root, cli.Output)
 		}
 	}
+	target := strings.ToLower(strings.TrimSpace(cli.Target))
+	if target == "windows" && !strings.HasSuffix(strings.ToLower(output), ".exe") {
+		output += ".exe"
+	}
 	release := manifest.Build.Release
 	if cli.Release != nil {
 		release = *cli.Release
 	}
-	compiler := strings.TrimSpace(cli.Compiler)
-	if compiler == "" {
-		compiler = manifest.Build.Compiler
+	compilerName := strings.TrimSpace(cli.Compiler)
+	if compilerName == "" {
+		compilerName = manifest.Build.Compiler
 	}
-	if compiler == "" {
-		compiler = "auto"
+	if compilerName == "" {
+		compilerName = "auto"
 	}
-
 	nativeAssets := make([]nativec.EmbeddedAsset, len(assets))
 	for index, asset := range assets {
 		nativeAssets[index] = nativec.EmbeddedAsset{Name: asset.Name, Data: asset.Data}
 	}
 	baseName := strings.TrimSuffix(filepath.Base(manifest.App.Entry), filepath.Ext(manifest.App.Entry))
+	buildTarget := strings.ToLower(strings.TrimSpace(cli.Target))
+	if buildTarget == "" || buildTarget == "host" {
+		buildTarget = runtime.GOOS
+	}
+	if buildTarget == "darwin" {
+		buildTarget = "macos"
+	}
+	buildArch := strings.ToLower(strings.TrimSpace(cli.Arch))
+	if buildArch == "" || buildArch == "host" {
+		buildArch = runtime.GOARCH
+	}
 	buildResult, nativeDiagnostics, err := nativec.Build(result.MIR, nativec.BuildOptions{
-		Release: release, Compiler: compiler, Output: output,
-		BuildDir: filepath.Join(manifest.Root, "build", "native", baseName), EmbeddedAssets: nativeAssets,
+		Release: release, Compiler: compilerName, Output: output,
+		BuildDir: filepath.Join(manifest.Root, "build", "native", baseName, buildTarget, buildArch), EmbeddedAssets: nativeAssets,
+		TargetOS: cli.Target, TargetArch: cli.Arch, Reproducible: true, ProjectRoot: manifest.Root, SourceDateEpoch: cli.SourceDateEpoch,
+		ApplicationName: manifest.App.Name, ApplicationVersion: manifest.App.Version, ApplicationIdentifier: manifest.App.Identifier,
+		WindowsIcon: manifest.IconPathForTarget("windows"), WindowsConsole: manifest.Windows.Console,
 	})
 	if err != nil {
-		return err
+		return "", nil, 0, "", "", err
 	}
 	if len(nativeDiagnostics) != 0 {
 		messages := make([]string, len(nativeDiagnostics))
 		for index, diagnostic := range nativeDiagnostics {
 			messages[index] = diagnostic.Error()
 		}
-		return fmt.Errorf("native backend rejected the application:\n\t%s", strings.Join(messages, "\n\t"))
+		return "", nil, 0, "", "", fmt.Errorf("native backend rejected the application:\n\t%s", strings.Join(messages, "\n\t"))
 	}
 	if buildResult == nil {
-		return fmt.Errorf("native backend returned no build result")
+		return "", nil, 0, "", "", fmt.Errorf("native backend returned no build result")
 	}
 	metadata, err := manifest.Metadata(version, assets[:len(assets)-1])
 	if err != nil {
-		return err
+		return "", nil, 0, "", "", err
 	}
 	metadataPath := output + ".manifest.json"
 	if err := os.MkdirAll(filepath.Dir(metadataPath), 0o755); err != nil {
-		return err
+		return "", nil, 0, "", "", err
 	}
 	if err := os.WriteFile(metadataPath, append(metadata, '\n'), 0o644); err != nil {
-		return fmt.Errorf("write build metadata: %w", err)
+		return "", nil, 0, "", "", fmt.Errorf("write build metadata: %w", err)
 	}
 	mode := "debug"
 	if release {
 		mode = "release"
 	}
-	fmt.Printf("Built %s desktop application: %s\n", mode, buildResult.Output)
-	fmt.Printf("Embedded assets: %d\n", len(assets))
-	fmt.Printf("Application metadata: %s\n", metadataPath)
-	fmt.Printf("C compiler: %s\n", buildResult.Compiler)
+	return buildResult.Output, buildResult, len(assets), metadataPath, mode, nil
+}
+
+func packageApp(manifest *appmanifest.Manifest, cli appCLIOptions) error {
+	binary := strings.TrimSpace(cli.Binary)
+	if binary == "" {
+		target := strings.ToLower(strings.TrimSpace(cli.Target))
+		if target == "" || target == "host" {
+			target = runtimeGOOS()
+		}
+		arch := strings.ToLower(strings.TrimSpace(cli.Arch))
+		if arch == "" || arch == "host" {
+			arch = runtimeGOARCH()
+		}
+		name := manifest.Slug()
+		if target == "windows" {
+			name += ".exe"
+		}
+		buildOutput := filepath.Join(manifest.Root, "build", "package", target, arch, name)
+		buildCLI := cli
+		buildCLI.Output = buildOutput
+		built, _, _, _, _, err := buildAppBinary(manifest, buildCLI)
+		if err != nil {
+			return err
+		}
+		binary = built
+	} else if !filepath.IsAbs(binary) {
+		binary = filepath.Join(manifest.Root, binary)
+	}
+	outputDir := cli.OutputDir
+	if outputDir == "" && cli.Output != "" {
+		outputDir = cli.Output
+	}
+	result, err := appdist.Package(appdist.Options{Manifest: manifest, ZumbraVersion: version, Binary: binary, Target: cli.Target, Arch: cli.Arch, Format: cli.Format, OutputDir: outputDir, AppImageTool: cli.AppImageTool, NSISTool: cli.NSISTool, SignIdentity: cli.SignIdentity, Symbols: cli.Symbols, SourceDateEpoch: cli.SourceDateEpoch})
+	if err != nil {
+		return err
+	}
+	for _, artifact := range result.Artifacts {
+		fmt.Printf("Packaged %-20s %s\n", artifact.Kind+":", artifact.Path)
+	}
+	for _, warning := range result.Warnings {
+		fmt.Printf("Package warning: %s\n", warning)
+	}
+	fmt.Printf("Package report: %s\n", result.ReportPath)
 	return nil
 }
+
+func runtimeGOOS() string   { return runtime.GOOS }
+func runtimeGOARCH() string { return runtime.GOARCH }

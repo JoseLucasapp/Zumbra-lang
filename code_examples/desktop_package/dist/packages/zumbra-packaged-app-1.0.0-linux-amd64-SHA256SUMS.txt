@@ -1,0 +1,3 @@
+06c0c7c9baf2dc9efe87110d23e87b87258ea5fe79a1899375a2f0a9fde70ece  zumbra-packaged-app-1.0.0-linux-amd64.tar.gz
+11d798eeabf3edb4631552e8741bb5fd58e782027d0a095ff06799df96ffcce0  zumbra-packaged-app-1.0.0-linux-amd64-update.json
+56ea350572f714fc4f8212a717362da08f0004a666963a7a219bd9d59c9cdc3b  zumbra-packaged-app_1.0.0_amd64.deb

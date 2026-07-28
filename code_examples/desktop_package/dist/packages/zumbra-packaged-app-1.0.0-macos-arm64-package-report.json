@@ -1,0 +1,39 @@
+{
+  "schema_version": 1,
+  "app": "Zumbra Packaged App",
+  "version": "1.0.0",
+  "target": "macos",
+  "arch": "arm64",
+  "build_id": "6c90bd1dfa3dc4dd767ab7f1",
+  "artifacts": [
+    {
+      "kind": "macos-app",
+      "path": "/home/joselucasapp/projects/Zumbra-lang/code_examples/desktop_package/dist/packages/Zumbra Packaged App.app",
+      "size": 0,
+      "sha256": ""
+    },
+    {
+      "kind": "macos-zip",
+      "path": "/home/joselucasapp/projects/Zumbra-lang/code_examples/desktop_package/dist/packages/zumbra-packaged-app-1.0.0-macos-arm64.zip",
+      "size": 68584,
+      "sha256": "c7611684f0892be1d79ba0b3a60e67cec812cdd729cf01bb9e49877e138b02ba"
+    },
+    {
+      "kind": "update-metadata",
+      "path": "/home/joselucasapp/projects/Zumbra-lang/code_examples/desktop_package/dist/packages/zumbra-packaged-app-1.0.0-macos-arm64-update.json",
+      "size": 451,
+      "sha256": "a3c0dd4b47811a6e602b73cda1e8a0517b3cba2ec964f76874a2d8e5efd4ff6a"
+    },
+    {
+      "kind": "checksums",
+      "path": "/home/joselucasapp/projects/Zumbra-lang/code_examples/desktop_package/dist/packages/zumbra-packaged-app-1.0.0-macos-arm64-SHA256SUMS.txt",
+      "size": 224,
+      "sha256": "d418a8eec387e352aed7eb97193e0fbf6e2b8ec89a3d91bd81164bb5175f19f3"
+    }
+  ],
+  "warnings": [
+    "binary format looks like linux but package target is macos",
+    "dependency audit tool was not found for macos"
+  ],
+  "report_path": "/home/joselucasapp/projects/Zumbra-lang/code_examples/desktop_package/dist/packages/zumbra-packaged-app-1.0.0-macos-arm64-package-report.json"
+}

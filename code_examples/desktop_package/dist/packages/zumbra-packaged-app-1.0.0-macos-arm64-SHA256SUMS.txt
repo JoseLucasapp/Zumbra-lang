@@ -1,0 +1,2 @@
+a3c0dd4b47811a6e602b73cda1e8a0517b3cba2ec964f76874a2d8e5efd4ff6a  zumbra-packaged-app-1.0.0-macos-arm64-update.json
+c7611684f0892be1d79ba0b3a60e67cec812cdd729cf01bb9e49877e138b02ba  zumbra-packaged-app-1.0.0-macos-arm64.zip

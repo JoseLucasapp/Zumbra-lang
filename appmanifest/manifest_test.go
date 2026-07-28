@@ -90,3 +90,63 @@ func mustWrite(t *testing.T, path string, data []byte) {
 		t.Fatal(err)
 	}
 }
+
+func TestLoadDistributionSectionsAndPlatformIcons(t *testing.T) {
+	root := t.TempDir()
+	mustWrite(t, filepath.Join(root, "src", "main.zum"), []byte("show(1);"))
+	for _, name := range []string{"icon.png", "icon.ico", "icon.icns"} {
+		mustWrite(t, filepath.Join(root, "assets", name), []byte(name))
+	}
+	mustWrite(t, filepath.Join(root, DefaultManifestName), []byte(`[app]
+name = "Multi Platform"
+version = "1.0.0"
+identifier = "dev.zumbra.multi"
+entry = "src/main.zum"
+icon = "assets/icon.png"
+icon_windows = "assets/icon.ico"
+icon_macos = "assets/icon.icns"
+
+[package]
+description = "Distribution test"
+publisher = "Zumbra"
+homepage = "https://example.com"
+license = "Apache-2.0"
+category = "Development"
+
+[linux]
+dependencies = ["libc6"]
+recommends = ["libsdl3-0"]
+
+[windows]
+console = false
+installer = "nsis"
+
+[macos]
+minimum_version = "12.0"
+category = "public.app-category.developer-tools"
+
+[updates]
+url = "https://example.com/releases"
+channel = "beta"
+
+[assets]
+include = ["assets/**"]
+`))
+	manifest, err := Load(filepath.Join(root, DefaultManifestName))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if manifest.IconForTarget("linux") != "assets/icon.png" || manifest.IconForTarget("windows") != "assets/icon.ico" || manifest.IconForTarget("macos") != "assets/icon.icns" {
+		t.Fatalf("unexpected platform icons: %#v", manifest.App)
+	}
+	if manifest.Package.Publisher != "Zumbra" || manifest.Updates.Channel != "beta" || manifest.Windows.Console {
+		t.Fatalf("distribution sections not parsed: %#v", manifest)
+	}
+	assets, err := manifest.CollectAssets()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(assets) != 3 {
+		t.Fatalf("expected three icons, got %d", len(assets))
+	}
+}

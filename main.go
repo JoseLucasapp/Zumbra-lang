@@ -19,7 +19,7 @@ import (
 	"zumbra/vm"
 )
 
-const version = "0.9.0"
+const version = "0.10.0"
 
 func main() {
 	currentUser, err := user.Current()
@@ -128,7 +128,8 @@ func printUsage() {
 	fmt.Println("  zumbra build [--release] [--emit-c] [--compiler <name>] [--link <file>] [--include <dir>] [--library-dir <dir>] [-l <name>] [-o <path>] <file.zum>")
 	fmt.Println("  zumbra app inspect [--manifest <zumbra.toml>]")
 	fmt.Println("  zumbra app run [--manifest <zumbra.toml>]")
-	fmt.Println("  zumbra app build [--manifest <zumbra.toml>] [--release|--debug] [--compiler <name>] [-o <path>]")
+	fmt.Println("  zumbra app build [--manifest <zumbra.toml>] [--target <os>] [--arch <arch>] [--release|--debug] [--compiler <name>] [-o <path>]")
+	fmt.Println("  zumbra app package [--manifest <zumbra.toml>] [--target <linux|windows|macos>] [--arch <amd64|arm64>] [--format <format>] [--binary <path>] [--output-dir <dir>] [--symbols] [--sign <identity>]")
 	fmt.Println("  zumbra check <file.zum>")
 	fmt.Println("  zumbra modules <file.zum>")
 	fmt.Println("  zumbra ir <file.zum> [hir|mir|optimized]")

@@ -5,6 +5,7 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
+	"net/url"
 	"os"
 	"path/filepath"
 	"regexp"
@@ -20,17 +21,49 @@ const (
 )
 
 type App struct {
-	Name       string `json:"name"`
-	Version    string `json:"version"`
-	Identifier string `json:"identifier"`
-	Entry      string `json:"entry"`
-	Icon       string `json:"icon,omitempty"`
+	Name        string `json:"name"`
+	Version     string `json:"version"`
+	Identifier  string `json:"identifier"`
+	Entry       string `json:"entry"`
+	Icon        string `json:"icon,omitempty"`
+	IconLinux   string `json:"icon_linux,omitempty"`
+	IconWindows string `json:"icon_windows,omitempty"`
+	IconMacOS   string `json:"icon_macos,omitempty"`
 }
 
 type Build struct {
 	Output   string `json:"output,omitempty"`
 	Compiler string `json:"compiler,omitempty"`
 	Release  bool   `json:"release"`
+}
+
+type Package struct {
+	Description string `json:"description,omitempty"`
+	Publisher   string `json:"publisher,omitempty"`
+	Homepage    string `json:"homepage,omitempty"`
+	License     string `json:"license,omitempty"`
+	Category    string `json:"category,omitempty"`
+	Copyright   string `json:"copyright,omitempty"`
+}
+
+type Linux struct {
+	Dependencies []string `json:"dependencies,omitempty"`
+	Recommends   []string `json:"recommends,omitempty"`
+}
+
+type Windows struct {
+	Console   bool   `json:"console"`
+	Installer string `json:"installer,omitempty"`
+}
+
+type MacOS struct {
+	MinimumVersion string `json:"minimum_version,omitempty"`
+	Category       string `json:"category,omitempty"`
+}
+
+type Updates struct {
+	URL     string `json:"url,omitempty"`
+	Channel string `json:"channel,omitempty"`
 }
 
 type Assets struct {
@@ -41,11 +74,16 @@ type Assets struct {
 }
 
 type Manifest struct {
-	Path   string `json:"manifest_path"`
-	Root   string `json:"project_root"`
-	App    App    `json:"app"`
-	Build  Build  `json:"build"`
-	Assets Assets `json:"assets"`
+	Path    string  `json:"manifest_path"`
+	Root    string  `json:"project_root"`
+	App     App     `json:"app"`
+	Build   Build   `json:"build"`
+	Package Package `json:"package"`
+	Linux   Linux   `json:"linux"`
+	Windows Windows `json:"windows"`
+	MacOS   MacOS   `json:"macos"`
+	Updates Updates `json:"updates"`
+	Assets  Assets  `json:"assets"`
 }
 
 type EmbeddedAsset struct {
@@ -60,6 +98,8 @@ type BuildMetadata struct {
 	SchemaVersion int             `json:"schema_version"`
 	ZumbraVersion string          `json:"zumbra_version"`
 	App           App             `json:"app"`
+	Package       Package         `json:"package"`
+	Updates       Updates         `json:"updates"`
 	Assets        []EmbeddedAsset `json:"assets"`
 }
 
@@ -76,10 +116,14 @@ func Load(path string) (*Manifest, error) {
 		return nil, fmt.Errorf("read manifest %s: %w", absolute, err)
 	}
 	manifest := &Manifest{
-		Path:   absolute,
-		Root:   filepath.Dir(absolute),
-		Build:  Build{Compiler: "auto", Release: true},
-		Assets: Assets{MaxFileBytes: DefaultMaxFileBytes, MaxTotalBytes: DefaultMaxTotalBytes},
+		Path:    absolute,
+		Root:    filepath.Dir(absolute),
+		Build:   Build{Compiler: "auto", Release: true},
+		Package: Package{Category: "Utility"},
+		Windows: Windows{Installer: "nsis"},
+		MacOS:   MacOS{MinimumVersion: "12.0", Category: "public.app-category.utilities"},
+		Updates: Updates{Channel: "stable"},
+		Assets:  Assets{MaxFileBytes: DefaultMaxFileBytes, MaxTotalBytes: DefaultMaxTotalBytes},
 	}
 	if err := parse(data, manifest); err != nil {
 		return nil, fmt.Errorf("parse %s: %w", absolute, err)
@@ -122,18 +166,36 @@ func (m *Manifest) Validate() error {
 	if info.IsDir() || strings.ToLower(filepath.Ext(entry)) != ".zum" {
 		return fmt.Errorf("entry must be a .zum file")
 	}
-	if m.App.Icon != "" {
-		icon, err := m.Resolve(m.App.Icon)
+	for label, value := range map[string]string{"icon": m.App.Icon, "icon_linux": m.App.IconLinux, "icon_windows": m.App.IconWindows, "icon_macos": m.App.IconMacOS} {
+		if value == "" {
+			continue
+		}
+		icon, err := m.Resolve(value)
 		if err != nil {
-			return fmt.Errorf("icon: %w", err)
+			return fmt.Errorf("%s: %w", label, err)
 		}
 		info, err := os.Stat(icon)
 		if err != nil {
-			return fmt.Errorf("icon %s: %w", icon, err)
+			return fmt.Errorf("%s %s: %w", label, icon, err)
 		}
 		if info.IsDir() {
-			return fmt.Errorf("icon must be a file")
+			return fmt.Errorf("%s must be a file", label)
 		}
+	}
+	if m.Package.Homepage != "" {
+		parsed, err := url.ParseRequestURI(m.Package.Homepage)
+		if err != nil || parsed.Scheme == "" || parsed.Host == "" {
+			return fmt.Errorf("manifest [package].homepage must be an absolute URL")
+		}
+	}
+	if m.Updates.URL != "" {
+		parsed, err := url.ParseRequestURI(m.Updates.URL)
+		if err != nil || parsed.Scheme == "" || parsed.Host == "" {
+			return fmt.Errorf("manifest [updates].url must be an absolute URL")
+		}
+	}
+	if m.Windows.Installer != "" && m.Windows.Installer != "nsis" && m.Windows.Installer != "none" {
+		return fmt.Errorf("manifest [windows].installer must be nsis or none")
 	}
 	if m.Assets.MaxFileBytes <= 0 || m.Assets.MaxTotalBytes <= 0 {
 		return fmt.Errorf("asset size limits must be positive")
@@ -165,6 +227,32 @@ func (m *Manifest) Resolve(relative string) (string, error) {
 }
 
 func (m *Manifest) EntryPath() string { path, _ := m.Resolve(m.App.Entry); return path }
+func (m *Manifest) Slug() string      { return slug(m.App.Name) }
+func (m *Manifest) IconForTarget(target string) string {
+	switch strings.ToLower(strings.TrimSpace(target)) {
+	case "linux":
+		if m.App.IconLinux != "" {
+			return m.App.IconLinux
+		}
+	case "windows":
+		if m.App.IconWindows != "" {
+			return m.App.IconWindows
+		}
+	case "macos", "darwin":
+		if m.App.IconMacOS != "" {
+			return m.App.IconMacOS
+		}
+	}
+	return m.App.Icon
+}
+func (m *Manifest) IconPathForTarget(target string) string {
+	value := m.IconForTarget(target)
+	if value == "" {
+		return ""
+	}
+	path, _ := m.Resolve(value)
+	return path
+}
 
 func (m *Manifest) OutputPath() string {
 	if strings.TrimSpace(m.Build.Output) != "" {
@@ -176,16 +264,19 @@ func (m *Manifest) OutputPath() string {
 
 func (m *Manifest) CollectAssets() ([]EmbeddedAsset, error) {
 	includes := append([]string(nil), m.Assets.Include...)
-	if m.App.Icon != "" {
+	for _, icon := range []string{m.App.Icon, m.App.IconLinux, m.App.IconWindows, m.App.IconMacOS} {
+		if icon == "" {
+			continue
+		}
 		found := false
 		for _, include := range includes {
-			if filepath.ToSlash(strings.TrimSpace(include)) == filepath.ToSlash(m.App.Icon) {
+			if filepath.ToSlash(strings.TrimSpace(include)) == filepath.ToSlash(icon) {
 				found = true
 				break
 			}
 		}
 		if !found {
-			includes = append(includes, m.App.Icon)
+			includes = append(includes, icon)
 		}
 	}
 	patterns, err := compilePatterns(includes)
@@ -255,7 +346,7 @@ func (m *Manifest) Metadata(zumbraVersion string, assets []EmbeddedAsset) ([]byt
 		public[i].Path = ""
 		public[i].Data = nil
 	}
-	return json.MarshalIndent(BuildMetadata{SchemaVersion: 1, ZumbraVersion: zumbraVersion, App: m.App, Assets: public}, "", "  ")
+	return json.MarshalIndent(BuildMetadata{SchemaVersion: 2, ZumbraVersion: zumbraVersion, App: m.App, Package: m.Package, Updates: m.Updates, Assets: public}, "", "  ")
 }
 
 func parse(data []byte, manifest *Manifest) error {
@@ -268,7 +359,7 @@ func parse(data []byte, manifest *Manifest) error {
 		}
 		if strings.HasPrefix(line, "[") && strings.HasSuffix(line, "]") {
 			section = strings.TrimSpace(line[1 : len(line)-1])
-			if section != "app" && section != "build" && section != "assets" {
+			if section != "app" && section != "build" && section != "package" && section != "linux" && section != "windows" && section != "macos" && section != "updates" && section != "assets" {
 				return fmt.Errorf("line %d: unsupported section [%s]", index+1, section)
 			}
 			continue
@@ -300,12 +391,50 @@ func assign(m *Manifest, section, key, raw string) error {
 		return setString(raw, &m.App.Entry)
 	case "app.icon":
 		return setString(raw, &m.App.Icon)
+	case "app.icon_linux":
+		return setString(raw, &m.App.IconLinux)
+	case "app.icon_windows":
+		return setString(raw, &m.App.IconWindows)
+	case "app.icon_macos":
+		return setString(raw, &m.App.IconMacOS)
 	case "build.output":
 		return setString(raw, &m.Build.Output)
 	case "build.compiler":
 		return setString(raw, &m.Build.Compiler)
 	case "build.release":
 		return setBool(raw, &m.Build.Release)
+	case "package.description":
+		return setString(raw, &m.Package.Description)
+	case "package.publisher":
+		return setString(raw, &m.Package.Publisher)
+	case "package.homepage":
+		return setString(raw, &m.Package.Homepage)
+	case "package.license":
+		return setString(raw, &m.Package.License)
+	case "package.category":
+		return setString(raw, &m.Package.Category)
+	case "package.copyright":
+		return setString(raw, &m.Package.Copyright)
+	case "linux.dependencies":
+		values, err := parseStringArray(raw)
+		m.Linux.Dependencies = values
+		return err
+	case "linux.recommends":
+		values, err := parseStringArray(raw)
+		m.Linux.Recommends = values
+		return err
+	case "windows.console":
+		return setBool(raw, &m.Windows.Console)
+	case "windows.installer":
+		return setString(raw, &m.Windows.Installer)
+	case "macos.minimum_version":
+		return setString(raw, &m.MacOS.MinimumVersion)
+	case "macos.category":
+		return setString(raw, &m.MacOS.Category)
+	case "updates.url":
+		return setString(raw, &m.Updates.URL)
+	case "updates.channel":
+		return setString(raw, &m.Updates.Channel)
 	case "assets.include":
 		values, err := parseStringArray(raw)
 		m.Assets.Include = values

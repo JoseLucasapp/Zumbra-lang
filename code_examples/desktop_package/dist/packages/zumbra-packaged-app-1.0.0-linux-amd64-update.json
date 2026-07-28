@@ -1,0 +1,23 @@
+{
+  "schema_version": 1,
+  "identifier": "dev.zumbra.packaged",
+  "version": "1.0.0",
+  "channel": "stable",
+  "target": "linux",
+  "arch": "amd64",
+  "build_id": "0af020dfd7b0c6303f024a49",
+  "artifacts": [
+    {
+      "kind": "deb",
+      "url": "https://example.com/zumbra/releases/zumbra-packaged-app_1.0.0_amd64.deb",
+      "size": 50900,
+      "sha256": "56ea350572f714fc4f8212a717362da08f0004a666963a7a219bd9d59c9cdc3b"
+    },
+    {
+      "kind": "linux-bundle",
+      "url": "https://example.com/zumbra/releases/zumbra-packaged-app-1.0.0-linux-amd64.tar.gz",
+      "size": 50428,
+      "sha256": "06c0c7c9baf2dc9efe87110d23e87b87258ea5fe79a1899375a2f0a9fde70ece"
+    }
+  ]
+}

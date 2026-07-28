@@ -1,0 +1,74 @@
+
+/home/joselucasapp/projects/Zumbra-lang/code_examples/desktop_package/dist/zumbra-packaged-app:     file format elf64-x86-64
+
+Program Header:
+    PHDR off    0xADDR vaddr 0xADDR paddr 0xADDR align 2**3
+         filesz 0xADDR memsz 0xADDR flags r--
+  INTERP off    0xADDR vaddr 0xADDR paddr 0xADDR align 2**0
+         filesz 0xADDR memsz 0xADDR flags r--
+    LOAD off    0xADDR vaddr 0xADDR paddr 0xADDR align 2**12
+         filesz 0xADDR memsz 0xADDR flags r--
+    LOAD off    0xADDR vaddr 0xADDR paddr 0xADDR align 2**12
+         filesz 0xADDR memsz 0xADDR flags r-x
+    LOAD off    0xADDR vaddr 0xADDR paddr 0xADDR align 2**12
+         filesz 0xADDR memsz 0xADDR flags r--
+    LOAD off    0xADDR vaddr 0xADDR paddr 0xADDR align 2**12
+         filesz 0xADDR memsz 0xADDR flags rw-
+ DYNAMIC off    0xADDR vaddr 0xADDR paddr 0xADDR align 2**3
+         filesz 0xADDR memsz 0xADDR flags rw-
+    NOTE off    0xADDR vaddr 0xADDR paddr 0xADDR align 2**3
+         filesz 0xADDR memsz 0xADDR flags r--
+    NOTE off    0xADDR vaddr 0xADDR paddr 0xADDR align 2**2
+         filesz 0xADDR memsz 0xADDR flags r--
+    NOTE off    0xADDR vaddr 0xADDR paddr 0xADDR align 2**2
+         filesz 0xADDR memsz 0xADDR flags r--
+     TLS off    0xADDR vaddr 0xADDR paddr 0xADDR align 2**4
+         filesz 0xADDR memsz 0xADDR flags r--
+0xADDR off    0xADDR vaddr 0xADDR paddr 0xADDR align 2**3
+         filesz 0xADDR memsz 0xADDR flags r--
+EH_FRAME off    0xADDR vaddr 0xADDR paddr 0xADDR align 2**2
+         filesz 0xADDR memsz 0xADDR flags r--
+   STACK off    0xADDR vaddr 0xADDR paddr 0xADDR align 2**4
+         filesz 0xADDR memsz 0xADDR flags rw-
+   RELRO off    0xADDR vaddr 0xADDR paddr 0xADDR align 2**0
+         filesz 0xADDR memsz 0xADDR flags r--
+
+Dynamic Section:
+  NEEDED               libm.so.6
+  NEEDED               libc.so.6
+  INIT                 0xADDR
+  FINI                 0xADDR
+  INIT_ARRAY           0xADDR
+  INIT_ARRAYSZ         0xADDR
+  FINI_ARRAY           0xADDR
+  FINI_ARRAYSZ         0xADDR
+  GNU_HASH             0xADDR
+  STRTAB               0xADDR
+  SYMTAB               0xADDR
+  STRSZ                0xADDR
+  SYMENT               0xADDR
+  DEBUG                0xADDR
+  PLTGOT               0xADDR
+  PLTRELSZ             0xADDR
+  PLTREL               0xADDR
+  JMPREL               0xADDR
+  RELA                 0xADDR
+  RELASZ               0xADDR
+  RELAENT              0xADDR
+  FLAGS_1              0xADDR
+  VERNEED              0xADDR
+  VERNEEDNUM           0xADDR
+  VERSYM               0xADDR
+  RELACOUNT            0xADDR
+
+Version References:
+  required from libm.so.6:
+    0xADDR 0xADDR 08 GLIBC_2.38
+    0xADDR 0xADDR 06 GLIBC_2.29
+  required from libc.so.6:
+    0xADDR 0xADDR 07 GLIBC_2.14
+    0xADDR 0xADDR 05 GLIBC_2.17
+    0xADDR 0xADDR 04 GLIBC_2.3.2
+    0xADDR 0xADDR 03 GLIBC_2.34
+    0xADDR 0xADDR 02 GLIBC_2.2.5
+

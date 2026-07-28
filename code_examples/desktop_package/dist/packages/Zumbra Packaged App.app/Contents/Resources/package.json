@@ -1,0 +1,30 @@
+{
+  "app": {
+    "name": "Zumbra Packaged App",
+    "version": "1.0.0",
+    "identifier": "dev.zumbra.packaged",
+    "entry": "src/main.zum",
+    "icon": "assets/icon.png",
+    "icon_linux": "assets/icon.png",
+    "icon_windows": "assets/icon.ico",
+    "icon_macos": "assets/icon.icns"
+  },
+  "arch": "arm64",
+  "build_id": "6c90bd1dfa3dc4dd767ab7f1",
+  "package": {
+    "description": "A small packaged application written in Zumbra.",
+    "publisher": "Zumbra",
+    "homepage": "https://example.com/zumbra",
+    "license": "Apache-2.0",
+    "category": "Development",
+    "copyright": "Copyright Zumbra contributors"
+  },
+  "schema_version": 1,
+  "source_date_epoch": 1700000000,
+  "target": "macos",
+  "updates": {
+    "url": "https://example.com/zumbra/releases",
+    "channel": "stable"
+  },
+  "zumbra_version": "0.10.0"
+}

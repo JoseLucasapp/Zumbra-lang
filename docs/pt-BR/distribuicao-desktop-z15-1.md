@@ -1,6 +1,6 @@
 # Z15.1 — manifesto e assets incorporados
 
-O Z15.1 inicia a distribuição desktop do Zumbra com um formato de projeto verificável e assets incorporados ao executável nativo. Este incremento não conclui todo o Z15: pacotes `.deb`, AppImage e Windows pertencem aos próximos sub-marcos.
+O Z15.1 inicia a distribuição desktop do Zumbra com um formato de projeto verificável e assets incorporados ao executável nativo. Esse incremento estabeleceu a base posteriormente completada pelo Z15 em `docs/pt-BR/distribuicao-desktop-z15.md`.
 
 ## Estrutura de projeto
 
