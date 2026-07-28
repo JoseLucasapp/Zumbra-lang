@@ -57,6 +57,15 @@ func builtinType(name string) (*Type, bool) {
 	case "fill":
 		return FuncOf([]*Type{Simple(Unknown), Simple(Unknown)}, Simple(Unknown)), true
 
+	case "assetExists":
+		return FuncOf([]*Type{Simple(String)}, Simple(Bool)), true
+	case "assetText":
+		return FuncOf([]*Type{Simple(String)}, Simple(String)), true
+	case "assetBytes":
+		return FuncOf([]*Type{Simple(String)}, ByteArrayOf()), true
+	case "assetList":
+		return FuncOf(nil, ArrayOf(Simple(String))), true
+
 	case "readBytes":
 		return FuncOf([]*Type{Simple(String)}, ByteArrayOf()), true
 	case "writeBytes":

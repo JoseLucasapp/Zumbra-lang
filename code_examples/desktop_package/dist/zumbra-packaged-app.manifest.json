@@ -1,0 +1,17 @@
+{
+  "schema_version": 1,
+  "zumbra_version": "0.9.0",
+  "app": {
+    "name": "Zumbra Packaged App",
+    "version": "1.0.0",
+    "identifier": "dev.zumbra.packaged",
+    "entry": "src/main.zum"
+  },
+  "assets": [
+    {
+      "name": "assets/message.txt",
+      "size": 27,
+      "sha256": "a73a2767659bb78b506a316ce0339437d3b76196b60597bb79121ea5317b36e0"
+    }
+  ]
+}

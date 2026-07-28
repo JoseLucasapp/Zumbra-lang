@@ -1,3 +1,4 @@
+#define ZUMBRA_ENABLE_ASSETS 1
 #define _XOPEN_SOURCE 700
 #include "zumbra_runtime.h"
 

@@ -12,7 +12,7 @@ done
 
 mkdir -p build
 
-expected=$'headless\nZumbra Desktop 0.8.1\n960\n640\nhello desktop\ntrue\n7'
+expected=$'headless\nZumbra Desktop 0.9.0\n960\n640\nhello desktop\ntrue\n7'
 source="code_examples/core/desktop_runtime.zum"
 
 echo "Running the complete Z13 Go test suite..."

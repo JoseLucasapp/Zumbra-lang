@@ -1012,3 +1012,20 @@ app.close();
 ```
 
 A árvore é retida e usa `UINode`, `UIState`, `UITheme` e `UIContext`. Consulte `docs/pt-BR/toolkit-interface-grafica-z14.md` para layouts, componentes, eventos, data binding, canvas, temas, acessibilidade e backend headless.
+
+---
+
+## Z15.1 — manifesto e assets incorporados
+
+Projetos desktop podem usar `zumbra.toml` e os comandos `zumbra app inspect`, `zumbra app run` e `zumbra app build`.
+
+```zumbra
+import "../../std/assets.zum" as assets;
+
+show(assets.exists("assets/message.txt"));
+show(assets.text("assets/message.txt"));
+var bytes << assets.bytes("assets/icon.bmp");
+show(assets.list());
+```
+
+O executável nativo contém os assets selecionados pelo manifesto. Caminhos fora da raiz, symlinks e bundles acima dos limites configurados são rejeitados.

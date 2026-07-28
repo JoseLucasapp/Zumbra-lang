@@ -9,7 +9,7 @@ import (
 )
 
 func TestZ13DesktopExampleBuildsAndRunsHeadlessNatively(t *testing.T) {
-	expected := "headless\nZumbra Desktop 0.8.1\n960\n640\nhello desktop\ntrue\n7\n"
+	expected := "headless\nZumbra Desktop 0.9.0\n960\n640\nhello desktop\ntrue\n7\n"
 	if output := buildAndRunZ8(t, "code_examples/core/desktop_runtime.zum"); output != expected {
 		t.Fatalf("unexpected native output %q", output)
 	}

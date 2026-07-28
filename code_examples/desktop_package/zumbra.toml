@@ -1,0 +1,16 @@
+[app]
+name = "Zumbra Packaged App"
+version = "1.0.0"
+identifier = "dev.zumbra.packaged"
+entry = "src/main.zum"
+
+[build]
+output = "dist/zumbra-packaged-app"
+compiler = "auto"
+release = true
+
+[assets]
+include = ["assets/**"]
+exclude = ["**/*.tmp"]
+max_file_bytes = 16_777_216
+max_total_bytes = 67_108_864

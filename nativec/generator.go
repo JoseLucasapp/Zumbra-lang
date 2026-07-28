@@ -221,6 +221,9 @@ func init() {
 	for name := range uiNativeBuiltins {
 		supportedBuiltins[name] = true
 	}
+	for name := range assetNativeBuiltins {
+		supportedBuiltins[name] = true
+	}
 }
 
 type structInfo struct {
@@ -287,6 +290,9 @@ func Generate(module *mir.Module) (*Sources, []Diagnostic) {
 		return nil, []Diagnostic{{Message: "could not load embedded native runtime: " + err.Error()}}
 	}
 	prefix := ""
+	if UsesAssets(module) {
+		prefix += "#define ZUMBRA_ENABLE_ASSETS 1\n"
+	}
 	if UsesDesktop(module) || UsesUI(module) {
 		prefix += "#define ZUMBRA_ENABLE_DESKTOP 1\n"
 	}
@@ -1282,6 +1288,11 @@ var httpBuiltins = map[string]bool{
 }
 
 // UsesDesktop reports whether the MIR references Z13 desktop APIs.
+var assetNativeBuiltins = map[string]bool{"assetExists": true, "assetText": true, "assetBytes": true, "assetList": true}
+
+// UsesAssets reports whether the MIR references Z15 embedded-asset APIs.
+func UsesAssets(module *mir.Module) bool { return moduleUsesAnyBuiltin(module, assetNativeBuiltins) }
+
 func UsesDesktop(module *mir.Module) bool { return moduleUsesAnyBuiltin(module, desktopNativeBuiltins) }
 func UsesUI(module *mir.Module) bool      { return moduleUsesAnyBuiltin(module, uiNativeBuiltins) }
 

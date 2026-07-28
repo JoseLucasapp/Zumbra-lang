@@ -12,15 +12,16 @@ import (
 )
 
 type BuildOptions struct {
-	Release     bool
-	EmitCOnly   bool
-	Compiler    string
-	Output      string
-	BuildDir    string
-	Links       []string
-	IncludeDirs []string
-	LibraryDirs []string
-	Libraries   []string
+	Release        bool
+	EmitCOnly      bool
+	Compiler       string
+	Output         string
+	BuildDir       string
+	Links          []string
+	IncludeDirs    []string
+	LibraryDirs    []string
+	Libraries      []string
+	EmbeddedAssets []EmbeddedAsset
 }
 
 type BuildResult struct {
@@ -30,6 +31,7 @@ type BuildResult struct {
 	ProgramSource string
 	RuntimeSource string
 	RuntimeHeader string
+	AssetsSource  string
 	Command       []string
 	Links         []string
 }
@@ -70,10 +72,13 @@ func Build(module *mir.Module, options BuildOptions) (*BuildResult, []Diagnostic
 	programPath := filepath.Join(buildDir, "main.c")
 	runtimePath := filepath.Join(buildDir, "zumbra_runtime.c")
 	headerPath := filepath.Join(buildDir, "zumbra_runtime.h")
+	assetsPath := filepath.Join(buildDir, "zumbra_assets.c")
+	assetSource := generateEmbeddedAssetsSource(options.EmbeddedAssets)
 	for path, content := range map[string][]byte{
 		programPath: sources.Program,
 		runtimePath: sources.Runtime,
 		headerPath:  sources.Header,
+		assetsPath:  assetSource,
 	} {
 		if err := os.WriteFile(path, content, 0o644); err != nil {
 			return nil, nil, fmt.Errorf("write %s: %w", path, err)
@@ -85,6 +90,7 @@ func Build(module *mir.Module, options BuildOptions) (*BuildResult, []Diagnostic
 		ProgramSource: programPath,
 		RuntimeSource: runtimePath,
 		RuntimeHeader: headerPath,
+		AssetsSource:  assetsPath,
 	}
 	if options.EmitCOnly {
 		return result, nil, nil
@@ -123,6 +129,9 @@ func Build(module *mir.Module, options BuildOptions) (*BuildResult, []Diagnostic
 		}
 	}
 	args = append(args, programPath, runtimePath)
+	if UsesAssets(module) || len(options.EmbeddedAssets) > 0 {
+		args = append(args, assetsPath)
+	}
 	args = append(args, links...)
 	for _, library := range options.Libraries {
 		args = append(args, "-l"+library)

@@ -13,7 +13,7 @@ import (
 
 func TestZ11HTTPAPIBuildsAndRunsNatively(t *testing.T) {
 	output := buildAndRunZ8(t, "code_examples/core/http_api.zum")
-	for _, expected := range []string{"200\nok\n0.8.1\nhello zumbra\n201\n42\nlocal\n", "true\nlocal-user\ntrue\n"} {
+	for _, expected := range []string{"200\nok\n0.9.0\nhello zumbra\n201\n42\nlocal\n", "true\nlocal-user\ntrue\n"} {
 		if !strings.Contains(output, expected) {
 			t.Fatalf("native HTTP output missing %q:\n%s", expected, output)
 		}

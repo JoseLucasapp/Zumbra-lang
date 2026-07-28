@@ -648,6 +648,12 @@ var Builtins = []struct {
 	{"uiFocusNext", UIFocusNextBuiltin()},
 	{"uiAccessibility", UIAccessibilityBuiltin()},
 	{"uiCanvasCommand", UICanvasCommandBuiltin()},
+
+	// Z15 embedded application assets
+	{"assetExists", AssetExistsBuiltin()},
+	{"assetText", AssetTextBuiltin()},
+	{"assetBytes", AssetBytesBuiltin()},
+	{"assetList", AssetListBuiltin()},
 }
 
 func NewBoolean(value bool) *object.Boolean {
