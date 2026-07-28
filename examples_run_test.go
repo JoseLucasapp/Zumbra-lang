@@ -38,6 +38,7 @@ func TestRunnableCodeExamplesParseCompileAndRun(t *testing.T) {
 		"config_observability.zum": true,
 		"for.zum":                  true,
 		"functions.zum":            true,
+		"gui_toolkit.zum":          true,
 		"http_api.zum":             true,
 		"native_build.zum":         true,
 		"network.zum":              true,

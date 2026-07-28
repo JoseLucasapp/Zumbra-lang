@@ -17,7 +17,7 @@ import (
 	"zumbra/types"
 )
 
-//go:embed runtime/zumbra_runtime.c runtime/zumbra_runtime.h runtime/zumbra_http.inc runtime/zumbra_z12.inc runtime/zumbra_sqlite.inc runtime/zumbra_desktop.inc
+//go:embed runtime/zumbra_runtime.c runtime/zumbra_runtime.h runtime/zumbra_http.inc runtime/zumbra_z12.inc runtime/zumbra_sqlite.inc runtime/zumbra_desktop.inc runtime/zumbra_ui.inc
 var runtimeFiles embed.FS
 
 type Sources struct {
@@ -200,11 +200,25 @@ var desktopNativeBuiltins = map[string]bool{
 	"desktopWindowPixelDensity": true, "desktopWindowSetIcon": true,
 }
 
+var uiNativeBuiltins = map[string]bool{
+	"uiTheme": true, "uiState": true, "uiStateGet": true, "uiStateSet": true, "uiStateSubscribe": true, "uiBind": true,
+	"uiNode": true, "uiRow": true, "uiColumn": true, "uiContainer": true, "uiText": true, "uiButton": true,
+	"uiInput": true, "uiTextarea": true, "uiSelect": true, "uiCheckbox": true, "uiRadio": true, "uiTable": true,
+	"uiList": true, "uiTree": true, "uiTabs": true, "uiMenu": true, "uiModal": true, "uiTooltip": true,
+	"uiProgress": true, "uiImage": true, "uiCanvas": true, "uiSpacer": true, "uiCustom": true,
+	"uiMount": true, "uiUnmount": true, "uiRender": true, "uiSnapshot": true, "uiSetTheme": true, "uiDispatch": true,
+	"uiSet": true, "uiGet": true, "uiAdd": true, "uiRemove": true, "uiFind": true, "uiFocus": true,
+	"uiFocusNext": true, "uiAccessibility": true, "uiCanvasCommand": true,
+}
+
 func init() {
 	for name := range z12NativeBuiltins {
 		supportedBuiltins[name] = true
 	}
 	for name := range desktopNativeBuiltins {
+		supportedBuiltins[name] = true
+	}
+	for name := range uiNativeBuiltins {
 		supportedBuiltins[name] = true
 	}
 }
@@ -273,8 +287,11 @@ func Generate(module *mir.Module) (*Sources, []Diagnostic) {
 		return nil, []Diagnostic{{Message: "could not load embedded native runtime: " + err.Error()}}
 	}
 	prefix := ""
-	if UsesDesktop(module) {
+	if UsesDesktop(module) || UsesUI(module) {
 		prefix += "#define ZUMBRA_ENABLE_DESKTOP 1\n"
+	}
+	if UsesUI(module) {
+		prefix += "#define ZUMBRA_ENABLE_UI 1\n"
 	}
 	if UsesNetwork(module) || UsesHTTP(module) {
 		prefix += "#define ZUMBRA_ENABLE_NETWORK 1\n"
@@ -297,13 +314,21 @@ func Generate(module *mir.Module) (*Sources, []Diagnostic) {
 	if UsesSQLite(module) {
 		prefix += "#define ZUMBRA_ENABLE_SQLITE 1\n"
 	}
-	if UsesDesktop(module) {
+	if UsesDesktop(module) || UsesUI(module) {
 		desktopRuntime, readErr := runtimeFiles.ReadFile("runtime/zumbra_desktop.inc")
 		if readErr != nil {
 			return nil, []Diagnostic{{Message: "could not load embedded desktop runtime: " + readErr.Error()}}
 		}
 		runtimeSource = append(runtimeSource, '\n')
 		runtimeSource = append(runtimeSource, desktopRuntime...)
+	}
+	if UsesUI(module) {
+		uiRuntime, readErr := runtimeFiles.ReadFile("runtime/zumbra_ui.inc")
+		if readErr != nil {
+			return nil, []Diagnostic{{Message: "could not load embedded UI runtime: " + readErr.Error()}}
+		}
+		runtimeSource = append(runtimeSource, '\n')
+		runtimeSource = append(runtimeSource, uiRuntime...)
 	}
 	if UsesHTTP(module) {
 		httpRuntime, readErr := runtimeFiles.ReadFile("runtime/zumbra_http.inc")
@@ -435,7 +460,7 @@ func (g *generator) emitProgram() {
 	g.line("#include \"zumbra_runtime.h\"")
 	g.line("#include <stdio.h>")
 	g.line("#include <string.h>")
-	g.line("_Static_assert(ZUMBRA_NATIVE_ABI_VERSION == 5u, \"unsupported Zumbra native ABI\");")
+	g.line("_Static_assert(ZUMBRA_NATIVE_ABI_VERSION == 6u, \"unsupported Zumbra native ABI\");")
 	g.line("")
 	g.emitFFIDeclarations()
 	for _, name := range sortedKeys(g.globals) {
@@ -1258,6 +1283,7 @@ var httpBuiltins = map[string]bool{
 
 // UsesDesktop reports whether the MIR references Z13 desktop APIs.
 func UsesDesktop(module *mir.Module) bool { return moduleUsesAnyBuiltin(module, desktopNativeBuiltins) }
+func UsesUI(module *mir.Module) bool      { return moduleUsesAnyBuiltin(module, uiNativeBuiltins) }
 
 // UsesHTTP reports whether the MIR references Z11 HTTP, SSE, JWT or WebSocket APIs.
 func UsesHTTP(module *mir.Module) bool { return moduleUsesAnyBuiltin(module, httpBuiltins) }

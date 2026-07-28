@@ -17,6 +17,9 @@ typedef struct SDL_IOStream SDL_IOStream;
 typedef struct SDL_Tray SDL_Tray;
 typedef struct SDL_TrayMenu SDL_TrayMenu;
 typedef struct SDL_TrayEntry SDL_TrayEntry;
+typedef struct SDL_Renderer SDL_Renderer;
+typedef struct SDL_Texture SDL_Texture;
+typedef struct { float x,y,w,h; } SDL_FRect;
 
 typedef union ZSDL_Event { uint32_t type; uint8_t padding[128]; } ZSDL_Event;
 typedef struct { uint32_t type,reserved; uint64_t timestamp; } ZSDL_CommonEvent;
@@ -87,6 +90,18 @@ typedef SDL_TrayEntry *(*PFN_SDL_InsertTrayEntryAt)(SDL_TrayMenu*,int,const char
 typedef void (*PFN_SDL_SetTrayEntryCallback)(SDL_TrayEntry*,void(*)(void*,SDL_TrayEntry*),void*);
 typedef void (*PFN_SDL_SetTrayTooltip)(SDL_Tray*,const char*);
 typedef void (*PFN_SDL_DestroyTray)(SDL_Tray*);
+typedef SDL_Renderer *(*PFN_SDL_CreateRenderer)(SDL_Window*,const char*);
+typedef void (*PFN_SDL_DestroyRenderer)(SDL_Renderer*);
+typedef bool (*PFN_SDL_SetRenderDrawColor)(SDL_Renderer*,uint8_t,uint8_t,uint8_t,uint8_t);
+typedef bool (*PFN_SDL_RenderClear)(SDL_Renderer*);
+typedef bool (*PFN_SDL_RenderFillRect)(SDL_Renderer*,const SDL_FRect*);
+typedef bool (*PFN_SDL_RenderRect)(SDL_Renderer*,const SDL_FRect*);
+typedef bool (*PFN_SDL_RenderLine)(SDL_Renderer*,float,float,float,float);
+typedef bool (*PFN_SDL_RenderPresent)(SDL_Renderer*);
+typedef bool (*PFN_SDL_RenderDebugText)(SDL_Renderer*,float,float,const char*);
+typedef SDL_Texture *(*PFN_SDL_CreateTextureFromSurface)(SDL_Renderer*,SDL_Surface*);
+typedef bool (*PFN_SDL_RenderTexture)(SDL_Renderer*,SDL_Texture*,const SDL_FRect*,const SDL_FRect*);
+typedef void (*PFN_SDL_DestroyTexture)(SDL_Texture*);
 
 static void *zsdl_lib = NULL;
 static PFN_SDL_Init p_Init; static PFN_SDL_Quit p_Quit; static PFN_SDL_GetError p_GetError;
@@ -101,6 +116,7 @@ static PFN_SDL_PollEvent p_PollEvent; static PFN_SDL_WaitEvent p_WaitEvent; stat
 static PFN_SDL_SetClipboardText p_SetClipboardText; static PFN_SDL_GetClipboardText p_GetClipboardText; static PFN_SDL_free p_free;
 static PFN_SDL_IOFromFile p_IOFromFile; static PFN_SDL_LoadBMP_IO p_LoadBMP_IO; static PFN_SDL_DestroySurface p_DestroySurface; static PFN_SDL_SetWindowIcon p_SetWindowIcon;
 static PFN_SDL_CreateTray p_CreateTray; static PFN_SDL_CreateTrayMenu p_CreateTrayMenu; static PFN_SDL_InsertTrayEntryAt p_InsertTrayEntryAt; static PFN_SDL_SetTrayEntryCallback p_SetTrayEntryCallback; static PFN_SDL_SetTrayTooltip p_SetTrayTooltip; static PFN_SDL_DestroyTray p_DestroyTray;
+static PFN_SDL_CreateRenderer p_CreateRenderer; static PFN_SDL_DestroyRenderer p_DestroyRenderer; static PFN_SDL_SetRenderDrawColor p_SetRenderDrawColor; static PFN_SDL_RenderClear p_RenderClear; static PFN_SDL_RenderFillRect p_RenderFillRect; static PFN_SDL_RenderRect p_RenderRect; static PFN_SDL_RenderLine p_RenderLine; static PFN_SDL_RenderPresent p_RenderPresent; static PFN_SDL_RenderDebugText p_RenderDebugText; static PFN_SDL_CreateTextureFromSurface p_CreateTextureFromSurface; static PFN_SDL_RenderTexture p_RenderTexture; static PFN_SDL_DestroyTexture p_DestroyTexture;
 static char zsdl_error[512];
 
 #define LOAD_REQ(name) do { p_##name = (PFN_SDL_##name)dlsym(zsdl_lib,"SDL_" #name); if(!p_##name){snprintf(zsdl_error,sizeof(zsdl_error),"missing SDL3 symbol SDL_%s",#name);return false;} } while(0)
@@ -118,6 +134,7 @@ static bool zsdl_load(void) {
     LOAD_REQ(PollEvent); LOAD_REQ(WaitEvent); LOAD_REQ(WaitEventTimeout); LOAD_REQ(GetKeyName); LOAD_REQ(SetClipboardText); LOAD_REQ(GetClipboardText); LOAD_REQ(free);
     LOAD_OPT(IOFromFile); LOAD_OPT(LoadBMP_IO); LOAD_OPT(DestroySurface); LOAD_OPT(SetWindowIcon);
     LOAD_OPT(CreateTray); LOAD_OPT(CreateTrayMenu); LOAD_OPT(InsertTrayEntryAt); LOAD_OPT(SetTrayEntryCallback); LOAD_OPT(SetTrayTooltip); LOAD_OPT(DestroyTray);
+    LOAD_REQ(CreateRenderer); LOAD_REQ(DestroyRenderer); LOAD_REQ(SetRenderDrawColor); LOAD_REQ(RenderClear); LOAD_REQ(RenderFillRect); LOAD_REQ(RenderRect); LOAD_REQ(RenderLine); LOAD_REQ(RenderPresent); LOAD_OPT(RenderDebugText); LOAD_OPT(CreateTextureFromSurface); LOAD_OPT(RenderTexture); LOAD_OPT(DestroyTexture);
     return true;
 }
 static const char *zsdl_last_error(void){ if(zsdl_error[0])return zsdl_error; if(p_GetError){const char*e=p_GetError();if(e&&*e)return e;} return "unknown SDL3 error"; }
@@ -134,6 +151,11 @@ static bool zsdl_maximize(SDL_Window*w){return p_MaximizeWindow(w);} static bool
 static float zsdl_display_scale(SDL_Window*w){return p_GetWindowDisplayScale(w);} static float zsdl_pixel_density(SDL_Window*w){return p_GetWindowPixelDensity(w);}
 static bool zsdl_set_clipboard(const char*t){return p_SetClipboardText(t);} static char*zsdl_get_clipboard(void){return p_GetClipboardText();} static void zsdl_free_text(void*p){if(p)p_free(p);}
 static bool zsdl_set_icon(SDL_Window*w,const char*path){if(!p_IOFromFile||!p_LoadBMP_IO||!p_SetWindowIcon||!p_DestroySurface){snprintf(zsdl_error,sizeof(zsdl_error),"SDL3 BMP icon APIs are unavailable");return false;}SDL_IOStream*io=p_IOFromFile(path,"rb");if(!io)return false;SDL_Surface*s=p_LoadBMP_IO(io,true);if(!s)return false;bool ok=p_SetWindowIcon(w,s);p_DestroySurface(s);return ok;}
+static SDL_Renderer*zsdl_renderer(SDL_Window*w){return p_CreateRenderer(w,NULL);} static void zsdl_destroy_renderer(SDL_Renderer*r){if(r)p_DestroyRenderer(r);}
+static bool zsdl_color(SDL_Renderer*r,uint8_t red,uint8_t green,uint8_t blue,uint8_t alpha){return p_SetRenderDrawColor(r,red,green,blue,alpha);} static bool zsdl_clear(SDL_Renderer*r){return p_RenderClear(r);}
+static bool zsdl_fill(SDL_Renderer*r,float x,float y,float w,float h){SDL_FRect q={x,y,w,h};return p_RenderFillRect(r,&q);} static bool zsdl_stroke(SDL_Renderer*r,float x,float y,float w,float h){SDL_FRect q={x,y,w,h};return p_RenderRect(r,&q);} static bool zsdl_line(SDL_Renderer*r,float x1,float y1,float x2,float y2){return p_RenderLine(r,x1,y1,x2,y2);} static bool zsdl_present(SDL_Renderer*r){return p_RenderPresent(r);}
+static bool zsdl_text(SDL_Renderer*r,float x,float y,const char*t){return p_RenderDebugText?p_RenderDebugText(r,x,y,t):false;}
+static bool zsdl_bmp(SDL_Renderer*r,const char*path,float x,float y,float w,float h){if(!p_IOFromFile||!p_LoadBMP_IO||!p_DestroySurface||!p_CreateTextureFromSurface||!p_RenderTexture||!p_DestroyTexture)return false;SDL_IOStream*io=p_IOFromFile(path,"rb");if(!io)return false;SDL_Surface*s=p_LoadBMP_IO(io,true);if(!s)return false;SDL_Texture*t=p_CreateTextureFromSurface(r,s);p_DestroySurface(s);if(!t)return false;SDL_FRect d={x,y,w,h};bool ok=p_RenderTexture(r,t,NULL,&d);p_DestroyTexture(t);return ok;}
 
 #define ZSDL_TRAY_QUEUE 128
 static char *zsdl_tray_queue[ZSDL_TRAY_QUEUE]; static int zsdl_tray_head=0,zsdl_tray_tail=0;
@@ -161,6 +183,7 @@ import "C"
 import (
 	"errors"
 	"fmt"
+	"math"
 	"os"
 	"os/exec"
 	"runtime"
@@ -179,11 +202,13 @@ type sdlDesktopBackend struct {
 	nextSynthetic int64
 }
 type sdlWindow struct {
-	backend *sdlDesktopBackend
-	mu      sync.RWMutex
-	handle  *C.SDL_Window
-	id      int64
-	open    bool
+	backend  *sdlDesktopBackend
+	mu       sync.RWMutex
+	handle   *C.SDL_Window
+	id       int64
+	open     bool
+	renderer *C.SDL_Renderer
+	lastUI   *object.UIRenderFrame
 }
 type sdlTray struct {
 	mu     sync.RWMutex
@@ -569,6 +594,10 @@ func (w *sdlWindow) Close() error {
 		return nil
 	}
 	w.open = false
+	if w.renderer != nil {
+		C.zsdl_destroy_renderer(w.renderer)
+		w.renderer = nil
+	}
 	if w.handle != nil {
 		C.zsdl_destroy_window(w.handle)
 		w.handle = nil
@@ -834,3 +863,275 @@ func parseProcessArgs(value object.Object) ([]string, *object.Error) {
 	return result, nil
 }
 func _unusedDesktopSDLImports() { _, _ = fmt.Sprint, strconv.Itoa }
+
+func parseUIHexColor(value string) (uint8, uint8, uint8, uint8) {
+	value = strings.TrimSpace(value)
+	if value == "" || value == "transparent" {
+		return 0, 0, 0, 0
+	}
+	if strings.HasPrefix(value, "#") {
+		value = value[1:]
+	}
+	if len(value) == 3 {
+		value = string([]byte{value[0], value[0], value[1], value[1], value[2], value[2]})
+	}
+	if len(value) == 6 {
+		value += "ff"
+	}
+	if len(value) != 8 {
+		return 0, 0, 0, 255
+	}
+	parsed, err := strconv.ParseUint(value, 16, 32)
+	if err != nil {
+		return 0, 0, 0, 255
+	}
+	return uint8(parsed >> 24), uint8(parsed >> 16), uint8(parsed >> 8), uint8(parsed)
+}
+func sdlUISetColor(renderer *C.SDL_Renderer, value string) {
+	r, g, b, a := parseUIHexColor(value)
+	C.zsdl_color(renderer, C.uint8_t(r), C.uint8_t(g), C.uint8_t(b), C.uint8_t(a))
+}
+func sdlUIFill(renderer *C.SDL_Renderer, rect object.UIRect, color string) {
+	_, _, _, a := parseUIHexColor(color)
+	if a == 0 || rect.Width <= 0 || rect.Height <= 0 {
+		return
+	}
+	sdlUISetColor(renderer, color)
+	C.zsdl_fill(renderer, C.float(rect.X), C.float(rect.Y), C.float(rect.Width), C.float(rect.Height))
+}
+func sdlUIStroke(renderer *C.SDL_Renderer, rect object.UIRect, color string) {
+	_, _, _, a := parseUIHexColor(color)
+	if a == 0 || rect.Width <= 0 || rect.Height <= 0 {
+		return
+	}
+	sdlUISetColor(renderer, color)
+	C.zsdl_stroke(renderer, C.float(rect.X), C.float(rect.Y), C.float(rect.Width), C.float(rect.Height))
+}
+func sdlUIText(renderer *C.SDL_Renderer, x, y float64, text, color string) {
+	if text == "" {
+		return
+	}
+	sdlUISetColor(renderer, color)
+	c := C.CString(text)
+	defer C.free(unsafe.Pointer(c))
+	C.zsdl_text(renderer, C.float(x), C.float(y), c)
+}
+func sdlUIItemText(item object.UIRenderItem) string {
+	for _, key := range []string{"text", "label", "value", "placeholder", "title"} {
+		if value, ok := item.Props[key].(*object.String); ok && value.Value != "" {
+			return value.Value
+		}
+	}
+	return ""
+}
+func sdlUIRenderItem(renderer *C.SDL_Renderer, item object.UIRenderItem) {
+	bounds := item.Bounds
+	background := uiColor(item.Props, "background", "transparent")
+	border := uiColor(item.Props, "borderColor", "#cfd6e2")
+	textColor := uiColor(item.Props, "textColor", "#172033")
+	disabled := uiBool(item.Props, "disabled", false)
+	if disabled {
+		textColor = "#87909f"
+	}
+	switch item.Kind {
+	case "container", "row", "column", "custom":
+		sdlUIFill(renderer, bounds, background)
+		if uiBool(item.Props, "border", false) {
+			sdlUIStroke(renderer, bounds, border)
+		}
+	case "list", "tree":
+		sdlUIFill(renderer, bounds, background)
+		sdlUIStroke(renderer, bounds, border)
+		items := uiObjectArray(item.Props["items"])
+		rowHeight := uiFloat(item.Props, "itemHeight", 28)
+		for index, value := range items {
+			y := bounds.Y + 6 + float64(index)*rowHeight
+			if y+8 > bounds.Y+bounds.Height {
+				break
+			}
+			prefix := ""
+			if item.Kind == "tree" {
+				prefix = "- "
+			}
+			sdlUIText(renderer, bounds.X+8, y, prefix+uiTextDisplay(value), textColor)
+		}
+	case "tabs":
+		sdlUIFill(renderer, bounds, background)
+		tabs := uiObjectArray(item.Props["tabs"])
+		selected := int(uiFloat(item.Props, "selectedIndex", 0))
+		x := bounds.X
+		for index, value := range tabs {
+			label := uiTextDisplay(value)
+			w := math.Max(72, float64(len([]rune(label)))*8+24)
+			tabBounds := object.UIRect{X: x, Y: bounds.Y, Width: w, Height: bounds.Height}
+			if index == selected {
+				sdlUIFill(renderer, tabBounds, uiColor(item.Props, "selectedBackground", "#ffffff"))
+			}
+			sdlUIStroke(renderer, tabBounds, border)
+			sdlUIText(renderer, x+10, bounds.Y+(bounds.Height-8)/2, label, textColor)
+			x += w
+		}
+	case "menu":
+		sdlUIFill(renderer, bounds, background)
+		sdlUIStroke(renderer, bounds, border)
+		label := sdlUIItemText(item)
+		if label == "" {
+			label = "Menu"
+		}
+		sdlUIText(renderer, bounds.X+10, bounds.Y+(bounds.Height-8)/2, label, textColor)
+	case "table":
+		sdlUIFill(renderer, bounds, background)
+		sdlUIStroke(renderer, bounds, border)
+		columns := uiObjectArray(item.Props["columns"])
+		rows := uiObjectArray(item.Props["rows"])
+		rowHeight := uiFloat(item.Props, "rowHeight", 30)
+		columnCount := len(columns)
+		if columnCount < 1 {
+			columnCount = 1
+		}
+		columnWidth := bounds.Width / float64(columnCount)
+		for index, column := range columns {
+			x := bounds.X + float64(index)*columnWidth
+			sdlUIText(renderer, x+6, bounds.Y+8, uiTextDisplay(column), textColor)
+			if index > 0 {
+				sdlUISetColor(renderer, border)
+				C.zsdl_line(renderer, C.float(x), C.float(bounds.Y), C.float(x), C.float(bounds.Y+bounds.Height))
+			}
+		}
+		sdlUISetColor(renderer, border)
+		C.zsdl_line(renderer, C.float(bounds.X), C.float(bounds.Y+rowHeight), C.float(bounds.X+bounds.Width), C.float(bounds.Y+rowHeight))
+		for index, row := range rows {
+			y := bounds.Y + rowHeight + float64(index)*rowHeight
+			if y+8 > bounds.Y+bounds.Height {
+				break
+			}
+			sdlUIText(renderer, bounds.X+6, y+8, uiTextDisplay(row), textColor)
+			sdlUISetColor(renderer, border)
+			C.zsdl_line(renderer, C.float(bounds.X), C.float(y+rowHeight), C.float(bounds.X+bounds.Width), C.float(y+rowHeight))
+		}
+	case "text":
+		sdlUIText(renderer, bounds.X+2, bounds.Y+4, sdlUIItemText(item), textColor)
+	case "button":
+		if item.Hovered && !disabled {
+			background = uiColor(item.Props, "hoverBackground", "#2f57c7")
+		}
+		sdlUIFill(renderer, bounds, background)
+		sdlUIStroke(renderer, bounds, border)
+		sdlUIText(renderer, bounds.X+10, bounds.Y+(bounds.Height-8)/2, sdlUIItemText(item), textColor)
+	case "input", "textarea", "select":
+		sdlUIFill(renderer, bounds, background)
+		sdlUIStroke(renderer, bounds, border)
+		text := sdlUIItemText(item)
+		if text == "" {
+			text = uiString(item.Props, "placeholder", "")
+			textColor = "#87909f"
+		}
+		sdlUIText(renderer, bounds.X+8, bounds.Y+8, text, textColor)
+		if item.Kind == "select" {
+			sdlUIText(renderer, bounds.X+bounds.Width-18, bounds.Y+8, "v", textColor)
+		}
+	case "checkbox", "radio":
+		box := object.UIRect{X: bounds.X + 4, Y: bounds.Y + (bounds.Height-16)/2, Width: 16, Height: 16}
+		sdlUIFill(renderer, box, background)
+		sdlUIStroke(renderer, box, border)
+		if uiBool(item.Props, "checked", false) {
+			sdlUISetColor(renderer, uiColor(item.Props, "checkColor", "#3867e8"))
+			C.zsdl_fill(renderer, C.float(box.X+4), C.float(box.Y+4), 8, 8)
+		}
+		sdlUIText(renderer, bounds.X+28, bounds.Y+(bounds.Height-8)/2, sdlUIItemText(item), textColor)
+	case "progress":
+		sdlUIFill(renderer, bounds, background)
+		value := uiClamp(uiFloat(item.Props, "value", 0), 0, uiFloat(item.Props, "max", 100))
+		max := uiFloat(item.Props, "max", 100)
+		if max <= 0 {
+			max = 100
+		}
+		fill := bounds
+		fill.Width = bounds.Width * value / max
+		sdlUIFill(renderer, fill, uiColor(item.Props, "fill", "#3867e8"))
+	case "image":
+		path := uiString(item.Props, "path", "")
+		if path != "" {
+			c := C.CString(path)
+			C.zsdl_bmp(renderer, c, C.float(bounds.X), C.float(bounds.Y), C.float(bounds.Width), C.float(bounds.Height))
+			C.free(unsafe.Pointer(c))
+		}
+	case "modal":
+		sdlUIFill(renderer, object.UIRect{X: 0, Y: 0, Width: bounds.X*2 + bounds.Width, Height: bounds.Y*2 + bounds.Height}, uiColor(item.Props, "overlay", "#00000080"))
+		sdlUIFill(renderer, bounds, background)
+		sdlUIStroke(renderer, bounds, border)
+	case "tooltip":
+		sdlUIFill(renderer, bounds, background)
+		sdlUIText(renderer, bounds.X+6, bounds.Y+5, sdlUIItemText(item), textColor)
+	case "canvas":
+		sdlUIFill(renderer, bounds, background)
+		for _, command := range item.Commands {
+			sdlUIRenderCanvasCommand(renderer, bounds, command)
+		}
+	case "spacer":
+		// Layout-only node.
+	default:
+		sdlUIFill(renderer, bounds, background)
+		sdlUIText(renderer, bounds.X+4, bounds.Y+4, sdlUIItemText(item), textColor)
+	}
+	if item.Focused {
+		sdlUIStroke(renderer, object.UIRect{X: bounds.X - 2, Y: bounds.Y - 2, Width: bounds.Width + 4, Height: bounds.Height + 4}, uiColor(item.Props, "focusColor", "#6e95ff"))
+	}
+}
+func sdlUIRenderCanvasCommand(renderer *C.SDL_Renderer, origin object.UIRect, command object.UICanvasCommand) {
+	values := command.Values
+	color := uiString(values, "color", "#172033")
+	x := origin.X + uiFloat(values, "x", 0)
+	y := origin.Y + uiFloat(values, "y", 0)
+	switch command.Kind {
+	case "rect", "fillRect":
+		r := object.UIRect{X: x, Y: y, Width: uiFloat(values, "width", 10), Height: uiFloat(values, "height", 10)}
+		if command.Kind == "rect" {
+			sdlUIStroke(renderer, r, color)
+		} else {
+			sdlUIFill(renderer, r, color)
+		}
+	case "line":
+		sdlUISetColor(renderer, color)
+		C.zsdl_line(renderer, C.float(x), C.float(y), C.float(origin.X+uiFloat(values, "x2", 0)), C.float(origin.Y+uiFloat(values, "y2", 0)))
+	case "text":
+		sdlUIText(renderer, x, y, uiString(values, "text", ""), color)
+	case "image":
+		path := uiString(values, "path", "")
+		if path != "" {
+			c := C.CString(path)
+			C.zsdl_bmp(renderer, c, C.float(x), C.float(y), C.float(uiFloat(values, "width", 64)), C.float(uiFloat(values, "height", 64)))
+			C.free(unsafe.Pointer(c))
+		}
+	}
+}
+func (w *sdlWindow) RenderUI(frame *object.UIRenderFrame) error {
+	w.mu.Lock()
+	defer w.mu.Unlock()
+	if !w.open || w.handle == nil {
+		return errors.New("window is closed")
+	}
+	if w.renderer == nil {
+		w.renderer = C.zsdl_renderer(w.handle)
+		if w.renderer == nil {
+			return errors.New("SDL3 could not create a renderer: " + C.GoString(C.zsdl_last_error()))
+		}
+	}
+	sdlUISetColor(w.renderer, frame.Background)
+	if !bool(C.zsdl_clear(w.renderer)) {
+		return errors.New(C.GoString(C.zsdl_last_error()))
+	}
+	for _, item := range frame.Items {
+		sdlUIRenderItem(w.renderer, item)
+	}
+	if !bool(C.zsdl_present(w.renderer)) {
+		return errors.New(C.GoString(C.zsdl_last_error()))
+	}
+	w.lastUI = frame
+	return nil
+}
+func (w *sdlWindow) LastUIFrame() *object.UIRenderFrame {
+	w.mu.RLock()
+	defer w.mu.RUnlock()
+	return w.lastUI
+}

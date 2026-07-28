@@ -1081,6 +1081,21 @@ func evalAttributeAccess(left object.Object, property string) object.Object {
 			return method
 		}
 		return newError("unknown method %s for DesktopProcess", property)
+	case *object.UIContext:
+		if method := objectbuiltins.UIContextMethod(value, property); method != nil {
+			return method
+		}
+		return newError("unknown method %s for UIContext", property)
+	case *object.UINode:
+		if method := objectbuiltins.UINodeMethod(value, property); method != nil {
+			return method
+		}
+		return newError("unknown method %s for UINode", property)
+	case *object.UIState:
+		if method := objectbuiltins.UIStateMethod(value, property); method != nil {
+			return method
+		}
+		return newError("unknown method %s for UIState", property)
 	case *object.SQLiteDatabase:
 		if method := objectbuiltins.SQLiteDatabaseMethod(value, property); method != nil {
 			return method

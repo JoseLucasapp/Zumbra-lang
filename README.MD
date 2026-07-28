@@ -21,7 +21,7 @@ Designed for clarity, simplicity, and extensibility, Zumbra is the perfect playg
 
 The rebuild now follows a clear direction: systems, emulation, and game development without abandoning Zumbra's simplicity. See the Portuguese design and feature documentation in [`docs/pt-BR/`](./docs/pt-BR/).
 
-Current systems features include readable bitwise operators, fixed-width integers (`u8` through `u64`, `i8` through `i64`), mutable indexes, compact byte memory, typed integer arrays, zero-copy mutable slices, binary file I/O, endian-aware integer access, buffer copying/comparison, SHA-256 hashing, immutable constants, type aliases, structs with methods, enums, and `match`. Z6 adds a canonical typed pipeline with HIR and MIR. Z7 adds a C11 backend that consumes optimized MIR and produces standalone native executables with Clang or GCC. Z8 adds isolated modules with `pub` exports, module graph inspection, typed C FFI, opaque pointers, synchronous callbacks, native linking, and a conservative C-header binding generator. Z8.1 adds contextual callback inference, so callback parameters and returns become concrete in type analysis, HIR, MIR, and native builds without extra annotations. Z9 adds real tasks, `spawn`, `async`/`await`, inferred typed channels, timeouts, cooperative cancellation, mutexes, wait groups, semaphores, and atomics across the VM and pthread-based native runtime. Z9.1 extends contextual inference to ordinary calls and `spawn`, so user functions, methods, `Channel<T>`, `Task<T>`, atomics, and return values become concrete without annotations. Z10 adds local-first TCP, UDP, IPv4/IPv6 DNS, TLS 1.2+, common byte streams, accept/connect/read timeouts, half-close, keepalive, and conditional native linking through POSIX sockets and OpenSSL. Z11 adds typed HTTP/1.1 applications, routing, middleware, JSON, cookies, stateless JWT sessions, multipart uploads, static files, gzip, streaming/SSE, HTTP clients, graceful shutdown and RFC 6455 WebSockets/WSS across the VM and native runtime. Z12 completes the data layer with advanced SQLite, PostgreSQL, Redis, safe SQL parameters, migrations, streaming rows, persistent sessions, typed configuration, structured logs, metrics, tracing, rate limiting, JSON files, and versioned binary serialization across the VM and native backend. Z13 adds a Linux-first desktop runtime with SDL3 windows, lifecycle and events, multiple windows, High DPI, clipboard, drag and drop, pickers, notifications, tray, shortcuts, system paths, processes, and a deterministic headless backend across the evaluator, VM, Clang, and GCC. See [`docs/pt-BR/modulos-abi-e-ffi.md`](./docs/pt-BR/modulos-abi-e-ffi.md), [`docs/pt-BR/inferencia-contextual-de-callbacks.md`](./docs/pt-BR/inferencia-contextual-de-callbacks.md), [`docs/pt-BR/concorrencia-e-tarefas.md`](./docs/pt-BR/concorrencia-e-tarefas.md), [`docs/pt-BR/inferencia-contextual-de-chamadas.md`](./docs/pt-BR/inferencia-contextual-de-chamadas.md), and [`docs/pt-BR/rede-tcp-udp-dns-tls.md`](./docs/pt-BR/rede-tcp-udp-dns-tls.md), and [`docs/pt-BR/dados-e-persistencia-z12.md`](./docs/pt-BR/dados-e-persistencia-z12.md), and [`docs/pt-BR/runtime-desktop-z13.md`](./docs/pt-BR/runtime-desktop-z13.md).
+Current systems features include readable bitwise operators, fixed-width integers (`u8` through `u64`, `i8` through `i64`), mutable indexes, compact byte memory, typed integer arrays, zero-copy mutable slices, binary file I/O, endian-aware integer access, buffer copying/comparison, SHA-256 hashing, immutable constants, type aliases, structs with methods, enums, and `match`. Z6 adds a canonical typed pipeline with HIR and MIR. Z7 adds a C11 backend that consumes optimized MIR and produces standalone native executables with Clang or GCC. Z8 adds isolated modules with `pub` exports, module graph inspection, typed C FFI, opaque pointers, synchronous callbacks, native linking, and a conservative C-header binding generator. Z8.1 adds contextual callback inference, so callback parameters and returns become concrete in type analysis, HIR, MIR, and native builds without extra annotations. Z9 adds real tasks, `spawn`, `async`/`await`, inferred typed channels, timeouts, cooperative cancellation, mutexes, wait groups, semaphores, and atomics across the VM and pthread-based native runtime. Z9.1 extends contextual inference to ordinary calls and `spawn`, so user functions, methods, `Channel<T>`, `Task<T>`, atomics, and return values become concrete without annotations. Z10 adds local-first TCP, UDP, IPv4/IPv6 DNS, TLS 1.2+, common byte streams, accept/connect/read timeouts, half-close, keepalive, and conditional native linking through POSIX sockets and OpenSSL. Z11 adds typed HTTP/1.1 applications, routing, middleware, JSON, cookies, stateless JWT sessions, multipart uploads, static files, gzip, streaming/SSE, HTTP clients, graceful shutdown and RFC 6455 WebSockets/WSS across the VM and native runtime. Z12 completes the data layer with advanced SQLite, PostgreSQL, Redis, safe SQL parameters, migrations, streaming rows, persistent sessions, typed configuration, structured logs, metrics, tracing, rate limiting, JSON files, and versioned binary serialization across the VM and native backend. Z13 adds a Linux-first desktop runtime with SDL3 windows, lifecycle and events, multiple windows, High DPI, clipboard, drag and drop, pickers, notifications, tray, shortcuts, system paths, processes, and a deterministic headless backend across the evaluator, VM, Clang, and GCC. Z14 adds a retained-mode GUI toolkit with layouts, controls, tables, lists, trees, tabs, menus, modals, tooltips, progress, images, canvas, themes, reactive state, bidirectional data binding, custom components, keyboard navigation and accessibility across the VM and native backend. See [`docs/pt-BR/modulos-abi-e-ffi.md`](./docs/pt-BR/modulos-abi-e-ffi.md), [`docs/pt-BR/inferencia-contextual-de-callbacks.md`](./docs/pt-BR/inferencia-contextual-de-callbacks.md), [`docs/pt-BR/concorrencia-e-tarefas.md`](./docs/pt-BR/concorrencia-e-tarefas.md), [`docs/pt-BR/inferencia-contextual-de-chamadas.md`](./docs/pt-BR/inferencia-contextual-de-chamadas.md), and [`docs/pt-BR/rede-tcp-udp-dns-tls.md`](./docs/pt-BR/rede-tcp-udp-dns-tls.md), and [`docs/pt-BR/dados-e-persistencia-z12.md`](./docs/pt-BR/dados-e-persistencia-z12.md), and [`docs/pt-BR/runtime-desktop-z13.md`](./docs/pt-BR/runtime-desktop-z13.md), and [`docs/pt-BR/toolkit-interface-grafica-z14.md`](./docs/pt-BR/toolkit-interface-grafica-z14.md).
 
 <br />
 <a href="./code_examples/"><p style="font-size: 30px; font-weight: 600;">🛠 Code_examples</p></a>
@@ -226,5 +226,36 @@ app.close();
 Z13 provides a Linux-first SDL3 backend and a deterministic headless backend for CI. It includes lifecycle, multiple windows, event dispatch, High DPI, clipboard, drop events, file/folder pickers, notifications, tray, shortcuts, XDG paths, external opening, and process management. See [`docs/pt-BR/runtime-desktop-z13.md`](./docs/pt-BR/runtime-desktop-z13.md).
 
 Zumbra 0.7.0 completes Z13 and establishes the baseline for Z14 GUI toolkit development. See [`docs/releases/0.7.0.md`](./docs/releases/0.7.0.md).
+
+## Z14 GUI toolkit quick start
+
+```zumbra
+import "std/desktop.zum" as desktop;
+import "std/ui.zum" as ui;
+
+var app << desktop.app({"name": "Zumbra GUI"});
+var window << app.window({"title": "Hello", "width": 900, "height": 650});
+var message << ui.state("Ready");
+var label << ui.text("");
+ui.bind(label, "text", message);
+
+var root << ui.columnWith({"padding": 20, "gap": 12}, [
+    ui.textWith("Zumbra GUI Toolkit", {"fontSize": 20}),
+    ui.input({"placeholder": "Project name"}),
+    ui.button("Save", fct(event) { event; ui.update(message, "Saved"); }),
+    label
+]);
+
+var context << ui.mount(app, window, root, {"theme": ui.theme("light")});
+window.show();
+app.run();
+context.close();
+app.close();
+```
+
+Z14 provides a retained component tree, deterministic row/column layout, controls, collections, overlays, canvas drawing, themes, reactive state, bidirectional binding, custom components, focus navigation and accessibility. The headless backend supports deterministic CI tests; the Linux graphical backend renders through dynamically loaded SDL3. See [`docs/pt-BR/toolkit-interface-grafica-z14.md`](./docs/pt-BR/toolkit-interface-grafica-z14.md).
+
+Zumbra 0.8.0 completes Z14 and establishes the baseline for Z15 desktop distribution. See [`docs/releases/0.8.0.md`](./docs/releases/0.8.0.md).
+
 
 Zumbra 0.5.1 widens the VM builtin index operand from 8 to 16 bits. This prevents overflow now that Z12.1 raises the builtin table above 255 entries and restores binary I/O parity between the evaluator and VM. See [`docs/pt-BR/correcao-indice-builtins-0.5.1.md`](./docs/pt-BR/correcao-indice-builtins-0.5.1.md).

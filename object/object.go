@@ -72,6 +72,10 @@ const (
 	DESKTOP_WINDOW_OBJ       = "DESKTOP_WINDOW"
 	DESKTOP_TRAY_OBJ         = "DESKTOP_TRAY"
 	DESKTOP_PROCESS_OBJ      = "DESKTOP_PROCESS"
+	UI_NODE_OBJ              = "UI_NODE"
+	UI_STATE_OBJ             = "UI_STATE"
+	UI_THEME_OBJ             = "UI_THEME"
+	UI_CONTEXT_OBJ           = "UI_CONTEXT"
 )
 
 type Object interface {

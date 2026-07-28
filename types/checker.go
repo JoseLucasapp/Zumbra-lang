@@ -2910,6 +2910,50 @@ func (c *Checker) inferExpressionImpl(exp ast.Expression) *Type {
 			case "kill", "running":
 				return FuncOf(nil, Simple(Bool))
 			}
+		case UIContext:
+			switch e.Property.Value {
+			case "render":
+				return FuncOf(nil, Simple(Bool))
+			case "snapshot":
+				return FuncOf(nil, DictOf(Simple(String), Simple(Unknown)))
+			case "setTheme":
+				return FuncOf([]*Type{Simple(UITheme)}, Simple(UIContext))
+			case "dispatch":
+				return FuncOf([]*Type{DictOf(Simple(String), Simple(Unknown))}, Simple(Bool))
+			case "find":
+				return FuncOf([]*Type{Simple(String)}, Simple(Unknown))
+			case "focus":
+				return FuncOf([]*Type{Simple(UINode)}, Simple(Bool))
+			case "focusNext":
+				return FuncOf([]*Type{Simple(Bool)}, Simple(Unknown))
+			case "accessibility":
+				return FuncOf(nil, ArrayOf(DictOf(Simple(String), Simple(Unknown))))
+			case "close":
+				return FuncOf(nil, Simple(Bool))
+			}
+		case UINode:
+			switch e.Property.Value {
+			case "set":
+				return FuncOf([]*Type{Simple(String), Simple(Unknown)}, Simple(UINode))
+			case "get":
+				return FuncOf([]*Type{Simple(String)}, Simple(Unknown))
+			case "add":
+				return FuncOf([]*Type{Simple(UINode)}, Simple(UINode))
+			case "remove":
+				return FuncOf([]*Type{Simple(String)}, Simple(Bool))
+			case "command":
+				return FuncOf([]*Type{Simple(String), DictOf(Simple(String), Simple(Unknown))}, Simple(UINode))
+			}
+		case UIState:
+			handler := FuncOf([]*Type{Simple(Unknown)}, Simple(Unknown))
+			switch e.Property.Value {
+			case "get":
+				return FuncOf(nil, Simple(Unknown))
+			case "set":
+				return FuncOf([]*Type{Simple(Unknown)}, Simple(Unknown))
+			case "subscribe":
+				return FuncOf([]*Type{handler}, Simple(UIState))
+			}
 		case SQLiteDatabase:
 			switch e.Property.Value {
 			case "exec":
@@ -3271,7 +3315,7 @@ func (c *Checker) typeFromName(name string) *Type {
 		return value
 	}
 	switch Kind(name) {
-	case Int, U8, U16, U32, U64, I8, I16, I32, I64, Float, Bool, String, Pointer, Null, Task, Channel, Mutex, RWMutex, WaitGroup, Semaphore, AtomicInt, NetListener, NetStream, UDPSocket, HttpApp, HttpServer, HttpRequest, HttpResponse, HttpClientResponse, HttpStream, HttpFile, WebSocket, SQLiteDatabase, SQLiteStatement, SQLiteTransaction, SQLRows, SQLParameters, PostgresDatabase, PostgresStatement, PostgresTransaction, RedisClient, Config, Logger, MetricsRegistry, TraceSpan, SessionStore, RateLimiter, DesktopApp, DesktopWindow, DesktopTray, DesktopProcess:
+	case Int, U8, U16, U32, U64, I8, I16, I32, I64, Float, Bool, String, Pointer, Null, Task, Channel, Mutex, RWMutex, WaitGroup, Semaphore, AtomicInt, NetListener, NetStream, UDPSocket, HttpApp, HttpServer, HttpRequest, HttpResponse, HttpClientResponse, HttpStream, HttpFile, WebSocket, SQLiteDatabase, SQLiteStatement, SQLiteTransaction, SQLRows, SQLParameters, PostgresDatabase, PostgresStatement, PostgresTransaction, RedisClient, Config, Logger, MetricsRegistry, TraceSpan, SessionStore, RateLimiter, DesktopApp, DesktopWindow, DesktopTray, DesktopProcess, UINode, UIState, UITheme, UIContext:
 		return Simple(Kind(name))
 	default:
 		return Simple(Unknown)

@@ -190,7 +190,7 @@ func DesktopAppBuiltin() *object.Builtin {
 		return &object.DesktopApp{
 			Backend: backend, Options: options, Windows: map[int64]*object.DesktopWindow{},
 			Trays: []*object.DesktopTray{}, Handlers: map[string][]object.Object{},
-			Shortcuts: map[string]object.Object{},
+			Shortcuts: map[string]object.Object{}, UIContexts: map[int64]*object.UIContext{},
 		}
 	}}
 }
@@ -294,6 +294,9 @@ func dispatchDesktopEvent(app *object.DesktopApp, event *object.DesktopEvent) *o
 	if event == nil {
 		return nil
 	}
+	if uiError := dispatchUIForDesktopEvent(app, event); uiError != nil {
+		return uiError
+	}
 	eventObject := desktopEventObject(event)
 	app.Mu.RLock()
 	handlers := append([]object.Object{}, app.Handlers[strings.ToLower(event.Type)]...)
@@ -340,6 +343,12 @@ func dispatchDesktopEvent(app *object.DesktopApp, event *object.DesktopEvent) *o
 			_ = window.Runtime.Close()
 		}
 	}
+	if event.Type == "window_resized" || event.Type == "window_pixel_size_changed" {
+		app.Mu.RLock()
+		ctx := app.UIContexts[event.WindowID]
+		app.Mu.RUnlock()
+		markUIContextDirty(ctx)
+	}
 	if event.Type == "window_closed" {
 		app.Mu.Lock()
 		delete(app.Windows, event.WindowID)
@@ -377,10 +386,16 @@ func DesktopPollBuiltin() *object.Builtin {
 			return desktopError("desktopPoll", err)
 		}
 		if event == nil {
+			if renderError := renderDesktopUIContexts(app); renderError != nil {
+				return renderError
+			}
 			return &object.Null{}
 		}
 		if dispatchError := dispatchDesktopEvent(app, event); dispatchError != nil {
 			return dispatchError
+		}
+		if renderError := renderDesktopUIContexts(app); renderError != nil {
+			return renderError
 		}
 		return desktopEventObject(event)
 	}}
@@ -421,6 +436,12 @@ func DesktopRunBuiltin() *object.Builtin {
 				return desktopError("desktopRun", err)
 			}
 			if event == nil {
+				if renderError := renderDesktopUIContexts(app); renderError != nil {
+					app.Mu.Lock()
+					app.Running = false
+					app.Mu.Unlock()
+					return renderError
+				}
 				continue
 			}
 			if dispatchError := dispatchDesktopEvent(app, event); dispatchError != nil {
@@ -428,6 +449,12 @@ func DesktopRunBuiltin() *object.Builtin {
 				app.Running = false
 				app.Mu.Unlock()
 				return dispatchError
+			}
+			if renderError := renderDesktopUIContexts(app); renderError != nil {
+				app.Mu.Lock()
+				app.Running = false
+				app.Mu.Unlock()
+				return renderError
 			}
 		}
 		return NewBoolean(true)

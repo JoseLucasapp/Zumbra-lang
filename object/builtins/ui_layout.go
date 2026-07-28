@@ -1,0 +1,480 @@
+package builtins
+
+import (
+	"fmt"
+	"math"
+	"strings"
+
+	"zumbra/object"
+)
+
+func renderUIContext(ctx *object.UIContext) error {
+	if ctx == nil || ctx.Window == nil || ctx.Window.Runtime == nil {
+		return fmt.Errorf("invalid UI context")
+	}
+	ctx.Mu.RLock()
+	if ctx.Closed {
+		ctx.Mu.RUnlock()
+		return nil
+	}
+	root, theme, focusID, hoverID := ctx.Root, ctx.Theme, ctx.FocusID, ctx.HoverID
+	ctx.Mu.RUnlock()
+	width, height := ctx.Window.Runtime.Size()
+	if width < 1 || height < 1 {
+		return fmt.Errorf("window has invalid size")
+	}
+	if theme == nil {
+		theme = &object.UITheme{Name: "light", Values: defaultUITheme("light")}
+	}
+	layoutUINode(root, object.UIRect{X: 0, Y: 0, Width: float64(width), Height: float64(height)}, theme)
+	frame := &object.UIRenderFrame{Width: float64(width), Height: float64(height), Background: uiThemeString(theme, "background", "#f5f7fb")}
+	flattenUIRender(root, theme, focusID, hoverID, &frame.Items)
+	if renderer, ok := ctx.Window.Runtime.(object.DesktopUIRenderer); ok {
+		if err := renderer.RenderUI(frame); err != nil {
+			return err
+		}
+	}
+	ctx.Mu.Lock()
+	ctx.LastFrame = frame
+	ctx.Dirty = false
+	ctx.Mu.Unlock()
+	return nil
+}
+
+func layoutUINode(node *object.UINode, available object.UIRect, theme *object.UITheme) {
+	if node == nil {
+		return
+	}
+	node.Mu.RLock()
+	props := cloneUIProps(node.Props)
+	kind := node.Kind
+	visible := node.Visible
+	children := append([]*object.UINode{}, node.Children...)
+	node.Mu.RUnlock()
+	if !visible {
+		node.Mu.Lock()
+		node.Bounds = object.UIRect{}
+		node.Mu.Unlock()
+		return
+	}
+	margin := uiBox(props, "margin", 0)
+	x := available.X + margin.left
+	y := available.Y + margin.top
+	width := available.Width - margin.left - margin.right
+	height := available.Height - margin.top - margin.bottom
+	if v, ok := uiNumber(props["width"]); ok {
+		width = v
+	}
+	if v, ok := uiNumber(props["height"]); ok {
+		height = v
+	}
+	if v, ok := uiNumber(props["minWidth"]); ok {
+		width = math.Max(width, v)
+	}
+	if v, ok := uiNumber(props["maxWidth"]); ok {
+		width = math.Min(width, v)
+	}
+	if v, ok := uiNumber(props["minHeight"]); ok {
+		height = math.Max(height, v)
+	}
+	if v, ok := uiNumber(props["maxHeight"]); ok {
+		height = math.Min(height, v)
+	}
+	if width < 0 {
+		width = 0
+	}
+	if height < 0 {
+		height = 0
+	}
+	natural := uiNaturalHeight(kind, props, theme)
+	if _, explicit := uiNumber(props["height"]); !explicit && kind != "row" && kind != "column" && kind != "container" && kind != "modal" {
+		height = math.Min(height, natural)
+	}
+	bounds := object.UIRect{X: x, Y: y, Width: width, Height: height}
+	if kind == "modal" {
+		modalWidth := math.Min(width, uiPropNumber(props, "contentWidth", 480))
+		modalHeight := math.Min(height, uiPropNumber(props, "contentHeight", 320))
+		bounds = object.UIRect{X: x + (width-modalWidth)/2, Y: y + (height-modalHeight)/2, Width: modalWidth, Height: modalHeight}
+		x, y, width, height = bounds.X, bounds.Y, bounds.Width, bounds.Height
+	}
+	node.Mu.Lock()
+	node.Bounds = bounds
+	node.Mu.Unlock()
+	if len(children) == 0 {
+		return
+	}
+	padding := uiBox(props, "padding", uiThemeNumber(theme, "spacing", 8))
+	inner := object.UIRect{X: x + padding.left, Y: y + padding.top, Width: math.Max(0, width-padding.left-padding.right), Height: math.Max(0, height-padding.top-padding.bottom)}
+	direction := kind
+	if direction != "row" && direction != "column" {
+		direction = optionString(props, "direction", "column")
+	}
+	if kind == "modal" {
+		direction = "column"
+	}
+	gap := uiPropNumber(props, "gap", uiThemeNumber(theme, "spacing", 8))
+	if gap < 0 {
+		gap = 0
+	}
+	mainAvailable := inner.Height
+	if direction == "row" {
+		mainAvailable = inner.Width
+	}
+	mainAvailable -= gap * float64(maxInt(0, len(children)-1))
+	if mainAvailable < 0 {
+		mainAvailable = 0
+	}
+	fixed := 0.0
+	totalGrow := 0.0
+	for _, child := range children {
+		child.Mu.RLock()
+		cp := cloneUIProps(child.Props)
+		ck := child.Kind
+		child.Mu.RUnlock()
+		grow := uiPropNumber(cp, "grow", 0)
+		if grow > 0 {
+			totalGrow += grow
+			continue
+		}
+		size := uiNaturalHeight(ck, cp, theme)
+		if direction == "row" {
+			size = uiPropNumber(cp, "width", uiNaturalWidth(ck, cp, theme))
+		} else {
+			size = uiPropNumber(cp, "height", size)
+		}
+		fixed += size
+	}
+	remaining := math.Max(0, mainAvailable-fixed)
+	cursorX, cursorY := inner.X, inner.Y
+	justify := optionString(props, "justify", "start")
+	if totalGrow == 0 && remaining > 0 {
+		switch justify {
+		case "center":
+			if direction == "row" {
+				cursorX += remaining / 2
+			} else {
+				cursorY += remaining / 2
+			}
+		case "end":
+			if direction == "row" {
+				cursorX += remaining
+			} else {
+				cursorY += remaining
+			}
+		case "space-between":
+			if len(children) > 1 {
+				gap += remaining / float64(len(children)-1)
+			}
+		}
+	}
+	for _, child := range children {
+		child.Mu.RLock()
+		cp := cloneUIProps(child.Props)
+		ck := child.Kind
+		child.Mu.RUnlock()
+		grow := uiPropNumber(cp, "grow", 0)
+		var cw, ch float64
+		if direction == "row" {
+			cw = uiPropNumber(cp, "width", uiNaturalWidth(ck, cp, theme))
+			if grow > 0 && totalGrow > 0 {
+				cw = remaining * grow / totalGrow
+			}
+			ch = inner.Height
+			align := optionString(props, "align", "stretch")
+			naturalH := uiNaturalHeight(ck, cp, theme)
+			if align != "stretch" {
+				ch = math.Min(ch, uiPropNumber(cp, "height", naturalH))
+			}
+			cy := cursorY
+			if align == "center" {
+				cy = inner.Y + (inner.Height-ch)/2
+			} else if align == "end" {
+				cy = inner.Y + inner.Height - ch
+			}
+			layoutUINode(child, object.UIRect{X: cursorX, Y: cy, Width: cw, Height: ch}, theme)
+			cursorX += cw + gap
+		} else {
+			ch = uiPropNumber(cp, "height", uiNaturalHeight(ck, cp, theme))
+			if grow > 0 && totalGrow > 0 {
+				ch = remaining * grow / totalGrow
+			}
+			cw = inner.Width
+			align := optionString(props, "align", "stretch")
+			naturalW := uiNaturalWidth(ck, cp, theme)
+			if align != "stretch" {
+				cw = math.Min(cw, uiPropNumber(cp, "width", naturalW))
+			}
+			cx := cursorX
+			if align == "center" {
+				cx = inner.X + (inner.Width-cw)/2
+			} else if align == "end" {
+				cx = inner.X + inner.Width - cw
+			}
+			layoutUINode(child, object.UIRect{X: cx, Y: cursorY, Width: cw, Height: ch}, theme)
+			cursorY += ch + gap
+		}
+	}
+}
+
+type uiEdges struct{ left, top, right, bottom float64 }
+
+func uiBox(props map[string]object.Object, key string, fallback float64) uiEdges {
+	if v, ok := uiNumber(props[key]); ok {
+		return uiEdges{v, v, v, v}
+	}
+	result := uiEdges{fallback, fallback, fallback, fallback}
+	if v, ok := uiNumber(props[key+"Left"]); ok {
+		result.left = v
+	}
+	if v, ok := uiNumber(props[key+"Top"]); ok {
+		result.top = v
+	}
+	if v, ok := uiNumber(props[key+"Right"]); ok {
+		result.right = v
+	}
+	if v, ok := uiNumber(props[key+"Bottom"]); ok {
+		result.bottom = v
+	}
+	return result
+}
+func uiNumber(value object.Object) (float64, bool) {
+	switch v := value.(type) {
+	case *object.Integer:
+		return float64(v.Value), true
+	case *object.FixedInteger:
+		return float64(v.SignedValue()), true
+	case *object.Float:
+		return v.Value, true
+	}
+	return 0, false
+}
+func uiPropNumber(props map[string]object.Object, key string, fallback float64) float64 {
+	if v, ok := uiNumber(props[key]); ok {
+		return v
+	}
+	return fallback
+}
+func uiThemeNumber(theme *object.UITheme, key string, fallback float64) float64 {
+	if theme != nil {
+		if v, ok := uiNumber(theme.Values[key]); ok {
+			return v
+		}
+	}
+	return fallback
+}
+func uiThemeString(theme *object.UITheme, key, fallback string) string {
+	if theme != nil {
+		if v, ok := theme.Values[key].(*object.String); ok {
+			return v.Value
+		}
+	}
+	return fallback
+}
+func uiNaturalHeight(kind string, props map[string]object.Object, theme *object.UITheme) float64 {
+	control := uiThemeNumber(theme, "controlHeight", 36)
+	font := uiPropNumber(props, "fontSize", uiThemeNumber(theme, "fontSize", 14))
+	switch kind {
+	case "text":
+		return font + 8
+	case "textarea":
+		return uiPropNumber(props, "rows", 4)*(font+5) + 16
+	case "table":
+		rows := len(uiObjectArray(props["rows"]))
+		if rows == 0 {
+			rows = 1
+		}
+		return float64(rows+1) * control
+	case "list", "tree":
+		items := len(uiObjectArray(props["items"]))
+		if items == 0 {
+			items = 1
+		}
+		return float64(items) * control
+	case "tabs", "menu":
+		return control
+	case "modal":
+		return uiPropNumber(props, "height", 320)
+	case "tooltip":
+		return font + 16
+	case "progress":
+		return 20
+	case "image", "canvas":
+		return uiPropNumber(props, "height", 160)
+	case "spacer":
+		return uiPropNumber(props, "size", 8)
+	case "row", "column", "container":
+		return uiPropNumber(props, "height", control)
+	}
+	return control
+}
+func uiNaturalWidth(kind string, props map[string]object.Object, theme *object.UITheme) float64 {
+	text := optionString(props, "text", optionString(props, "label", optionString(props, "value", "")))
+	font := uiPropNumber(props, "fontSize", uiThemeNumber(theme, "fontSize", 14))
+	base := math.Max(48, float64(len([]rune(text)))*font*0.62+24)
+	switch kind {
+	case "input", "textarea", "select":
+		return math.Max(base, 180)
+	case "checkbox", "radio":
+		return base + 20
+	case "image", "canvas":
+		return uiPropNumber(props, "width", 240)
+	case "spacer":
+		return uiPropNumber(props, "size", 8)
+	}
+	return base
+}
+func uiObjectArray(value object.Object) []object.Object {
+	if a, ok := value.(*object.Array); ok {
+		return a.Elements
+	}
+	return nil
+}
+func maxInt(a, b int) int {
+	if a > b {
+		return a
+	}
+	return b
+}
+
+func flattenUIRender(node *object.UINode, theme *object.UITheme, focusID, hoverID string, items *[]object.UIRenderItem) {
+	if node == nil {
+		return
+	}
+	node.Mu.RLock()
+	visible := node.Visible
+	id, kind, bounds := node.ID, node.Kind, node.Bounds
+	props := cloneUIProps(node.Props)
+	children := append([]*object.UINode{}, node.Children...)
+	node.Mu.RUnlock()
+	if !visible {
+		return
+	}
+	applyUIStyleDefaults(kind, props, theme)
+	commands := []object.UICanvasCommand{}
+	if kind == "canvas" {
+		commands = parseCanvasCommands(props["commands"])
+	}
+	*items = append(*items, object.UIRenderItem{ID: id, Kind: kind, Bounds: bounds, Props: props, Focused: id == focusID, Hovered: id == hoverID, Commands: commands})
+	for _, child := range children {
+		flattenUIRender(child, theme, focusID, hoverID, items)
+	}
+}
+func cloneUIProps(source map[string]object.Object) map[string]object.Object {
+	result := make(map[string]object.Object, len(source))
+	for k, v := range source {
+		result[k] = v
+	}
+	return result
+}
+func applyUIStyleDefaults(kind string, props map[string]object.Object, theme *object.UITheme) {
+	set := func(key string, value object.Object) {
+		if _, ok := props[key]; !ok {
+			props[key] = value
+		}
+	}
+	set("fontSize", NewFloat(uiThemeNumber(theme, "fontSize", 14)))
+	set("textColor", NewString(uiThemeString(theme, "text", "#172033")))
+	set("borderColor", NewString(uiThemeString(theme, "border", "#cfd6e2")))
+	set("radius", NewFloat(uiThemeNumber(theme, "radius", 6)))
+	switch kind {
+	case "container", "row", "column", "table", "list", "tree", "tabs", "menu":
+		set("background", NewString("transparent"))
+	case "text":
+		set("background", NewString("transparent"))
+	case "button":
+		set("background", NewString(uiThemeString(theme, "primary", "#3867e8")))
+		set("textColor", NewString(uiThemeString(theme, "primaryText", "#ffffff")))
+	case "input", "textarea", "select", "checkbox", "radio":
+		set("background", NewString(uiThemeString(theme, "surface", "#ffffff")))
+	case "modal":
+		set("background", NewString(uiThemeString(theme, "surface", "#ffffff")))
+		set("overlay", NewString("#00000080"))
+	case "tooltip":
+		set("background", NewString("#202633"))
+		set("textColor", NewString("#ffffff"))
+	case "progress":
+		set("background", NewString(uiThemeString(theme, "surfaceAlt", "#eef2f7")))
+		set("fill", NewString(uiThemeString(theme, "primary", "#3867e8")))
+	case "canvas":
+		set("background", NewString(optionString(props, "background", "transparent")))
+	}
+}
+func parseCanvasCommands(value object.Object) []object.UICanvasCommand {
+	array, ok := value.(*object.Array)
+	if !ok {
+		return nil
+	}
+	commands := []object.UICanvasCommand{}
+	for _, entry := range array.Elements {
+		m, err := objectDictMap(entry, "canvas command")
+		if err != nil {
+			continue
+		}
+		kind := optionString(m, "kind", "")
+		values := map[string]object.Object{}
+		if dict, ok := m["values"].(*object.Dict); ok {
+			values, _ = objectDictMap(dict, "canvas values")
+		}
+		commands = append(commands, object.UICanvasCommand{Kind: kind, Values: values})
+	}
+	return commands
+}
+
+func uiNodeText(item object.UIRenderItem) string {
+	for _, key := range []string{"text", "label", "value", "placeholder", "title"} {
+		if v, ok := item.Props[key].(*object.String); ok && v.Value != "" {
+			return v.Value
+		}
+	}
+	return ""
+}
+func uiColor(props map[string]object.Object, key, fallback string) string {
+	if v, ok := props[key].(*object.String); ok {
+		return v.Value
+	}
+	return fallback
+}
+func uiBool(props map[string]object.Object, key string, fallback bool) bool {
+	return optionBool(props, key, fallback)
+}
+func uiString(props map[string]object.Object, key, fallback string) string {
+	return optionString(props, key, fallback)
+}
+func uiFloat(props map[string]object.Object, key string, fallback float64) float64 {
+	return uiPropNumber(props, key, fallback)
+}
+func uiClamp(v, min, max float64) float64 {
+	if v < min {
+		return min
+	}
+	if v > max {
+		return max
+	}
+	return v
+}
+func uiTextDisplay(value object.Object) string {
+	if value == nil {
+		return ""
+	}
+	switch v := value.(type) {
+	case *object.String:
+		return v.Value
+	case *object.Integer:
+		return fmt.Sprintf("%d", v.Value)
+	case *object.Float:
+		return fmt.Sprintf("%g", v.Value)
+	case *object.Boolean:
+		return fmt.Sprintf("%t", v.Value)
+	}
+	return value.Inspect()
+}
+func uiRowDisplay(row object.Object) string {
+	if d, ok := row.(*object.Dict); ok {
+		parts := []string{}
+		for _, pair := range d.Pairs {
+			parts = append(parts, uiTextDisplay(pair.Value))
+		}
+		return strings.Join(parts, " | ")
+	}
+	return uiTextDisplay(row)
+}

@@ -559,6 +559,30 @@ func (vm *VM) Run() error {
 				if err := vm.push(val); err != nil {
 					return err
 				}
+			case *object.UIContext:
+				val := builtins.UIContextMethod(d, attrName.Value)
+				if val == nil {
+					return fmt.Errorf("unknown method %s for UIContext", attrName.Value)
+				}
+				if err := vm.push(val); err != nil {
+					return err
+				}
+			case *object.UINode:
+				val := builtins.UINodeMethod(d, attrName.Value)
+				if val == nil {
+					return fmt.Errorf("unknown method %s for UINode", attrName.Value)
+				}
+				if err := vm.push(val); err != nil {
+					return err
+				}
+			case *object.UIState:
+				val := builtins.UIStateMethod(d, attrName.Value)
+				if val == nil {
+					return fmt.Errorf("unknown method %s for UIState", attrName.Value)
+				}
+				if err := vm.push(val); err != nil {
+					return err
+				}
 			case *object.SQLiteDatabase:
 				val := builtins.SQLiteDatabaseMethod(d, attrName.Value)
 				if val == nil {

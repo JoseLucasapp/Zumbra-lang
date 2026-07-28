@@ -983,3 +983,32 @@ DesktopProcess
 ```
 
 Documentação completa: [`docs/pt-BR/runtime-desktop-z13.md`](./pt-BR/runtime-desktop-z13.md).
+
+## Z14 — Toolkit de interface gráfica
+
+```zumbra
+import "../../std/desktop.zum" as desktop;
+import "../../std/ui.zum" as ui;
+
+var app << desktop.app({"backend": "headless"});
+var window << app.window({"title": "UI", "width": 640, "height": 480});
+var count << ui.state(0);
+var label << ui.text("");
+ui.bind(label, "value", count);
+
+var root << ui.columnWith({"padding": 12, "gap": 8}, [
+    ui.text("Zumbra GUI"),
+    ui.button("Increment", fct(event) {
+        event;
+        ui.update(count, ui.value(count) + 1);
+    }),
+    label
+]);
+
+var context << ui.mount(app, window, root, {"theme": ui.theme("light")});
+context.render();
+context.close();
+app.close();
+```
+
+A árvore é retida e usa `UINode`, `UIState`, `UITheme` e `UIContext`. Consulte `docs/pt-BR/toolkit-interface-grafica-z14.md` para layouts, componentes, eventos, data binding, canvas, temas, acessibilidade e backend headless.

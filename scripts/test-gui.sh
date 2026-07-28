@@ -11,46 +11,45 @@ for compiler in clang gcc; do
 done
 
 mkdir -p build
+source="code_examples/core/gui_toolkit.zum"
+graphical="code_examples/core/gui_window.zum"
+expected=$'headless\nZumbra UI\ntrue\nclicked\n640\ntrue\ntrue'
 
-expected=$'headless\nZumbra Desktop 0.8.0\n960\n640\nhello desktop\ntrue\n7'
-source="code_examples/core/desktop_runtime.zum"
-
-echo "Running the complete Z13 Go test suite..."
+echo "Running the complete Z14 Go test suite..."
 go test ./...
 
-echo "Checking and running the desktop example in the VM..."
+echo "Checking and running the deterministic GUI example in the VM..."
 go run . check "$source"
 vm_output="$(ZUMBRA_DESKTOP_HEADLESS=1 go run . run "$source")"
 if [[ "$vm_output" != "$expected" ]]; then
-  printf 'Unexpected VM desktop output:\n%s\n' "$vm_output" >&2
+  printf 'Unexpected VM GUI output:\n%s\n' "$vm_output" >&2
   exit 1
 fi
 
-echo "Checking the real graphical SDL3 example without opening a window..."
-go run . check code_examples/core/desktop_window.zum
+echo "Checking the real SDL3 GUI example without opening a window..."
+go run . check "$graphical"
 
 for compiler in clang gcc; do
-  go run . build --release --compiler "$compiler" -o "build/z13-window-${compiler}" code_examples/core/desktop_window.zum
-done
-
-for compiler in clang gcc; do
-  output="build/z13-desktop-${compiler}"
-  echo "Building desktop runtime with ${compiler}..."
-  go run . build --release --compiler "$compiler" -o "$output" "$source"
-  native_output="$(ZUMBRA_DESKTOP_HEADLESS=1 "./$output")"
+  echo "Building the headless GUI example with ${compiler}..."
+  headless_output="build/z14-gui-headless-${compiler}"
+  go run . build --release --compiler "$compiler" -o "$headless_output" "$source"
+  native_output="$(ZUMBRA_DESKTOP_HEADLESS=1 "./$headless_output")"
   if [[ "$native_output" != "$expected" ]]; then
-    printf 'VM/%s desktop output mismatch:\n%s\n' "$compiler" "$native_output" >&2
+    printf 'VM/%s GUI output mismatch:\n%s\n' "$compiler" "$native_output" >&2
     exit 1
   fi
+
+  echo "Building the real SDL3 GUI example with ${compiler}..."
+  go run . build --release --compiler "$compiler" -o "build/z14-gui-window-${compiler}" "$graphical"
 done
 
-echo "Running desktop race checks..."
+echo "Running GUI race checks..."
 ZUMBRA_DESKTOP_HEADLESS=1 go test -race ./object ./object/builtins ./evaluator ./vm ./conformance
 
-echo "Rechecking Z12 persistence and Z11 HTTP/WebSockets..."
-scripts/test-data-persistence.sh
+echo "Rechecking the Z13 desktop runtime and earlier milestones..."
+scripts/test-desktop.sh
 
-echo "Z13 desktop runtime tests passed."
+echo "Z14 GUI toolkit tests passed."
 
 sdl_found=false
 if ldconfig -p 2>/dev/null | grep -q 'libSDL3\.so'; then
@@ -64,5 +63,5 @@ fi
 if [[ "$sdl_found" == false ]]; then
   echo "Note: SDL3 was not found by the filesystem probe. Headless validation passed; run the graphical example to verify dynamic loading."
 else
-  echo "SDL3 shared library detected."
+  echo "SDL3 shared library detected. Run: go run . run $graphical"
 fi

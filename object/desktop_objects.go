@@ -69,15 +69,16 @@ type DesktopProcessRuntime interface {
 }
 
 type DesktopApp struct {
-	Backend   DesktopBackend
-	Options   map[string]Object
-	Mu        sync.RWMutex
-	Windows   map[int64]*DesktopWindow
-	Trays     []*DesktopTray
-	Handlers  map[string][]Object
-	Shortcuts map[string]Object
-	Running   bool
-	Closed    bool
+	Backend    DesktopBackend
+	Options    map[string]Object
+	Mu         sync.RWMutex
+	Windows    map[int64]*DesktopWindow
+	Trays      []*DesktopTray
+	Handlers   map[string][]Object
+	Shortcuts  map[string]Object
+	UIContexts map[int64]*UIContext
+	Running    bool
+	Closed     bool
 }
 
 func (a *DesktopApp) Type() ObjectType { return DESKTOP_APP_OBJ }

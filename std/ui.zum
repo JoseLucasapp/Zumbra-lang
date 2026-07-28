@@ -1,0 +1,52 @@
+// Z14 retained-mode GUI toolkit.
+pub fct theme(value) { uiTheme(value); }
+pub fct state(value) { uiState(value); }
+pub fct value(stateValue) { uiStateGet(stateValue); }
+pub fct update(stateValue, nextValue) { uiStateSet(stateValue, nextValue); }
+pub fct subscribe(stateValue, handler) { uiStateSubscribe(stateValue, handler); }
+pub fct bind(node, property, stateValue) { uiBind(node, property, stateValue); }
+
+pub fct node(kind, options, children) { uiNode(kind, options, children); }
+pub fct row(children) { uiRow({}, children); }
+pub fct rowWith(options, children) { uiRow(options, children); }
+pub fct column(children) { uiColumn({}, children); }
+pub fct columnWith(options, children) { uiColumn(options, children); }
+pub fct container(children) { uiContainer({}, children); }
+pub fct containerWith(options, children) { uiContainer(options, children); }
+pub fct text(value) { uiText({"text": value}, []); }
+pub fct textWith(value, options) { uiText({"text": value, "options": options}, []); }
+pub fct button(label, handler) { uiButton({"text": label, "onClick": handler}, []); }
+pub fct buttonWith(options) { uiButton(options, []); }
+pub fct input(options) { uiInput(options, []); }
+pub fct textarea(options) { uiTextarea(options, []); }
+pub fct select(options) { uiSelect(options, []); }
+pub fct checkbox(options) { uiCheckbox(options, []); }
+pub fct radio(options) { uiRadio(options, []); }
+pub fct table(options) { uiTable(options, []); }
+pub fct list(options) { uiList(options, []); }
+pub fct tree(options) { uiTree(options, []); }
+pub fct tabs(options, children) { uiTabs(options, children); }
+pub fct menu(options, children) { uiMenu(options, children); }
+pub fct modal(options, children) { uiModal(options, children); }
+pub fct tooltip(options, children) { uiTooltip(options, children); }
+pub fct progress(options) { uiProgress(options, []); }
+pub fct image(options) { uiImage(options, []); }
+pub fct canvas(options) { uiCanvas(options, []); }
+pub fct spacer(size) { uiSpacer({"size": size}, []); }
+pub fct custom(name, options, children) { uiCustom({"component": name, "options": options}, children); }
+
+pub fct mount(application, window, root, options) { uiMount(application, window, root, options); }
+pub fct unmount(context) { uiUnmount(context); }
+pub fct render(context) { uiRender(context); }
+pub fct snapshot(context) { uiSnapshot(context); }
+pub fct setTheme(context, themeValue) { uiSetTheme(context, themeValue); }
+pub fct dispatch(context, event) { uiDispatch(context, event); }
+pub fct set(nodeValue, property, value) { uiSet(nodeValue, property, value); }
+pub fct get(nodeValue, property) { uiGet(nodeValue, property); }
+pub fct add(parent, child) { uiAdd(parent, child); }
+pub fct remove(parent, childId) { uiRemove(parent, childId); }
+pub fct find(context, id) { uiFind(context, id); }
+pub fct focus(context, nodeValue) { uiFocus(context, nodeValue); }
+pub fct focusNext(context, reverse) { uiFocusNext(context, reverse); }
+pub fct accessibility(context) { uiAccessibility(context); }
+pub fct draw(canvasValue, kind, values) { uiCanvasCommand(canvasValue, kind, values); }

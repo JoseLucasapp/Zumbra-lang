@@ -1,0 +1,54 @@
+import "../../std/desktop.zum" as desktop;
+import "../../std/ui.zum" as ui;
+
+var application << desktop.app({
+    "backend": "auto",
+    "name": "Zumbra GUI",
+    "version": "0.8.0",
+    "identifier": "dev.zumbra.gui",
+    "quitOnLastWindow": true
+});
+var window << application.window({
+    "title": "Zumbra GUI - Z14",
+    "width": 900,
+    "height": 650,
+    "resizable": true,
+    "highDPI": true
+});
+
+var message << ui.state("Ready");
+var messageText << ui.text("");
+ui.bind(messageText, "text", message);
+
+var drawing << ui.canvas({"height": 130, "background": "#eef2f7", "border": true});
+ui.draw(drawing, "fillRect", {"x": 16, "y": 18, "width": 90, "height": 54, "color": "#3867e8"});
+ui.draw(drawing, "line", {"x": 16, "y": 92, "x2": 250, "y2": 92, "color": "#172033"});
+ui.draw(drawing, "text", {"x": 126, "y": 36, "text": "Zumbra Canvas", "color": "#172033"});
+
+var root << ui.columnWith({"padding": 20, "gap": 12}, [
+    ui.textWith("Zumbra GUI Toolkit", {"fontSize": 20}),
+    ui.text("Retained mode UI rendered with SDL3"),
+    ui.rowWith({"gap": 10}, [
+        ui.input({"id": "project", "placeholder": "Project name", "value": "My Zumbra App", "grow": 1}),
+        ui.button("Save", fct(event) { event; ui.update(message, "Saved"); })
+    ]),
+    ui.rowWith({"gap": 14}, [
+        ui.checkbox({"text": "Dark mode", "checked": false, "onChange": fct(event) { event; }}),
+        ui.radio({"text": "Linux", "checked": true}),
+        ui.radio({"text": "Windows", "checked": false})
+    ]),
+    ui.progress({"value": 72, "max": 100}),
+    drawing,
+    ui.containerWith({"border": true, "padding": 12, "grow": 1}, [
+        ui.text("This container grows with the window."),
+        messageText
+    ])
+]);
+
+var context << ui.mount(application, window, root, {"theme": ui.theme("light")});
+application.shortcut("Ctrl+Q", fct(event) { event; application.quit(); });
+application.shortcut("Tab", fct(event) { event; context.focusNext(false); });
+window.show();
+application.run();
+context.close();
+application.close();

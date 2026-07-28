@@ -63,6 +63,10 @@ const (
 	DesktopWindow       Kind = "desktop_window"
 	DesktopTray         Kind = "desktop_tray"
 	DesktopProcess      Kind = "desktop_process"
+	UINode              Kind = "ui_node"
+	UIState             Kind = "ui_state"
+	UITheme             Kind = "ui_theme"
+	UIContext           Kind = "ui_context"
 )
 
 type Type struct {

@@ -456,6 +456,54 @@ func builtinType(name string) (*Type, bool) {
 	case "desktopWindowDisplayScale", "desktopWindowPixelDensity":
 		return FuncOf([]*Type{Simple(DesktopWindow)}, Simple(Float)), true
 
+	case "uiTheme":
+		return FuncOf([]*Type{Simple(Unknown)}, Simple(UITheme)), true
+	case "uiState":
+		return FuncOf([]*Type{Simple(Unknown)}, Simple(UIState)), true
+	case "uiStateGet":
+		return FuncOf([]*Type{Simple(UIState)}, Simple(Unknown)), true
+	case "uiStateSet":
+		return FuncOf([]*Type{Simple(UIState), Simple(Unknown)}, Simple(Unknown)), true
+	case "uiStateSubscribe":
+		handler := FuncOf([]*Type{Simple(Unknown)}, Simple(Unknown))
+		return FuncOf([]*Type{Simple(UIState), handler}, Simple(UIState)), true
+	case "uiBind":
+		return FuncOf([]*Type{Simple(UINode), Simple(String), Simple(UIState)}, Simple(UINode)), true
+	case "uiNode":
+		return FuncOf([]*Type{Simple(String), DictOf(Simple(String), Simple(Unknown)), ArrayOf(Simple(UINode))}, Simple(UINode)), true
+	case "uiRow", "uiColumn", "uiContainer", "uiText", "uiButton", "uiInput", "uiTextarea", "uiSelect", "uiCheckbox", "uiRadio", "uiTable", "uiList", "uiTree", "uiTabs", "uiMenu", "uiModal", "uiTooltip", "uiProgress", "uiImage", "uiCanvas", "uiSpacer", "uiCustom":
+		return FuncOf([]*Type{DictOf(Simple(String), Simple(Unknown)), ArrayOf(Simple(UINode))}, Simple(UINode)), true
+	case "uiMount":
+		return FuncOf([]*Type{Simple(DesktopApp), Simple(DesktopWindow), Simple(UINode), DictOf(Simple(String), Simple(Unknown))}, Simple(UIContext)), true
+	case "uiUnmount":
+		return FuncOf([]*Type{Simple(UIContext)}, Simple(Bool)), true
+	case "uiRender":
+		return FuncOf([]*Type{Simple(UIContext)}, Simple(Bool)), true
+	case "uiSnapshot":
+		return FuncOf([]*Type{Simple(UIContext)}, DictOf(Simple(String), Simple(Unknown))), true
+	case "uiSetTheme":
+		return FuncOf([]*Type{Simple(UIContext), Simple(UITheme)}, Simple(UIContext)), true
+	case "uiDispatch":
+		return FuncOf([]*Type{Simple(UIContext), DictOf(Simple(String), Simple(Unknown))}, Simple(Bool)), true
+	case "uiSet":
+		return FuncOf([]*Type{Simple(UINode), Simple(String), Simple(Unknown)}, Simple(UINode)), true
+	case "uiGet":
+		return FuncOf([]*Type{Simple(UINode), Simple(String)}, Simple(Unknown)), true
+	case "uiAdd":
+		return FuncOf([]*Type{Simple(UINode), Simple(UINode)}, Simple(UINode)), true
+	case "uiRemove":
+		return FuncOf([]*Type{Simple(UINode), Simple(String)}, Simple(Bool)), true
+	case "uiFind":
+		return FuncOf([]*Type{Simple(UIContext), Simple(String)}, Simple(Unknown)), true
+	case "uiFocus":
+		return FuncOf([]*Type{Simple(UIContext), Simple(UINode)}, Simple(Bool)), true
+	case "uiFocusNext":
+		return FuncOf([]*Type{Simple(UIContext), Simple(Bool)}, Simple(Unknown)), true
+	case "uiAccessibility":
+		return FuncOf([]*Type{Simple(UIContext)}, ArrayOf(DictOf(Simple(String), Simple(Unknown)))), true
+	case "uiCanvasCommand":
+		return FuncOf([]*Type{Simple(UINode), Simple(String), DictOf(Simple(String), Simple(Unknown))}, Simple(UINode)), true
+
 	case "httpApp":
 		return FuncOf(nil, Simple(HttpApp)), true
 	case "httpRoute":

@@ -50,6 +50,7 @@ func TestCoreSyntaxSnippetsParseAndCompile(t *testing.T) {
 		`var limiter << rateLimiter(2, 1000); rateAllow(limiter, "client");`,
 		`var encoded << binaryEncode({"score": 42}); binaryDecode(encoded);`,
 		`var app << desktopApp({"backend": "headless"}); var window << app.window({"title": "Docs", "width": 640, "height": 480}); window.setSize(800, 600); app.close();`,
+		`var app << desktopApp({"backend": "headless"}); var window << app.window({"title": "Docs", "width": 640, "height": 480}); var root << uiColumn({"padding": 8}, [uiText({"text": "Hello"}, [])]); var context << uiMount(app, window, root, {"theme": uiTheme("light")}); uiSnapshot(context); context.close(); app.close();`,
 		`var run << fct() { 1; }; try run() or err { err; };`,
 	}
 

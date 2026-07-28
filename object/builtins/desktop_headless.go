@@ -186,6 +186,7 @@ type headlessWindow struct {
 	open, visible, fullscreen                    bool
 	scale, density                               float64
 	icon                                         string
+	lastUI                                       *object.UIRenderFrame
 }
 
 func (w *headlessWindow) ID() int64 { return w.id }
@@ -329,6 +330,21 @@ func (w *headlessWindow) SetIcon(path string) error {
 	}
 	w.icon = path
 	return nil
+}
+
+func (w *headlessWindow) RenderUI(frame *object.UIRenderFrame) error {
+	w.mu.Lock()
+	defer w.mu.Unlock()
+	if !w.open {
+		return errors.New("window is closed")
+	}
+	w.lastUI = frame
+	return nil
+}
+func (w *headlessWindow) LastUIFrame() *object.UIRenderFrame {
+	w.mu.RLock()
+	defer w.mu.RUnlock()
+	return w.lastUI
 }
 
 type headlessTray struct {
