@@ -148,7 +148,7 @@ response.html(text);
 ```zumbra
 api.use(fct(request, response) {
     request;
-    response.header("X-Zumbra", "0.6.0");
+    response.header("X-Zumbra", "0.7.0");
     true;
 });
 ```

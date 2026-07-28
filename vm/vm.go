@@ -527,6 +527,38 @@ func (vm *VM) Run() error {
 					}
 				}
 
+			case *object.DesktopApp:
+				val := builtins.DesktopAppMethod(d, attrName.Value)
+				if val == nil {
+					return fmt.Errorf("unknown method %s for DesktopApp", attrName.Value)
+				}
+				if err := vm.push(val); err != nil {
+					return err
+				}
+			case *object.DesktopWindow:
+				val := builtins.DesktopWindowMethod(d, attrName.Value)
+				if val == nil {
+					return fmt.Errorf("unknown method %s for DesktopWindow", attrName.Value)
+				}
+				if err := vm.push(val); err != nil {
+					return err
+				}
+			case *object.DesktopTray:
+				val := builtins.DesktopTrayMethod(d, attrName.Value)
+				if val == nil {
+					return fmt.Errorf("unknown method %s for DesktopTray", attrName.Value)
+				}
+				if err := vm.push(val); err != nil {
+					return err
+				}
+			case *object.DesktopProcess:
+				val := builtins.DesktopProcessMethod(d, attrName.Value)
+				if val == nil {
+					return fmt.Errorf("unknown method %s for DesktopProcess", attrName.Value)
+				}
+				if err := vm.push(val); err != nil {
+					return err
+				}
 			case *object.SQLiteDatabase:
 				val := builtins.SQLiteDatabaseMethod(d, attrName.Value)
 				if val == nil {

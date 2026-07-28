@@ -770,6 +770,17 @@ func applyFunctionSync(fct object.Object, args []object.Object) object.Object {
 	}
 }
 
+// InvokeFunction executes a language callback synchronously. Runtime services
+// such as HTTP and desktop use it to enter the evaluator without duplicating
+// function invocation semantics.
+func InvokeFunction(handler object.Object, args []object.Object) (object.Object, error) {
+	result := applyFunctionSync(handler, args)
+	if errObj, ok := result.(*object.Error); ok {
+		return result, fmt.Errorf("%s", errObj.Message)
+	}
+	return result, nil
+}
+
 func unwrapReturnValue(obj object.Object) object.Object {
 	if returnValue, ok := obj.(*object.ReturnValue); ok {
 		return returnValue.Value
@@ -1050,6 +1061,26 @@ func evalAttributeAccess(left object.Object, property string) object.Object {
 			return pair.Value
 		}
 		return NULL
+	case *object.DesktopApp:
+		if method := objectbuiltins.DesktopAppMethod(value, property); method != nil {
+			return method
+		}
+		return newError("unknown method %s for DesktopApp", property)
+	case *object.DesktopWindow:
+		if method := objectbuiltins.DesktopWindowMethod(value, property); method != nil {
+			return method
+		}
+		return newError("unknown method %s for DesktopWindow", property)
+	case *object.DesktopTray:
+		if method := objectbuiltins.DesktopTrayMethod(value, property); method != nil {
+			return method
+		}
+		return newError("unknown method %s for DesktopTray", property)
+	case *object.DesktopProcess:
+		if method := objectbuiltins.DesktopProcessMethod(value, property); method != nil {
+			return method
+		}
+		return newError("unknown method %s for DesktopProcess", property)
 	case *object.SQLiteDatabase:
 		if method := objectbuiltins.SQLiteDatabaseMethod(value, property); method != nil {
 			return method

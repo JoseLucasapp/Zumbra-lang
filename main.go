@@ -19,7 +19,7 @@ import (
 	"zumbra/vm"
 )
 
-const version = "0.6.0"
+const version = "0.7.0"
 
 func main() {
 	currentUser, err := user.Current()
@@ -159,9 +159,11 @@ func runFile(filename string) {
 	}
 
 	code := comp.Bytecode()
-	builtins.SetRouteInvoker(func(handler object.Object, args ...object.Object) (object.Object, error) {
+	callbackInvoker := func(handler object.Object, args ...object.Object) (object.Object, error) {
 		return vm.InvokeFunction(handler, args, code.Constants, globals)
-	})
+	}
+	builtins.SetRouteInvoker(callbackInvoker)
+	builtins.SetDesktopInvoker(callbackInvoker)
 	machine := vm.NewWithGlobalsStore(code, globals)
 	if err := machine.Run(); err != nil {
 		fmt.Printf("Error on VM execution: %s\n", err)

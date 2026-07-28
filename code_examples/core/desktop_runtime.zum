@@ -1,0 +1,45 @@
+import "../../std/desktop.zum" as desktop;
+
+var application << desktop.app({
+    "backend": "headless",
+    "name": "Zumbra Desktop",
+    "identifier": "dev.zumbra.desktop-example",
+    "quitOnLastWindow": true
+});
+
+var mainWindow << application.window({
+    "title": "Zumbra Desktop",
+    "width": 900,
+    "height": 600,
+    "resizable": true,
+    "highDPI": true
+});
+
+mainWindow.setTitle("Zumbra Desktop 0.7.0");
+mainWindow.setSize(960, 640);
+mainWindow.setPosition(40, 50);
+mainWindow.setFullscreen(true);
+mainWindow.setFullscreen(false);
+application.setClipboard("hello desktop");
+
+var received << false;
+application.on("ready_for_test", fct(event) {
+    received << event["message"] == "desktop-ok";
+    application.quit();
+});
+application.emit({
+    "type": "ready_for_test",
+    "data": {"message": "desktop-ok"}
+});
+application.run();
+
+var size << mainWindow.size();
+var process << desktop.startProcess("/bin/sh", {"args": ["-c", "exit 7"]});
+show(application.backend());
+show(mainWindow.title());
+show(size["width"]);
+show(size["height"]);
+show(application.clipboard());
+show(received);
+show(process.wait());
+application.close();

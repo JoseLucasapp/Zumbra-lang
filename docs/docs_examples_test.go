@@ -49,6 +49,7 @@ func TestCoreSyntaxSnippetsParseAndCompile(t *testing.T) {
 		`var store << sessionSQLite(":memory:"); var id << sessionCreate(store, {"user": "local"}, 1000); sessionDelete(store, id); sessionClose(store);`,
 		`var limiter << rateLimiter(2, 1000); rateAllow(limiter, "client");`,
 		`var encoded << binaryEncode({"score": 42}); binaryDecode(encoded);`,
+		`var app << desktopApp({"backend": "headless"}); var window << app.window({"title": "Docs", "width": 640, "height": 480}); window.setSize(800, 600); app.close();`,
 		`var run << fct() { 1; }; try run() or err { err; };`,
 	}
 

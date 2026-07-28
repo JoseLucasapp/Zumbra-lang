@@ -113,9 +113,11 @@ func Start(in io.Reader, out io.Writer) {
 
 		code := comp.Bytecode()
 		constants = code.Constants
-		builtins.SetRouteInvoker(func(handler object.Object, args ...object.Object) (object.Object, error) {
+		callbackInvoker := func(handler object.Object, args ...object.Object) (object.Object, error) {
 			return vm.InvokeFunction(handler, args, code.Constants, globals)
-		})
+		}
+		builtins.SetRouteInvoker(callbackInvoker)
+		builtins.SetDesktopInvoker(callbackInvoker)
 
 		machine := vm.NewWithGlobalsStore(code, globals)
 		err = machine.Run()

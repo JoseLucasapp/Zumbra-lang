@@ -1,7 +1,7 @@
 #ifndef ZUMBRA_RUNTIME_H
 #define ZUMBRA_RUNTIME_H
 
-#define ZUMBRA_NATIVE_ABI_VERSION 4u
+#define ZUMBRA_NATIVE_ABI_VERSION 5u
 
 #include <stdbool.h>
 #include <stddef.h>
@@ -62,7 +62,11 @@ typedef enum {
     ZK_METRICS,
     ZK_TRACE_SPAN,
     ZK_SESSION_STORE,
-    ZK_RATE_LIMITER
+    ZK_RATE_LIMITER,
+    ZK_DESKTOP_APP,
+    ZK_DESKTOP_WINDOW,
+    ZK_DESKTOP_TRAY,
+    ZK_DESKTOP_PROCESS
 } ZKind;
 
 typedef enum {
@@ -118,7 +122,12 @@ typedef enum {
     ZV_SESSION_STORE,
     ZV_RATE_LIMITER,
     ZV_Z12_METHOD,
-    ZV_NATIVE_METHOD
+    ZV_NATIVE_METHOD,
+    ZV_DESKTOP_APP,
+    ZV_DESKTOP_WINDOW,
+    ZV_DESKTOP_TRAY,
+    ZV_DESKTOP_PROCESS,
+    ZV_DESKTOP_METHOD
 } ZTag;
 
 typedef struct ZValue ZValue;

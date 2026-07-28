@@ -34,6 +34,7 @@ func TestRunnableCodeExamplesParseCompileAndRun(t *testing.T) {
 		"date.zum":                 true,
 		"data_persistence.zum":     true,
 		"data_serialization.zum":   true,
+		"desktop_runtime.zum":      true,
 		"config_observability.zum": true,
 		"for.zum":                  true,
 		"functions.zum":            true,
@@ -110,9 +111,11 @@ func TestRunnableCodeExamplesParseCompileAndRun(t *testing.T) {
 
 			code := comp.Bytecode()
 			globals := make([]object.Object, vm.GlobalSize)
-			builtins.SetRouteInvoker(func(handler object.Object, args ...object.Object) (object.Object, error) {
+			callbackInvoker := func(handler object.Object, args ...object.Object) (object.Object, error) {
 				return vm.InvokeFunction(handler, args, code.Constants, globals)
-			})
+			}
+			builtins.SetRouteInvoker(callbackInvoker)
+			builtins.SetDesktopInvoker(callbackInvoker)
 			machine := vm.NewWithGlobalsStore(code, globals)
 			if err := machine.Run(); err != nil {
 				t.Fatalf("vm error in %s: %s", path, err)
@@ -157,9 +160,11 @@ func TestZ11HTTPExamplesParseCompileAndRun(t *testing.T) {
 			}
 			code := comp.Bytecode()
 			globals := make([]object.Object, vm.GlobalSize)
-			builtins.SetRouteInvoker(func(handler object.Object, args ...object.Object) (object.Object, error) {
+			callbackInvoker := func(handler object.Object, args ...object.Object) (object.Object, error) {
 				return vm.InvokeFunction(handler, args, code.Constants, globals)
-			})
+			}
+			builtins.SetRouteInvoker(callbackInvoker)
+			builtins.SetDesktopInvoker(callbackInvoker)
 			machine := vm.NewWithGlobalsStore(code, globals)
 			if err := machine.Run(); err != nil {
 				t.Fatal(err)

@@ -2840,6 +2840,76 @@ func (c *Checker) inferExpressionImpl(exp ast.Expression) *Type {
 	case *ast.AttributeAccess:
 		left := c.inferExpression(e.Object)
 		switch left.Kind {
+		case DesktopApp:
+			eventHandler := FuncOf([]*Type{DictOf(Simple(String), Simple(Unknown))}, Simple(Unknown))
+			switch e.Property.Value {
+			case "backend":
+				return FuncOf(nil, Simple(String))
+			case "window":
+				return FuncOf([]*Type{DictOf(Simple(String), Simple(Unknown))}, Simple(DesktopWindow))
+			case "on", "shortcut":
+				return FuncOf([]*Type{Simple(String), eventHandler}, Simple(DesktopApp))
+			case "poll":
+				return FuncOf([]*Type{Simple(Int)}, Simple(Unknown))
+			case "run", "quit", "running", "close":
+				return FuncOf(nil, Simple(Bool))
+			case "emit":
+				return FuncOf([]*Type{DictOf(Simple(String), Simple(Unknown))}, Simple(Bool))
+			case "setClipboard":
+				return FuncOf([]*Type{Simple(String)}, Simple(Bool))
+			case "clipboard":
+				return FuncOf(nil, Simple(String))
+			case "pickFile":
+				return FuncOf([]*Type{DictOf(Simple(String), Simple(Unknown))}, ArrayOf(Simple(String)))
+			case "pickFolder":
+				return FuncOf([]*Type{DictOf(Simple(String), Simple(Unknown))}, Simple(Unknown))
+			case "notify":
+				return FuncOf([]*Type{DictOf(Simple(String), Simple(Unknown))}, Simple(Bool))
+			case "paths":
+				return FuncOf(nil, DictOf(Simple(String), Simple(String)))
+			case "openExternal":
+				return FuncOf([]*Type{Simple(String)}, Simple(Bool))
+			case "tray":
+				return FuncOf([]*Type{DictOf(Simple(String), Simple(Unknown))}, Simple(DesktopTray))
+			}
+		case DesktopWindow:
+			switch e.Property.Value {
+			case "show", "hide", "close", "maximize", "minimize", "restore", "focus":
+				return FuncOf(nil, Simple(DesktopWindow))
+			case "isOpen", "fullscreen":
+				return FuncOf(nil, Simple(Bool))
+			case "id":
+				return FuncOf(nil, Simple(Int))
+			case "title":
+				return FuncOf(nil, Simple(String))
+			case "setTitle", "setIcon":
+				return FuncOf([]*Type{Simple(String)}, Simple(DesktopWindow))
+			case "size", "pixelSize", "position":
+				return FuncOf(nil, DictOf(Simple(String), Simple(Int)))
+			case "setSize", "setPosition":
+				return FuncOf([]*Type{Simple(Int), Simple(Int)}, Simple(DesktopWindow))
+			case "setFullscreen":
+				return FuncOf([]*Type{Simple(Bool)}, Simple(DesktopWindow))
+			case "displayScale", "pixelDensity":
+				return FuncOf(nil, Simple(Float))
+			}
+		case DesktopTray:
+			eventHandler := FuncOf([]*Type{DictOf(Simple(String), Simple(Unknown))}, Simple(Unknown))
+			switch e.Property.Value {
+			case "add":
+				return FuncOf([]*Type{Simple(String), Simple(String), eventHandler}, Simple(DesktopTray))
+			case "setTooltip":
+				return FuncOf([]*Type{Simple(String)}, Simple(DesktopTray))
+			case "close", "isOpen":
+				return FuncOf(nil, Simple(Bool))
+			}
+		case DesktopProcess:
+			switch e.Property.Value {
+			case "wait", "id":
+				return FuncOf(nil, Simple(Int))
+			case "kill", "running":
+				return FuncOf(nil, Simple(Bool))
+			}
 		case SQLiteDatabase:
 			switch e.Property.Value {
 			case "exec":
@@ -3201,7 +3271,7 @@ func (c *Checker) typeFromName(name string) *Type {
 		return value
 	}
 	switch Kind(name) {
-	case Int, U8, U16, U32, U64, I8, I16, I32, I64, Float, Bool, String, Pointer, Null, Task, Channel, Mutex, RWMutex, WaitGroup, Semaphore, AtomicInt, NetListener, NetStream, UDPSocket, HttpApp, HttpServer, HttpRequest, HttpResponse, HttpClientResponse, HttpStream, HttpFile, WebSocket, SQLiteDatabase, SQLiteStatement, SQLiteTransaction, SQLRows, SQLParameters, PostgresDatabase, PostgresStatement, PostgresTransaction, RedisClient, Config, Logger, MetricsRegistry, TraceSpan, SessionStore, RateLimiter:
+	case Int, U8, U16, U32, U64, I8, I16, I32, I64, Float, Bool, String, Pointer, Null, Task, Channel, Mutex, RWMutex, WaitGroup, Semaphore, AtomicInt, NetListener, NetStream, UDPSocket, HttpApp, HttpServer, HttpRequest, HttpResponse, HttpClientResponse, HttpStream, HttpFile, WebSocket, SQLiteDatabase, SQLiteStatement, SQLiteTransaction, SQLRows, SQLParameters, PostgresDatabase, PostgresStatement, PostgresTransaction, RedisClient, Config, Logger, MetricsRegistry, TraceSpan, SessionStore, RateLimiter, DesktopApp, DesktopWindow, DesktopTray, DesktopProcess:
 		return Simple(Kind(name))
 	default:
 		return Simple(Unknown)

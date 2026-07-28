@@ -83,6 +83,14 @@ static ZValue z_sqlite_get_field(ZValue value, const char *name, bool *handled);
 static ZValue z_sqlite_call_method(ZValue callable, const ZValue *args, size_t argc);
 #endif
 
+#if defined(ZUMBRA_ENABLE_DESKTOP)
+static void z_desktop_runtime_init(void);
+static void z_desktop_runtime_shutdown(void);
+static ZValue z_desktop_call_builtin(const char *name, const ZValue *args, size_t argc, bool *handled);
+static ZValue z_desktop_get_field(ZValue value, const char *name, bool *handled);
+static ZValue z_desktop_call_method(ZValue callable, const ZValue *args, size_t argc);
+#endif
+
 #if defined(ZUMBRA_ENABLE_HTTP)
 static void z_http_runtime_init(void);
 static void z_http_runtime_shutdown(void);
@@ -94,6 +102,9 @@ static ZValue z_http_call_native_method(ZValue callable, const ZValue *args, siz
 void z_runtime_init(void) {
     z_allocations = NULL;
     z_active_tasks = 0;
+#if defined(ZUMBRA_ENABLE_DESKTOP)
+    z_desktop_runtime_init();
+#endif
 #if defined(ZUMBRA_ENABLE_NETWORK)
     signal(SIGPIPE, SIG_IGN);
 #endif
@@ -109,6 +120,9 @@ void z_runtime_init(void) {
 }
 
 void z_runtime_shutdown(void) {
+#if defined(ZUMBRA_ENABLE_DESKTOP)
+    z_desktop_runtime_shutdown();
+#endif
 #if defined(ZUMBRA_ENABLE_SQLITE)
     z_sqlite_runtime_shutdown();
 #endif
@@ -624,6 +638,11 @@ size_t z_size_of(ZValue value) {
 }
 
 ZValue z_get_field(ZValue object, const char *name) {
+#if defined(ZUMBRA_ENABLE_DESKTOP)
+    bool desktop_handled = false;
+    ZValue desktop_value = z_desktop_get_field(object, name, &desktop_handled);
+    if (desktop_handled) return desktop_value;
+#endif
 #if defined(ZUMBRA_ENABLE_Z12)
     bool z12_handled = false;
     ZValue z12_value = z_z12_get_field(object, name, &z12_handled);
@@ -694,6 +713,9 @@ typedef struct { pthread_mutex_t mutex; pthread_cond_t condition; int64_t count;
 typedef struct { pthread_mutex_t mutex; pthread_cond_t condition; int64_t available; int64_t capacity; } ZSemaphoreNative;
 
 static ZValue z_call_sync(ZValue callable, const ZValue *args, size_t argc) {
+#if defined(ZUMBRA_ENABLE_DESKTOP)
+    if (callable.tag == ZV_DESKTOP_METHOD) return z_desktop_call_method(callable, args, argc);
+#endif
 #if defined(ZUMBRA_ENABLE_Z12)
     if (callable.tag == ZV_Z12_METHOD) return z_z12_call_method(callable, args, argc);
 #endif
@@ -854,6 +876,9 @@ static bool z_channel_close(ZValue channelValue){ZChannelNative *c=z_expect_chan
 static void z_sleep_ms(int64_t milliseconds){if(milliseconds<0)z_fatal("sleepMs expects non-negative milliseconds");struct timespec request;request.tv_sec=(time_t)(milliseconds/1000);request.tv_nsec=(long)((milliseconds%1000)*1000000);nanosleep(&request,NULL);}
 
 ZValue z_call(ZValue callable, const ZValue *args, size_t argc) {
+#if defined(ZUMBRA_ENABLE_DESKTOP)
+    if (callable.tag == ZV_DESKTOP_METHOD) return z_desktop_call_method(callable, args, argc);
+#endif
 #if defined(ZUMBRA_ENABLE_SQLITE)
     if (callable.tag == ZV_SQLITE_METHOD) return z_sqlite_call_method(callable, args, argc);
 #endif
@@ -910,6 +935,12 @@ static void z_show_inner(ZValue value) {
     case ZV_TRACE_SPAN: fputs("TraceSpan", stdout); break;
     case ZV_SESSION_STORE: fputs("SessionStore", stdout); break;
     case ZV_RATE_LIMITER: fputs("RateLimiter", stdout); break;
+#endif
+#if defined(ZUMBRA_ENABLE_DESKTOP)
+    case ZV_DESKTOP_APP: fputs("DesktopApp", stdout); break;
+    case ZV_DESKTOP_WINDOW: fputs("DesktopWindow", stdout); break;
+    case ZV_DESKTOP_TRAY: fputs("DesktopTray", stdout); break;
+    case ZV_DESKTOP_PROCESS: fputs("DesktopProcess", stdout); break;
 #endif
 #if defined(ZUMBRA_ENABLE_NETWORK)
     case ZV_NET_LISTENER: fputs("NetListener", stdout); break;
@@ -1730,6 +1761,11 @@ static bool z_udp_close_native(ZValue value) {
 #endif
 
 ZValue z_call_builtin(const char *name, const ZValue *args, size_t argc) {
+#if defined(ZUMBRA_ENABLE_DESKTOP)
+    bool desktop_handled = false;
+    ZValue desktop_result = z_desktop_call_builtin(name, args, argc, &desktop_handled);
+    if (desktop_handled) return desktop_result;
+#endif
 #if defined(ZUMBRA_ENABLE_Z12)
     bool z12_handled = false;
     ZValue z12_result = z_z12_call_builtin(name, args, argc, &z12_handled);

@@ -1,7 +1,6 @@
 package evaluator
 
 import (
-	"fmt"
 	"zumbra/object"
 	"zumbra/object/builtins"
 )
@@ -132,11 +131,9 @@ func init() {
 	for _, definition := range builtins.Builtins {
 		builtinsList[definition.Name] = definition.Builtin
 	}
-	builtins.SetRouteInvoker(func(handler object.Object, args ...object.Object) (object.Object, error) {
-		result := applyFunctionSync(handler, args)
-		if errObj, ok := result.(*object.Error); ok {
-			return result, fmt.Errorf("%s", errObj.Message)
-		}
-		return result, nil
-	})
+	callbackInvoker := func(handler object.Object, args ...object.Object) (object.Object, error) {
+		return InvokeFunction(handler, args)
+	}
+	builtins.SetRouteInvoker(callbackInvoker)
+	builtins.SetDesktopInvoker(callbackInvoker)
 }

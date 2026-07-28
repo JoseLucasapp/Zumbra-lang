@@ -388,6 +388,74 @@ func builtinType(name string) (*Type, bool) {
 	case "binaryReadFile":
 		return FuncOf([]*Type{Simple(String)}, Simple(Unknown)), true
 
+	case "desktopApp":
+		return FuncOf([]*Type{DictOf(Simple(String), Simple(Unknown))}, Simple(DesktopApp)), true
+	case "desktopBackend":
+		return FuncOf([]*Type{Simple(DesktopApp)}, Simple(String)), true
+	case "desktopWindow":
+		return FuncOf([]*Type{Simple(DesktopApp), DictOf(Simple(String), Simple(Unknown))}, Simple(DesktopWindow)), true
+	case "desktopOn":
+		handler := FuncOf([]*Type{DictOf(Simple(String), Simple(Unknown))}, Simple(Unknown))
+		return FuncOf([]*Type{Simple(DesktopApp), Simple(String), handler}, Simple(DesktopApp)), true
+	case "desktopShortcut":
+		handler := FuncOf([]*Type{DictOf(Simple(String), Simple(Unknown))}, Simple(Unknown))
+		return FuncOf([]*Type{Simple(DesktopApp), Simple(String), handler}, Simple(DesktopApp)), true
+	case "desktopPoll":
+		return FuncOf([]*Type{Simple(DesktopApp), Simple(Int)}, Simple(Unknown)), true
+	case "desktopRun":
+		return FuncOf([]*Type{Simple(DesktopApp)}, Simple(Bool)), true
+	case "desktopQuit", "desktopRunning", "desktopClose":
+		return FuncOf([]*Type{Simple(DesktopApp)}, Simple(Bool)), true
+	case "desktopEmit":
+		return FuncOf([]*Type{Simple(DesktopApp), DictOf(Simple(String), Simple(Unknown))}, Simple(Bool)), true
+	case "desktopSetClipboard":
+		return FuncOf([]*Type{Simple(DesktopApp), Simple(String)}, Simple(Bool)), true
+	case "desktopClipboard":
+		return FuncOf([]*Type{Simple(DesktopApp)}, Simple(String)), true
+	case "desktopPickFile":
+		return FuncOf([]*Type{Simple(DesktopApp), DictOf(Simple(String), Simple(Unknown))}, ArrayOf(Simple(String))), true
+	case "desktopPickFolder":
+		return FuncOf([]*Type{Simple(DesktopApp), DictOf(Simple(String), Simple(Unknown))}, Simple(Unknown)), true
+	case "desktopNotify":
+		return FuncOf([]*Type{Simple(DesktopApp), DictOf(Simple(String), Simple(Unknown))}, Simple(Bool)), true
+	case "desktopPaths":
+		return FuncOf([]*Type{Simple(DesktopApp)}, DictOf(Simple(String), Simple(String))), true
+	case "desktopOpenExternal":
+		return FuncOf([]*Type{Simple(DesktopApp), Simple(String)}, Simple(Bool)), true
+	case "desktopTray":
+		return FuncOf([]*Type{Simple(DesktopApp), DictOf(Simple(String), Simple(Unknown))}, Simple(DesktopTray)), true
+	case "desktopTrayAdd":
+		handler := FuncOf([]*Type{DictOf(Simple(String), Simple(Unknown))}, Simple(Unknown))
+		return FuncOf([]*Type{Simple(DesktopTray), Simple(String), Simple(String), handler}, Simple(DesktopTray)), true
+	case "desktopTrayTooltip":
+		return FuncOf([]*Type{Simple(DesktopTray), Simple(String)}, Simple(DesktopTray)), true
+	case "desktopTrayClose", "desktopTrayOpen":
+		return FuncOf([]*Type{Simple(DesktopTray)}, Simple(Bool)), true
+	case "desktopSpawn":
+		return FuncOf([]*Type{Simple(String), DictOf(Simple(String), Simple(Unknown))}, Simple(DesktopProcess)), true
+	case "desktopProcessWait", "desktopProcessId":
+		return FuncOf([]*Type{Simple(DesktopProcess)}, Simple(Int)), true
+	case "desktopProcessKill", "desktopProcessRunning":
+		return FuncOf([]*Type{Simple(DesktopProcess)}, Simple(Bool)), true
+	case "desktopWindowShow", "desktopWindowHide", "desktopWindowClose", "desktopWindowMaximize", "desktopWindowMinimize", "desktopWindowRestore", "desktopWindowFocus":
+		return FuncOf([]*Type{Simple(DesktopWindow)}, Simple(DesktopWindow)), true
+	case "desktopWindowOpen", "desktopWindowFullscreen":
+		return FuncOf([]*Type{Simple(DesktopWindow)}, Simple(Bool)), true
+	case "desktopWindowId":
+		return FuncOf([]*Type{Simple(DesktopWindow)}, Simple(Int)), true
+	case "desktopWindowTitle":
+		return FuncOf([]*Type{Simple(DesktopWindow)}, Simple(String)), true
+	case "desktopWindowSetTitle", "desktopWindowSetIcon":
+		return FuncOf([]*Type{Simple(DesktopWindow), Simple(String)}, Simple(DesktopWindow)), true
+	case "desktopWindowSize", "desktopWindowPixelSize", "desktopWindowPosition":
+		return FuncOf([]*Type{Simple(DesktopWindow)}, DictOf(Simple(String), Simple(Int))), true
+	case "desktopWindowSetSize", "desktopWindowSetPosition":
+		return FuncOf([]*Type{Simple(DesktopWindow), Simple(Int), Simple(Int)}, Simple(DesktopWindow)), true
+	case "desktopWindowSetFullscreen":
+		return FuncOf([]*Type{Simple(DesktopWindow), Simple(Bool)}, Simple(DesktopWindow)), true
+	case "desktopWindowDisplayScale", "desktopWindowPixelDensity":
+		return FuncOf([]*Type{Simple(DesktopWindow)}, Simple(Float)), true
+
 	case "httpApp":
 		return FuncOf(nil, Simple(HttpApp)), true
 	case "httpRoute":

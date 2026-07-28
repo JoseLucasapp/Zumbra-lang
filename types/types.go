@@ -59,6 +59,10 @@ const (
 	TraceSpan           Kind = "trace_span"
 	SessionStore        Kind = "session_store"
 	RateLimiter         Kind = "rate_limiter"
+	DesktopApp          Kind = "desktop_app"
+	DesktopWindow       Kind = "desktop_window"
+	DesktopTray         Kind = "desktop_tray"
+	DesktopProcess      Kind = "desktop_process"
 )
 
 type Type struct {

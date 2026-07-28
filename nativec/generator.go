@@ -17,7 +17,7 @@ import (
 	"zumbra/types"
 )
 
-//go:embed runtime/zumbra_runtime.c runtime/zumbra_runtime.h runtime/zumbra_http.inc runtime/zumbra_z12.inc runtime/zumbra_sqlite.inc
+//go:embed runtime/zumbra_runtime.c runtime/zumbra_runtime.h runtime/zumbra_http.inc runtime/zumbra_z12.inc runtime/zumbra_sqlite.inc runtime/zumbra_desktop.inc
 var runtimeFiles embed.FS
 
 type Sources struct {
@@ -185,8 +185,26 @@ var z12NativeBuiltins = map[string]bool{
 	"binaryReadFile":                true,
 }
 
+var desktopNativeBuiltins = map[string]bool{
+	"desktopApp": true, "desktopBackend": true, "desktopWindow": true, "desktopOn": true, "desktopShortcut": true,
+	"desktopPoll": true, "desktopRun": true, "desktopQuit": true, "desktopRunning": true, "desktopClose": true, "desktopEmit": true,
+	"desktopSetClipboard": true, "desktopClipboard": true, "desktopPickFile": true, "desktopPickFolder": true, "desktopNotify": true,
+	"desktopPaths": true, "desktopOpenExternal": true, "desktopTray": true, "desktopTrayAdd": true, "desktopTrayTooltip": true,
+	"desktopTrayClose": true, "desktopTrayOpen": true, "desktopSpawn": true, "desktopProcessWait": true, "desktopProcessKill": true,
+	"desktopProcessRunning": true, "desktopProcessId": true, "desktopWindowShow": true, "desktopWindowHide": true,
+	"desktopWindowClose": true, "desktopWindowOpen": true, "desktopWindowId": true, "desktopWindowTitle": true,
+	"desktopWindowSetTitle": true, "desktopWindowSize": true, "desktopWindowPixelSize": true, "desktopWindowSetSize": true,
+	"desktopWindowPosition": true, "desktopWindowSetPosition": true, "desktopWindowFullscreen": true,
+	"desktopWindowSetFullscreen": true, "desktopWindowMaximize": true, "desktopWindowMinimize": true,
+	"desktopWindowRestore": true, "desktopWindowFocus": true, "desktopWindowDisplayScale": true,
+	"desktopWindowPixelDensity": true, "desktopWindowSetIcon": true,
+}
+
 func init() {
 	for name := range z12NativeBuiltins {
+		supportedBuiltins[name] = true
+	}
+	for name := range desktopNativeBuiltins {
 		supportedBuiltins[name] = true
 	}
 }
@@ -255,6 +273,9 @@ func Generate(module *mir.Module) (*Sources, []Diagnostic) {
 		return nil, []Diagnostic{{Message: "could not load embedded native runtime: " + err.Error()}}
 	}
 	prefix := ""
+	if UsesDesktop(module) {
+		prefix += "#define ZUMBRA_ENABLE_DESKTOP 1\n"
+	}
 	if UsesNetwork(module) || UsesHTTP(module) {
 		prefix += "#define ZUMBRA_ENABLE_NETWORK 1\n"
 	}
@@ -275,6 +296,14 @@ func Generate(module *mir.Module) (*Sources, []Diagnostic) {
 	}
 	if UsesSQLite(module) {
 		prefix += "#define ZUMBRA_ENABLE_SQLITE 1\n"
+	}
+	if UsesDesktop(module) {
+		desktopRuntime, readErr := runtimeFiles.ReadFile("runtime/zumbra_desktop.inc")
+		if readErr != nil {
+			return nil, []Diagnostic{{Message: "could not load embedded desktop runtime: " + readErr.Error()}}
+		}
+		runtimeSource = append(runtimeSource, '\n')
+		runtimeSource = append(runtimeSource, desktopRuntime...)
 	}
 	if UsesHTTP(module) {
 		httpRuntime, readErr := runtimeFiles.ReadFile("runtime/zumbra_http.inc")
@@ -406,7 +435,7 @@ func (g *generator) emitProgram() {
 	g.line("#include \"zumbra_runtime.h\"")
 	g.line("#include <stdio.h>")
 	g.line("#include <string.h>")
-	g.line("_Static_assert(ZUMBRA_NATIVE_ABI_VERSION == 4u, \"unsupported Zumbra native ABI\");")
+	g.line("_Static_assert(ZUMBRA_NATIVE_ABI_VERSION == 5u, \"unsupported Zumbra native ABI\");")
 	g.line("")
 	g.emitFFIDeclarations()
 	for _, name := range sortedKeys(g.globals) {
@@ -1226,6 +1255,9 @@ var httpBuiltins = map[string]bool{
 	"webSocketUpgrade": true, "webSocketConnect": true, "webSocketRead": true, "webSocketReadTimeout": true, "webSocketWriteText": true,
 	"webSocketWriteBinary": true, "webSocketPing": true, "webSocketClose": true, "webSocketClosed": true,
 }
+
+// UsesDesktop reports whether the MIR references Z13 desktop APIs.
+func UsesDesktop(module *mir.Module) bool { return moduleUsesAnyBuiltin(module, desktopNativeBuiltins) }
 
 // UsesHTTP reports whether the MIR references Z11 HTTP, SSE, JWT or WebSocket APIs.
 func UsesHTTP(module *mir.Module) bool { return moduleUsesAnyBuiltin(module, httpBuiltins) }

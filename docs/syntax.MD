@@ -937,3 +937,49 @@ RateLimiter
 ```
 
 Documentação completa: [`docs/pt-BR/dados-e-persistencia-z12.md`](./pt-BR/dados-e-persistencia-z12.md).
+
+
+---
+
+## Runtime desktop — Z13
+
+```zumbra
+import "../../std/desktop.zum" as desktop;
+
+var app << desktop.app({
+    "name": "Zumbra Desktop",
+    "identifier": "dev.zumbra.desktop",
+    "backend": "auto"
+});
+
+var window << app.window({
+    "title": "Meu aplicativo",
+    "width": 900,
+    "height": 600,
+    "resizable": true,
+    "highDPI": true
+});
+
+app.on("drop_file", fct(event) {
+    show(event["path"]);
+});
+
+app.shortcut("Ctrl+Q", fct(event) {
+    event;
+    app.quit();
+});
+
+app.run();
+app.close();
+```
+
+Tipos adicionados:
+
+```text
+DesktopApp
+DesktopWindow
+DesktopTray
+DesktopProcess
+```
+
+Documentação completa: [`docs/pt-BR/runtime-desktop-z13.md`](./pt-BR/runtime-desktop-z13.md).

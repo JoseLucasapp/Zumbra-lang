@@ -127,6 +127,9 @@ func Build(module *mir.Module, options BuildOptions) (*BuildResult, []Diagnostic
 	for _, library := range options.Libraries {
 		args = append(args, "-l"+library)
 	}
+	if UsesDesktop(module) && runtime.GOOS == "linux" {
+		args = append(args, "-ldl")
+	}
 	if UsesTLS(module) || UsesHTTP(module) {
 		args = append(args, "-lssl", "-lcrypto")
 	}
