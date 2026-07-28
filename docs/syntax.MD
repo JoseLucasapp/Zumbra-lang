@@ -897,18 +897,24 @@ Documentação completa: [`docs/pt-BR/http-websockets-e-apis.md`](./pt-BR/http-w
 
 ---
 
-## SQLite e persistência — Z12.1
+## Dados e persistência — Z12
 
 ```zumbra
 import "../../std/database.zum" as database;
 
 var db << database.memory();
-db.exec("create table users(id integer primary key, name text)", []);
-db.exec("insert into users(name) values (?)", ["Lucas"]);
-
-var rows << db.query("select id, name from users", []);
-show(rows[0]["name"]);
-db.close();
+database.migrate(db, [
+    {"version": 1, "name": "users", "sql": "CREATE TABLE users(id INTEGER PRIMARY KEY, name TEXT)"}
+]);
+database.exec(db, "INSERT INTO users(name) VALUES (:name)", {"name": "Lucas"});
+var rows << database.stream(db, "SELECT id, name FROM users", {});
+var current << database.next(rows);
+while (current[1]) {
+    show(current[0]["name"]);
+    current << database.next(rows);
+}
+database.closeRows(rows);
+database.close(db);
 ```
 
 Tipos adicionados:
@@ -917,6 +923,17 @@ Tipos adicionados:
 SQLiteDatabase
 SQLiteStatement
 SQLiteTransaction
+SQLRows
+PostgresDatabase
+PostgresStatement
+PostgresTransaction
+RedisClient
+Config
+Logger
+MetricsRegistry
+TraceSpan
+SessionStore
+RateLimiter
 ```
 
-Documentação completa: [`docs/pt-BR/sqlite-e-persistencia-z12-1.md`](./pt-BR/sqlite-e-persistencia-z12-1.md).
+Documentação completa: [`docs/pt-BR/dados-e-persistencia-z12.md`](./pt-BR/dados-e-persistencia-z12.md).

@@ -179,9 +179,9 @@ func builtinType(name string) (*Type, bool) {
 	case "sqliteMemory":
 		return FuncOf(nil, Simple(SQLiteDatabase)), true
 	case "sqliteExec":
-		return FuncOf([]*Type{Simple(SQLiteDatabase), Simple(String), ArrayOf(Simple(Unknown))}, DictOf(Simple(String), Simple(Int))), true
+		return FuncOf([]*Type{Simple(SQLiteDatabase), Simple(String), Simple(SQLParameters)}, DictOf(Simple(String), Simple(Int))), true
 	case "sqliteQuery":
-		return FuncOf([]*Type{Simple(SQLiteDatabase), Simple(String), ArrayOf(Simple(Unknown))}, ArrayOf(DictOf(Simple(String), Simple(Unknown)))), true
+		return FuncOf([]*Type{Simple(SQLiteDatabase), Simple(String), Simple(SQLParameters)}, ArrayOf(DictOf(Simple(String), Simple(Unknown)))), true
 	case "sqlitePrepare":
 		return FuncOf([]*Type{Simple(SQLiteDatabase), Simple(String)}, Simple(SQLiteStatement)), true
 	case "sqliteBegin":
@@ -191,21 +191,202 @@ func builtinType(name string) (*Type, bool) {
 	case "sqlitePath":
 		return FuncOf([]*Type{Simple(SQLiteDatabase)}, Simple(String)), true
 	case "sqliteStatementExec":
-		return FuncOf([]*Type{Simple(SQLiteStatement), ArrayOf(Simple(Unknown))}, DictOf(Simple(String), Simple(Int))), true
+		return FuncOf([]*Type{Simple(SQLiteStatement), Simple(SQLParameters)}, DictOf(Simple(String), Simple(Int))), true
 	case "sqliteStatementQuery":
-		return FuncOf([]*Type{Simple(SQLiteStatement), ArrayOf(Simple(Unknown))}, ArrayOf(DictOf(Simple(String), Simple(Unknown)))), true
+		return FuncOf([]*Type{Simple(SQLiteStatement), Simple(SQLParameters)}, ArrayOf(DictOf(Simple(String), Simple(Unknown)))), true
 	case "sqliteStatementClose", "sqliteStatementOpen":
 		return FuncOf([]*Type{Simple(SQLiteStatement)}, Simple(Bool)), true
 	case "sqliteStatementSQL":
 		return FuncOf([]*Type{Simple(SQLiteStatement)}, Simple(String)), true
 	case "sqliteTransactionExec":
-		return FuncOf([]*Type{Simple(SQLiteTransaction), Simple(String), ArrayOf(Simple(Unknown))}, DictOf(Simple(String), Simple(Int))), true
+		return FuncOf([]*Type{Simple(SQLiteTransaction), Simple(String), Simple(SQLParameters)}, DictOf(Simple(String), Simple(Int))), true
 	case "sqliteTransactionQuery":
-		return FuncOf([]*Type{Simple(SQLiteTransaction), Simple(String), ArrayOf(Simple(Unknown))}, ArrayOf(DictOf(Simple(String), Simple(Unknown)))), true
+		return FuncOf([]*Type{Simple(SQLiteTransaction), Simple(String), Simple(SQLParameters)}, ArrayOf(DictOf(Simple(String), Simple(Unknown)))), true
 	case "sqliteTransactionPrepare":
 		return FuncOf([]*Type{Simple(SQLiteTransaction), Simple(String)}, Simple(SQLiteStatement)), true
 	case "sqliteCommit", "sqliteRollback", "sqliteTransactionActive":
 		return FuncOf([]*Type{Simple(SQLiteTransaction)}, Simple(Bool)), true
+
+	case "sqliteQueryOne":
+		return FuncOf([]*Type{Simple(SQLiteDatabase), Simple(String), Simple(SQLParameters)}, DictOf(Simple(String), Simple(Unknown))), true
+	case "sqliteQueryStream":
+		return FuncOf([]*Type{Simple(SQLiteDatabase), Simple(String), Simple(SQLParameters)}, Simple(SQLRows)), true
+	case "sqliteMigrate":
+		return FuncOf([]*Type{Simple(SQLiteDatabase), ArrayOf(DictOf(Simple(String), Simple(Unknown)))}, Simple(Int)), true
+	case "sqliteSchemaVersion":
+		return FuncOf([]*Type{Simple(SQLiteDatabase)}, Simple(Int)), true
+	case "sqliteStatementQueryStream":
+		return FuncOf([]*Type{Simple(SQLiteStatement), Simple(SQLParameters)}, Simple(SQLRows)), true
+	case "sqliteStatementParameterCount":
+		return FuncOf([]*Type{Simple(SQLiteStatement)}, Simple(Int)), true
+	case "sqliteStatementColumns":
+		return FuncOf([]*Type{Simple(SQLiteStatement)}, ArrayOf(Simple(String))), true
+	case "sqliteTransactionQueryStream":
+		return FuncOf([]*Type{Simple(SQLiteTransaction), Simple(String), Simple(SQLParameters)}, Simple(SQLRows)), true
+	case "sqliteSavepoint", "sqliteRollbackTo", "sqliteRelease":
+		return FuncOf([]*Type{Simple(SQLiteTransaction), Simple(String)}, Simple(Bool)), true
+	case "sqlRowsNext":
+		return FuncOf([]*Type{Simple(SQLRows)}, ArrayOf(Simple(Unknown))), true
+	case "sqlRowsColumns":
+		return FuncOf([]*Type{Simple(SQLRows)}, ArrayOf(Simple(String))), true
+	case "sqlRowsClose", "sqlRowsOpen":
+		return FuncOf([]*Type{Simple(SQLRows)}, Simple(Bool)), true
+
+	case "postgresOpen":
+		return FuncOf([]*Type{Simple(String), DictOf(Simple(String), Simple(Unknown))}, Simple(PostgresDatabase)), true
+	case "postgresConfigurePool":
+		return FuncOf([]*Type{Simple(PostgresDatabase), Simple(Int), Simple(Int), Simple(Int), Simple(Int)}, Simple(PostgresDatabase)), true
+	case "postgresPoolStats":
+		return FuncOf([]*Type{Simple(PostgresDatabase)}, DictOf(Simple(String), Simple(Int))), true
+	case "postgresPing", "postgresClose", "postgresIsOpen":
+		return FuncOf([]*Type{Simple(PostgresDatabase)}, Simple(Bool)), true
+	case "postgresExecDb":
+		return FuncOf([]*Type{Simple(PostgresDatabase), Simple(String), Simple(SQLParameters)}, DictOf(Simple(String), Simple(Int))), true
+	case "postgresQueryDb":
+		return FuncOf([]*Type{Simple(PostgresDatabase), Simple(String), Simple(SQLParameters)}, ArrayOf(DictOf(Simple(String), Simple(Unknown)))), true
+	case "postgresQueryOne":
+		return FuncOf([]*Type{Simple(PostgresDatabase), Simple(String), Simple(SQLParameters)}, Simple(Unknown)), true
+	case "postgresQueryStream":
+		return FuncOf([]*Type{Simple(PostgresDatabase), Simple(String), Simple(SQLParameters)}, Simple(SQLRows)), true
+	case "postgresPrepare":
+		return FuncOf([]*Type{Simple(PostgresDatabase), Simple(String)}, Simple(PostgresStatement)), true
+	case "postgresBegin":
+		return FuncOf([]*Type{Simple(PostgresDatabase)}, Simple(PostgresTransaction)), true
+	case "postgresStatementExec":
+		return FuncOf([]*Type{Simple(PostgresStatement), Simple(SQLParameters)}, DictOf(Simple(String), Simple(Int))), true
+	case "postgresStatementQuery":
+		return FuncOf([]*Type{Simple(PostgresStatement), Simple(SQLParameters)}, ArrayOf(DictOf(Simple(String), Simple(Unknown)))), true
+	case "postgresStatementStream":
+		return FuncOf([]*Type{Simple(PostgresStatement), Simple(SQLParameters)}, Simple(SQLRows)), true
+	case "postgresStatementClose", "postgresStatementOpen":
+		return FuncOf([]*Type{Simple(PostgresStatement)}, Simple(Bool)), true
+	case "postgresStatementSQL":
+		return FuncOf([]*Type{Simple(PostgresStatement)}, Simple(String)), true
+	case "postgresTransactionExec":
+		return FuncOf([]*Type{Simple(PostgresTransaction), Simple(String), Simple(SQLParameters)}, DictOf(Simple(String), Simple(Int))), true
+	case "postgresTransactionQuery":
+		return FuncOf([]*Type{Simple(PostgresTransaction), Simple(String), Simple(SQLParameters)}, ArrayOf(DictOf(Simple(String), Simple(Unknown)))), true
+	case "postgresTransactionStream":
+		return FuncOf([]*Type{Simple(PostgresTransaction), Simple(String), Simple(SQLParameters)}, Simple(SQLRows)), true
+	case "postgresTransactionPrepare":
+		return FuncOf([]*Type{Simple(PostgresTransaction), Simple(String)}, Simple(PostgresStatement)), true
+	case "postgresSavepoint", "postgresRollbackTo", "postgresRelease":
+		return FuncOf([]*Type{Simple(PostgresTransaction), Simple(String)}, Simple(Bool)), true
+	case "postgresCommit", "postgresRollback", "postgresTransactionActive":
+		return FuncOf([]*Type{Simple(PostgresTransaction)}, Simple(Bool)), true
+
+	case "redisOpen":
+		return FuncOf([]*Type{Simple(String), Simple(Int), Simple(String), Simple(Int), Simple(Int)}, Simple(RedisClient)), true
+	case "redisPing", "redisClose", "redisIsOpen":
+		return FuncOf([]*Type{Simple(RedisClient)}, Simple(Bool)), true
+	case "redisSetClient":
+		return FuncOf([]*Type{Simple(RedisClient), Simple(String), Simple(Unknown), Simple(Int)}, Simple(Bool)), true
+	case "redisGetClient":
+		return FuncOf([]*Type{Simple(RedisClient), Simple(String)}, Simple(Unknown)), true
+	case "redisDelete", "redisExists":
+		return FuncOf([]*Type{Simple(RedisClient), Simple(String)}, Simple(Int)), true
+	case "redisExpire":
+		return FuncOf([]*Type{Simple(RedisClient), Simple(String), Simple(Int)}, Simple(Bool)), true
+	case "redisTTL":
+		return FuncOf([]*Type{Simple(RedisClient), Simple(String)}, Simple(Int)), true
+	case "redisIncrement":
+		return FuncOf([]*Type{Simple(RedisClient), Simple(String), Simple(Int)}, Simple(Int)), true
+	case "redisPipeline":
+		return FuncOf([]*Type{Simple(RedisClient), ArrayOf(DictOf(Simple(String), Simple(Unknown)))}, ArrayOf(Simple(Unknown))), true
+	case "redisPoolStats":
+		return FuncOf([]*Type{Simple(RedisClient)}, DictOf(Simple(String), Simple(Int))), true
+
+	case "configLoad":
+		return FuncOf([]*Type{Simple(String)}, Simple(Config)), true
+	case "configFrom":
+		return FuncOf([]*Type{DictOf(Simple(String), Simple(Unknown))}, Simple(Config)), true
+	case "configEnv":
+		return FuncOf([]*Type{Simple(String)}, Simple(Config)), true
+	case "configMerge":
+		return FuncOf([]*Type{Simple(Config), Simple(Config)}, Simple(Config)), true
+	case "configRequired":
+		return FuncOf([]*Type{Simple(Config), Simple(String), Simple(Unknown)}, Simple(Unknown)), true
+	case "configString":
+		return FuncOf([]*Type{Simple(Config), Simple(String), Simple(Unknown)}, Simple(String)), true
+	case "configInt":
+		return FuncOf([]*Type{Simple(Config), Simple(String), Simple(Unknown)}, Simple(Int)), true
+	case "configFloat":
+		return FuncOf([]*Type{Simple(Config), Simple(String), Simple(Unknown)}, Simple(Float)), true
+	case "configBool":
+		return FuncOf([]*Type{Simple(Config), Simple(String), Simple(Unknown)}, Simple(Bool)), true
+	case "configSecret":
+		return FuncOf([]*Type{Simple(Config), Simple(String)}, Simple(Config)), true
+	case "configRedacted":
+		return FuncOf([]*Type{Simple(Config)}, DictOf(Simple(String), Simple(Unknown))), true
+
+	case "logger":
+		return FuncOf([]*Type{Simple(String), Simple(String), Simple(String)}, Simple(Logger)), true
+	case "loggerWith":
+		return FuncOf([]*Type{Simple(Logger), DictOf(Simple(String), Simple(Unknown))}, Simple(Logger)), true
+	case "loggerSetLevel":
+		return FuncOf([]*Type{Simple(Logger), Simple(String)}, Simple(Logger)), true
+	case "loggerLog":
+		return FuncOf([]*Type{Simple(Logger), Simple(String), Simple(String), DictOf(Simple(String), Simple(Unknown))}, Simple(Bool)), true
+	case "loggerClose":
+		return FuncOf([]*Type{Simple(Logger)}, Simple(Bool)), true
+	case "metrics":
+		return FuncOf(nil, Simple(MetricsRegistry)), true
+	case "metricsCounter", "metricsGauge", "metricsHistogram":
+		return FuncOf([]*Type{Simple(MetricsRegistry), Simple(String), Simple(Unknown), DictOf(Simple(String), Simple(String))}, Simple(Bool)), true
+	case "metricsSnapshot":
+		return FuncOf([]*Type{Simple(MetricsRegistry)}, DictOf(Simple(String), Simple(Unknown))), true
+	case "metricsReset":
+		return FuncOf([]*Type{Simple(MetricsRegistry)}, Simple(Bool)), true
+	case "traceStart":
+		return FuncOf([]*Type{Simple(String), DictOf(Simple(String), Simple(Unknown))}, Simple(TraceSpan)), true
+	case "traceChild":
+		return FuncOf([]*Type{Simple(TraceSpan), Simple(String), DictOf(Simple(String), Simple(Unknown))}, Simple(TraceSpan)), true
+	case "traceSet":
+		return FuncOf([]*Type{Simple(TraceSpan), Simple(String), Simple(Unknown)}, Simple(TraceSpan)), true
+	case "traceEvent":
+		return FuncOf([]*Type{Simple(TraceSpan), Simple(String), DictOf(Simple(String), Simple(Unknown))}, Simple(TraceSpan)), true
+	case "traceFinish":
+		return FuncOf([]*Type{Simple(TraceSpan), Simple(String)}, DictOf(Simple(String), Simple(Unknown))), true
+	case "traceActive":
+		return FuncOf([]*Type{Simple(TraceSpan)}, Simple(Bool)), true
+	case "sessionSQLite":
+		return FuncOf([]*Type{Simple(String)}, Simple(SessionStore)), true
+	case "sessionRedis":
+		return FuncOf([]*Type{Simple(RedisClient), Simple(String)}, Simple(SessionStore)), true
+	case "sessionCreate":
+		return FuncOf([]*Type{Simple(SessionStore), DictOf(Simple(String), Simple(Unknown)), Simple(Int)}, Simple(String)), true
+	case "sessionGet":
+		return FuncOf([]*Type{Simple(SessionStore), Simple(String)}, Simple(Unknown)), true
+	case "sessionSet":
+		return FuncOf([]*Type{Simple(SessionStore), Simple(String), DictOf(Simple(String), Simple(Unknown)), Simple(Int)}, Simple(Bool)), true
+	case "sessionDelete":
+		return FuncOf([]*Type{Simple(SessionStore), Simple(String)}, Simple(Bool)), true
+	case "sessionRotate":
+		return FuncOf([]*Type{Simple(SessionStore), Simple(String), Simple(Int)}, Simple(String)), true
+	case "sessionTouch":
+		return FuncOf([]*Type{Simple(SessionStore), Simple(String), Simple(Int)}, Simple(Bool)), true
+	case "sessionCleanup":
+		return FuncOf([]*Type{Simple(SessionStore)}, Simple(Int)), true
+	case "sessionClose":
+		return FuncOf([]*Type{Simple(SessionStore)}, Simple(Bool)), true
+	case "rateLimiter":
+		return FuncOf([]*Type{Simple(Int), Simple(Int)}, Simple(RateLimiter)), true
+	case "rateAllow":
+		return FuncOf([]*Type{Simple(RateLimiter), Simple(String)}, DictOf(Simple(String), Simple(Unknown))), true
+	case "rateReset":
+		return FuncOf([]*Type{Simple(RateLimiter), Simple(String)}, Simple(Bool)), true
+	case "jsonReadFile":
+		return FuncOf([]*Type{Simple(String)}, Simple(Unknown)), true
+	case "jsonWriteFile":
+		return FuncOf([]*Type{Simple(String), Simple(Unknown), Simple(Bool)}, Simple(Int)), true
+	case "binaryEncode":
+		return FuncOf([]*Type{Simple(Unknown)}, ByteArrayOf()), true
+	case "binaryDecode":
+		return FuncOf([]*Type{Simple(Unknown)}, Simple(Unknown)), true
+	case "binaryWriteFile":
+		return FuncOf([]*Type{Simple(String), Simple(Unknown)}, Simple(Int)), true
+	case "binaryReadFile":
+		return FuncOf([]*Type{Simple(String)}, Simple(Unknown)), true
 
 	case "httpApp":
 		return FuncOf(nil, Simple(HttpApp)), true

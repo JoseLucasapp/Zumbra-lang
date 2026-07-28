@@ -21,7 +21,7 @@ Designed for clarity, simplicity, and extensibility, Zumbra is the perfect playg
 
 The rebuild now follows a clear direction: systems, emulation, and game development without abandoning Zumbra's simplicity. See the Portuguese design and feature documentation in [`docs/pt-BR/`](./docs/pt-BR/).
 
-Current systems features include readable bitwise operators, fixed-width integers (`u8` through `u64`, `i8` through `i64`), mutable indexes, compact byte memory, typed integer arrays, zero-copy mutable slices, binary file I/O, endian-aware integer access, buffer copying/comparison, SHA-256 hashing, immutable constants, type aliases, structs with methods, enums, and `match`. Z6 adds a canonical typed pipeline with HIR and MIR. Z7 adds a C11 backend that consumes optimized MIR and produces standalone native executables with Clang or GCC. Z8 adds isolated modules with `pub` exports, module graph inspection, typed C FFI, opaque pointers, synchronous callbacks, native linking, and a conservative C-header binding generator. Z8.1 adds contextual callback inference, so callback parameters and returns become concrete in type analysis, HIR, MIR, and native builds without extra annotations. Z9 adds real tasks, `spawn`, `async`/`await`, inferred typed channels, timeouts, cooperative cancellation, mutexes, wait groups, semaphores, and atomics across the VM and pthread-based native runtime. Z9.1 extends contextual inference to ordinary calls and `spawn`, so user functions, methods, `Channel<T>`, `Task<T>`, atomics, and return values become concrete without annotations. Z10 adds local-first TCP, UDP, IPv4/IPv6 DNS, TLS 1.2+, common byte streams, accept/connect/read timeouts, half-close, keepalive, and conditional native linking through POSIX sockets and OpenSSL. Z11 adds typed HTTP/1.1 applications, routing, middleware, JSON, cookies, stateless JWT sessions, multipart uploads, static files, gzip, streaming/SSE, HTTP clients, graceful shutdown and RFC 6455 WebSockets/WSS across the VM and native runtime. Z12.1 begins the persistence layer with embedded SQLite databases in files or memory, safely bound parameters, prepared statements, row mapping, binary blobs, and transactions in the VM and native backend. See [`docs/pt-BR/modulos-abi-e-ffi.md`](./docs/pt-BR/modulos-abi-e-ffi.md), [`docs/pt-BR/inferencia-contextual-de-callbacks.md`](./docs/pt-BR/inferencia-contextual-de-callbacks.md), [`docs/pt-BR/concorrencia-e-tarefas.md`](./docs/pt-BR/concorrencia-e-tarefas.md), [`docs/pt-BR/inferencia-contextual-de-chamadas.md`](./docs/pt-BR/inferencia-contextual-de-chamadas.md), and [`docs/pt-BR/rede-tcp-udp-dns-tls.md`](./docs/pt-BR/rede-tcp-udp-dns-tls.md), and [`docs/pt-BR/sqlite-e-persistencia-z12-1.md`](./docs/pt-BR/sqlite-e-persistencia-z12-1.md).
+Current systems features include readable bitwise operators, fixed-width integers (`u8` through `u64`, `i8` through `i64`), mutable indexes, compact byte memory, typed integer arrays, zero-copy mutable slices, binary file I/O, endian-aware integer access, buffer copying/comparison, SHA-256 hashing, immutable constants, type aliases, structs with methods, enums, and `match`. Z6 adds a canonical typed pipeline with HIR and MIR. Z7 adds a C11 backend that consumes optimized MIR and produces standalone native executables with Clang or GCC. Z8 adds isolated modules with `pub` exports, module graph inspection, typed C FFI, opaque pointers, synchronous callbacks, native linking, and a conservative C-header binding generator. Z8.1 adds contextual callback inference, so callback parameters and returns become concrete in type analysis, HIR, MIR, and native builds without extra annotations. Z9 adds real tasks, `spawn`, `async`/`await`, inferred typed channels, timeouts, cooperative cancellation, mutexes, wait groups, semaphores, and atomics across the VM and pthread-based native runtime. Z9.1 extends contextual inference to ordinary calls and `spawn`, so user functions, methods, `Channel<T>`, `Task<T>`, atomics, and return values become concrete without annotations. Z10 adds local-first TCP, UDP, IPv4/IPv6 DNS, TLS 1.2+, common byte streams, accept/connect/read timeouts, half-close, keepalive, and conditional native linking through POSIX sockets and OpenSSL. Z11 adds typed HTTP/1.1 applications, routing, middleware, JSON, cookies, stateless JWT sessions, multipart uploads, static files, gzip, streaming/SSE, HTTP clients, graceful shutdown and RFC 6455 WebSockets/WSS across the VM and native runtime. Z12 completes the data layer with advanced SQLite, PostgreSQL, Redis, safe SQL parameters, migrations, streaming rows, persistent sessions, typed configuration, structured logs, metrics, tracing, rate limiting, JSON files, and versioned binary serialization across the VM and native backend. See [`docs/pt-BR/modulos-abi-e-ffi.md`](./docs/pt-BR/modulos-abi-e-ffi.md), [`docs/pt-BR/inferencia-contextual-de-callbacks.md`](./docs/pt-BR/inferencia-contextual-de-callbacks.md), [`docs/pt-BR/concorrencia-e-tarefas.md`](./docs/pt-BR/concorrencia-e-tarefas.md), [`docs/pt-BR/inferencia-contextual-de-chamadas.md`](./docs/pt-BR/inferencia-contextual-de-chamadas.md), and [`docs/pt-BR/rede-tcp-udp-dns-tls.md`](./docs/pt-BR/rede-tcp-udp-dns-tls.md), and [`docs/pt-BR/dados-e-persistencia-z12.md`](./docs/pt-BR/dados-e-persistencia-z12.md).
 
 <br />
 <a href="./code_examples/"><p style="font-size: 30px; font-weight: 600;">🛠 Code_examples</p></a>
@@ -186,23 +186,22 @@ Z11 provides typed HTTP applications, requests and responses; routing, middlewar
 Z11.1 restores the shared Go/Zumbra value conversion layer used by PostgreSQL, Supabase and platform integrations. Nested JSON values, database driver values, byte buffers and fixed-width integers now convert recursively without depending on private HTTP helpers. See [`docs/pt-BR/correcao-conversores-plataforma-z11-1.md`](./docs/pt-BR/correcao-conversores-plataforma-z11-1.md).
 
 
-## Z12.1 SQLite quick start
+## Z12 data and persistence quick start
 
 ```zumbra
 import "std/database.zum" as database;
 
-var db << database.sqlite("app.db");
-db.exec("create table if not exists users (id integer primary key, name text not null)", []);
-db.exec("insert into users(name) values (?)", ["Lucas"]);
-
-var users << db.query("select id, name from users order by id", []);
-for user in users {
-    show(user["name"]);
-}
-
-db.close();
+var db << database.memory();
+database.migrate(db, [
+    {"version": 1, "name": "users", "sql": "CREATE TABLE users(id INTEGER PRIMARY KEY, name TEXT NOT NULL)"}
+]);
+database.exec(db, "INSERT INTO users(name) VALUES (:name)", {"name": "Lucas"});
+show(database.queryOne(db, "SELECT name FROM users", {})["name"]);
+database.close(db);
 ```
 
-Z12.1 supports file-backed and in-memory SQLite, positional parameters, prepared statements, transactions with commit or rollback, row dictionaries, and binary blobs. The VM/evaluator use the system SQLite C library through the shared builtin layer, while native C11 builds include SQLite support only when a database builtin is referenced and link `-lsqlite3` conditionally. See [`docs/pt-BR/sqlite-e-persistencia-z12-1.md`](./docs/pt-BR/sqlite-e-persistencia-z12-1.md).
+Z12 adds advanced SQLite, PostgreSQL, Redis, persistent sessions, typed configuration, structured observability, rate limiting, atomic JSON files and versioned binary serialization. Native dependencies are enabled and linked only when referenced. See [`docs/pt-BR/dados-e-persistencia-z12.md`](./docs/pt-BR/dados-e-persistencia-z12.md).
+
+Zumbra 0.6.0 completes Z12 and establishes the baseline for Z13 desktop development. See [`docs/releases/0.6.0.md`](./docs/releases/0.6.0.md).
 
 Zumbra 0.5.1 widens the VM builtin index operand from 8 to 16 bits. This prevents overflow now that Z12.1 raises the builtin table above 255 entries and restores binary I/O parity between the evaluator and VM. See [`docs/pt-BR/correcao-indice-builtins-0.5.1.md`](./docs/pt-BR/correcao-indice-builtins-0.5.1.md).

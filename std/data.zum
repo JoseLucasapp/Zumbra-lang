@@ -1,0 +1,6 @@
+pub fct readJson(path) { jsonReadFile(path); }
+pub fct writeJson(path, value, pretty) { jsonWriteFile(path, value, pretty); }
+pub fct encodeBinary(value) { binaryEncode(value); }
+pub fct decodeBinary(data) { binaryDecode(data); }
+pub fct readBinary(path) { binaryReadFile(path); }
+pub fct writeBinary(path, value) { binaryWriteFile(path, value); }

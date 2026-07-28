@@ -10,26 +10,42 @@ type SQLiteExecResult struct {
 
 // SQLiteDatabaseRuntime is implemented by the platform SQLite adapter.
 type SQLiteDatabaseRuntime interface {
-	Exec(query string, params []Object) (SQLiteExecResult, error)
-	Query(query string, params []Object) ([]map[string]Object, error)
+	Exec(query string, params Object) (SQLiteExecResult, error)
+	Query(query string, params Object) ([]map[string]Object, error)
+	QueryStream(query string, params Object) (SQLRowsRuntime, error)
 	Prepare(query string) (SQLiteStatementRuntime, error)
 	Begin() (SQLiteTransactionRuntime, error)
+	Migrate(migrations []SQLiteMigration) (int64, error)
+	SchemaVersion() (int64, error)
 	Close() error
 	IsOpen() bool
 }
 
+type SQLiteMigration struct {
+	Version int64
+	Name    string
+	SQL     string
+}
+
 type SQLiteStatementRuntime interface {
-	Exec(params []Object) (SQLiteExecResult, error)
-	Query(params []Object) ([]map[string]Object, error)
+	Exec(params Object) (SQLiteExecResult, error)
+	Query(params Object) ([]map[string]Object, error)
+	QueryStream(params Object) (SQLRowsRuntime, error)
+	ParameterCount() int
+	ColumnNames() []string
 	Close() error
 	IsOpen() bool
 	SQL() string
 }
 
 type SQLiteTransactionRuntime interface {
-	Exec(query string, params []Object) (SQLiteExecResult, error)
-	Query(query string, params []Object) ([]map[string]Object, error)
+	Exec(query string, params Object) (SQLiteExecResult, error)
+	Query(query string, params Object) ([]map[string]Object, error)
+	QueryStream(query string, params Object) (SQLRowsRuntime, error)
 	Prepare(query string) (SQLiteStatementRuntime, error)
+	Savepoint(name string) error
+	RollbackTo(name string) error
+	Release(name string) error
 	Commit() error
 	Rollback() error
 	Active() bool

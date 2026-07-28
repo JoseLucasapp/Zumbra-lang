@@ -554,6 +554,95 @@ func (vm *VM) Run() error {
 					return err
 				}
 
+			case *object.SQLRows:
+				val := builtins.SQLRowsMethod(d, attrName.Value)
+				if val == nil {
+					return fmt.Errorf("unknown method %s for SQLRows", attrName.Value)
+				}
+				if err := vm.push(val); err != nil {
+					return err
+				}
+			case *object.PostgresDatabase:
+				val := builtins.PostgresDatabaseMethod(d, attrName.Value)
+				if val == nil {
+					return fmt.Errorf("unknown method %s for PostgresDatabase", attrName.Value)
+				}
+				if err := vm.push(val); err != nil {
+					return err
+				}
+			case *object.PostgresStatement:
+				val := builtins.PostgresStatementMethod(d, attrName.Value)
+				if val == nil {
+					return fmt.Errorf("unknown method %s for PostgresStatement", attrName.Value)
+				}
+				if err := vm.push(val); err != nil {
+					return err
+				}
+			case *object.PostgresTransaction:
+				val := builtins.PostgresTransactionMethod(d, attrName.Value)
+				if val == nil {
+					return fmt.Errorf("unknown method %s for PostgresTransaction", attrName.Value)
+				}
+				if err := vm.push(val); err != nil {
+					return err
+				}
+			case *object.RedisClient:
+				val := builtins.RedisClientMethod(d, attrName.Value)
+				if val == nil {
+					return fmt.Errorf("unknown method %s for RedisClient", attrName.Value)
+				}
+				if err := vm.push(val); err != nil {
+					return err
+				}
+			case *object.Config:
+				val := builtins.ConfigMethod(d, attrName.Value)
+				if val == nil {
+					return fmt.Errorf("unknown method %s for Config", attrName.Value)
+				}
+				if err := vm.push(val); err != nil {
+					return err
+				}
+			case *object.Logger:
+				val := builtins.LoggerMethod(d, attrName.Value)
+				if val == nil {
+					return fmt.Errorf("unknown method %s for Logger", attrName.Value)
+				}
+				if err := vm.push(val); err != nil {
+					return err
+				}
+			case *object.MetricsRegistry:
+				val := builtins.MetricsMethod(d, attrName.Value)
+				if val == nil {
+					return fmt.Errorf("unknown method %s for MetricsRegistry", attrName.Value)
+				}
+				if err := vm.push(val); err != nil {
+					return err
+				}
+			case *object.TraceSpan:
+				val := builtins.TraceSpanMethod(d, attrName.Value)
+				if val == nil {
+					return fmt.Errorf("unknown method %s for TraceSpan", attrName.Value)
+				}
+				if err := vm.push(val); err != nil {
+					return err
+				}
+			case *object.SessionStore:
+				val := builtins.SessionStoreMethod(d, attrName.Value)
+				if val == nil {
+					return fmt.Errorf("unknown method %s for SessionStore", attrName.Value)
+				}
+				if err := vm.push(val); err != nil {
+					return err
+				}
+			case *object.RateLimiter:
+				val := builtins.RateLimiterMethod(d, attrName.Value)
+				if val == nil {
+					return fmt.Errorf("unknown method %s for RateLimiter", attrName.Value)
+				}
+				if err := vm.push(val); err != nil {
+					return err
+				}
+
 			case *object.HttpApp:
 				val := builtins.AppMethod(d, attrName.Value)
 				if val == nil {

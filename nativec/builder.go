@@ -136,6 +136,12 @@ func Build(module *mir.Module, options BuildOptions) (*BuildResult, []Diagnostic
 	if UsesSQLite(module) {
 		args = append(args, "-lsqlite3")
 	}
+	if UsesPostgres(module) {
+		args = append(args, "-lpq")
+	}
+	if UsesRedis(module) {
+		args = append(args, "-lhiredis")
+	}
 	args = append(args, "-lm", "-pthread", "-o", output)
 	command := exec.Command(compiler, args...)
 	command.Stdout = os.Stdout

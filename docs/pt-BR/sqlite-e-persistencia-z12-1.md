@@ -148,34 +148,15 @@ sqliteTransactionActive(transaction)
 - O runtime nativo fecha bancos ainda abertos no encerramento do processo e desfaz transactions pendentes.
 - O SQLite usa modo `FULLMUTEX` e busy timeout de cinco segundos.
 
-## Escopo do Z12.1
+## Continuidade no Z12 completo
 
-Concluído nesta atualização:
+O Z12.1 permanece como documentação da primeira API SQLite. A versão 0.6.0 adiciona parâmetros nomeados, migrations, schema version, streaming incremental, savepoints, PostgreSQL, Redis, configuração tipada, sessões persistentes e observabilidade.
 
-- bancos em arquivo e memória;
-- parâmetros seguros;
-- row mapping;
-- prepared statements reutilizáveis;
-- transactions com commit e rollback;
-- blobs;
-- API por métodos e API funcional;
-- evaluator, VM e backend nativo;
-- linking nativo condicional;
-- testes e exemplo público.
-
-Ainda pertence aos próximos incrementos do Z12:
-
-- savepoints;
-- migrations e versionamento de schema;
-- streaming incremental de rows;
-- PostgreSQL e pools;
-- Redis;
-- configuração tipada;
-- sessões HTTP persistentes;
-- logs estruturados, métricas e tracing.
+Documentação atual: [`dados-e-persistencia-z12.md`](./dados-e-persistencia-z12.md).
 
 ## Validação
 
 ```bash
 scripts/test-sqlite.sh
+scripts/test-data-persistence.sh
 ```

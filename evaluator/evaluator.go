@@ -1065,6 +1065,61 @@ func evalAttributeAccess(left object.Object, property string) object.Object {
 			return method
 		}
 		return newError("unknown method %s for SQLiteTransaction", property)
+	case *object.SQLRows:
+		if method := objectbuiltins.SQLRowsMethod(value, property); method != nil {
+			return method
+		}
+		return newError("unknown method %s for SQLRows", property)
+	case *object.PostgresDatabase:
+		if method := objectbuiltins.PostgresDatabaseMethod(value, property); method != nil {
+			return method
+		}
+		return newError("unknown method %s for PostgresDatabase", property)
+	case *object.PostgresStatement:
+		if method := objectbuiltins.PostgresStatementMethod(value, property); method != nil {
+			return method
+		}
+		return newError("unknown method %s for PostgresStatement", property)
+	case *object.PostgresTransaction:
+		if method := objectbuiltins.PostgresTransactionMethod(value, property); method != nil {
+			return method
+		}
+		return newError("unknown method %s for PostgresTransaction", property)
+	case *object.RedisClient:
+		if method := objectbuiltins.RedisClientMethod(value, property); method != nil {
+			return method
+		}
+		return newError("unknown method %s for RedisClient", property)
+	case *object.Config:
+		if method := objectbuiltins.ConfigMethod(value, property); method != nil {
+			return method
+		}
+		return newError("unknown method %s for Config", property)
+	case *object.Logger:
+		if method := objectbuiltins.LoggerMethod(value, property); method != nil {
+			return method
+		}
+		return newError("unknown method %s for Logger", property)
+	case *object.MetricsRegistry:
+		if method := objectbuiltins.MetricsMethod(value, property); method != nil {
+			return method
+		}
+		return newError("unknown method %s for MetricsRegistry", property)
+	case *object.TraceSpan:
+		if method := objectbuiltins.TraceSpanMethod(value, property); method != nil {
+			return method
+		}
+		return newError("unknown method %s for TraceSpan", property)
+	case *object.SessionStore:
+		if method := objectbuiltins.SessionStoreMethod(value, property); method != nil {
+			return method
+		}
+		return newError("unknown method %s for SessionStore", property)
+	case *object.RateLimiter:
+		if method := objectbuiltins.RateLimiterMethod(value, property); method != nil {
+			return method
+		}
+		return newError("unknown method %s for RateLimiter", property)
 	case *object.HttpApp:
 		if method := objectbuiltins.AppMethod(value, property); method != nil {
 			return method

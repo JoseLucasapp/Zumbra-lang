@@ -127,6 +127,11 @@ func init() {
 			builtinsList[name] = builtin
 		}
 	}
+	// Register every runtime builtin as a final pass so extension milestones do
+	// not need to duplicate the canonical registry in the evaluator.
+	for _, definition := range builtins.Builtins {
+		builtinsList[definition.Name] = definition.Builtin
+	}
 	builtins.SetRouteInvoker(func(handler object.Object, args ...object.Object) (object.Object, error) {
 		result := applyFunctionSync(handler, args)
 		if errObj, ok := result.(*object.Error); ok {

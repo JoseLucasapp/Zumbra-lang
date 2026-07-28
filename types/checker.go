@@ -272,6 +272,12 @@ func refineType(current *Type, wanted *Type) (*Type, bool) {
 	if wanted.Kind == Unknown {
 		return Clone(current), true
 	}
+	if wanted.Kind == SQLParameters && (current.Kind == Array || current.Kind == Dict || current.Kind == SQLParameters) {
+		return Clone(current), true
+	}
+	if current.Kind == SQLParameters && (wanted.Kind == Array || wanted.Kind == Dict || wanted.Kind == SQLParameters) {
+		return Clone(wanted), true
+	}
 	if current.Kind != wanted.Kind {
 		return Clone(current), false
 	}
@@ -1214,9 +1220,9 @@ func (c *Checker) checkBuiltinCall(name string, args []ast.Expression) *Type {
 			c.requireTypeArgument(name+" query", c.inferExpression(args[1]), String)
 		}
 		if len(args) > 2 {
-			p := c.inferExpressionExpected(args[2], ArrayOf(Simple(Unknown)))
-			if p.Kind != Unknown && p.Kind != Array {
-				c.addError(fmt.Errorf("%s parameters must be array, got %s", name, p.String()))
+			p := c.inferExpressionExpected(args[2], Simple(SQLParameters))
+			if p.Kind != Unknown && p.Kind != Array && p.Kind != Dict {
+				c.addError(fmt.Errorf("%s parameters must be array or dict, got %s", name, p.String()))
 			}
 		}
 		if name == "sqliteExec" {
@@ -1261,9 +1267,9 @@ func (c *Checker) checkBuiltinCall(name string, args []ast.Expression) *Type {
 			c.constrainExpression(args[0], Simple(SQLiteStatement), name+" statement")
 		}
 		if len(args) > 1 {
-			p := c.inferExpressionExpected(args[1], ArrayOf(Simple(Unknown)))
-			if p.Kind != Unknown && p.Kind != Array {
-				c.addError(fmt.Errorf("%s parameters must be array, got %s", name, p.String()))
+			p := c.inferExpressionExpected(args[1], Simple(SQLParameters))
+			if p.Kind != Unknown && p.Kind != Array && p.Kind != Dict {
+				c.addError(fmt.Errorf("%s parameters must be array or dict, got %s", name, p.String()))
 			}
 		}
 		if name == "sqliteStatementExec" {
@@ -1292,9 +1298,9 @@ func (c *Checker) checkBuiltinCall(name string, args []ast.Expression) *Type {
 			c.requireTypeArgument(name+" query", c.inferExpression(args[1]), String)
 		}
 		if len(args) > 2 {
-			p := c.inferExpressionExpected(args[2], ArrayOf(Simple(Unknown)))
-			if p.Kind != Unknown && p.Kind != Array {
-				c.addError(fmt.Errorf("%s parameters must be array, got %s", name, p.String()))
+			p := c.inferExpressionExpected(args[2], Simple(SQLParameters))
+			if p.Kind != Unknown && p.Kind != Array && p.Kind != Dict {
+				c.addError(fmt.Errorf("%s parameters must be array or dict, got %s", name, p.String()))
 			}
 		}
 		if name == "sqliteTransactionExec" {
@@ -2008,6 +2014,68 @@ func (c *Checker) checkBuiltinCall(name string, args []ast.Expression) *Type {
 		return Simple(Unknown)
 	}
 
+	if signature, ok := builtinType(name); ok && signature.Kind == Func {
+		minimum, maximum := len(signature.Params), len(signature.Params)
+		switch name {
+		case "sqliteQueryOne", "sqliteQueryStream", "sqliteTransactionQueryStream",
+			"postgresExecDb", "postgresQueryDb", "postgresQueryOne", "postgresQueryStream",
+			"postgresTransactionExec", "postgresTransactionQuery", "postgresTransactionStream":
+			minimum = maximum - 1
+		case "sqliteStatementQueryStream", "postgresStatementExec", "postgresStatementQuery", "postgresStatementStream":
+			minimum = maximum - 1
+		case "postgresOpen":
+			minimum = 1
+		case "redisOpen":
+			minimum = 2
+		case "configEnv":
+			minimum = 0
+		case "configRequired", "configString", "configInt", "configFloat", "configBool":
+			minimum = 2
+		case "logger":
+			minimum = 1
+		case "loggerLog":
+			minimum = 3
+		case "traceStart":
+			minimum = 1
+		case "traceChild", "traceEvent":
+			minimum = 2
+		case "traceFinish":
+			minimum = 1
+		case "sessionRedis":
+			minimum = 1
+		case "jsonWriteFile":
+			minimum = 2
+		}
+		if len(args) < minimum || len(args) > maximum {
+			if minimum == maximum {
+				c.addError(fmt.Errorf("%s expects %d arguments, got %d", name, minimum, len(args)))
+			} else {
+				c.addError(fmt.Errorf("%s expects %d to %d arguments, got %d", name, minimum, maximum, len(args)))
+			}
+		}
+		for index, arg := range args {
+			if index >= len(signature.Params) {
+				c.inferExpression(arg)
+				continue
+			}
+			expected := signature.Params[index]
+			actual := c.inferExpressionExpected(arg, expected)
+			if name == "binaryDecode" && index == 0 {
+				c.requireByteBuffer(name, actual)
+				continue
+			}
+			if expected == nil || expected.Kind == Unknown || actual == nil || actual.Kind == Unknown {
+				continue
+			}
+			if !Compatible(expected, actual) {
+				c.addError(fmt.Errorf("argument %d expects %s, got %s", index+1, expected.String(), actual.String()))
+			}
+		}
+		if signature.Return != nil {
+			return Clone(signature.Return)
+		}
+	}
+
 	for _, arg := range args {
 		c.inferExpression(arg)
 	}
@@ -2164,6 +2232,23 @@ func (c *Checker) inferExpressionExpected(exp ast.Expression, expected *Type) *T
 			result := ArrayOf(Simple(Unknown))
 			c.nodeTypes[literal] = Clone(result)
 			return result
+		}
+	}
+	if expected.Kind == SQLParameters {
+		switch value := exp.(type) {
+		case *ast.ArrayLiteral:
+			for _, element := range value.Elements {
+				c.inferExpression(element)
+			}
+			result := ArrayOf(Simple(Unknown))
+			c.nodeTypes[value] = Clone(result)
+			return result
+		case *ast.DictLiteral:
+			result := c.inferDictLiteral(value)
+			c.nodeTypes[value] = Clone(result)
+			return result
+		default:
+			return c.inferExpression(exp)
 		}
 	}
 	if expected.Kind != Func {
@@ -2758,13 +2843,21 @@ func (c *Checker) inferExpressionImpl(exp ast.Expression) *Type {
 		case SQLiteDatabase:
 			switch e.Property.Value {
 			case "exec":
-				return FuncOf([]*Type{Simple(String), ArrayOf(Simple(Unknown))}, DictOf(Simple(String), Simple(Int)))
+				return FuncOf([]*Type{Simple(String), Simple(SQLParameters)}, DictOf(Simple(String), Simple(Int)))
 			case "query":
-				return FuncOf([]*Type{Simple(String), ArrayOf(Simple(Unknown))}, ArrayOf(DictOf(Simple(String), Simple(Unknown))))
+				return FuncOf([]*Type{Simple(String), Simple(SQLParameters)}, ArrayOf(DictOf(Simple(String), Simple(Unknown))))
+			case "queryOne":
+				return FuncOf([]*Type{Simple(String), Simple(SQLParameters)}, Simple(Unknown))
+			case "stream":
+				return FuncOf([]*Type{Simple(String), Simple(SQLParameters)}, Simple(SQLRows))
 			case "prepare":
 				return FuncOf([]*Type{Simple(String)}, Simple(SQLiteStatement))
 			case "begin":
 				return FuncOf(nil, Simple(SQLiteTransaction))
+			case "migrate":
+				return FuncOf([]*Type{ArrayOf(DictOf(Simple(String), Simple(Unknown)))}, Simple(Int))
+			case "schemaVersion":
+				return FuncOf(nil, Simple(Int))
 			case "close", "isOpen":
 				return FuncOf(nil, Simple(Bool))
 			case "path":
@@ -2773,9 +2866,15 @@ func (c *Checker) inferExpressionImpl(exp ast.Expression) *Type {
 		case SQLiteStatement:
 			switch e.Property.Value {
 			case "exec":
-				return FuncOf([]*Type{ArrayOf(Simple(Unknown))}, DictOf(Simple(String), Simple(Int)))
+				return FuncOf([]*Type{Simple(SQLParameters)}, DictOf(Simple(String), Simple(Int)))
 			case "query":
-				return FuncOf([]*Type{ArrayOf(Simple(Unknown))}, ArrayOf(DictOf(Simple(String), Simple(Unknown))))
+				return FuncOf([]*Type{Simple(SQLParameters)}, ArrayOf(DictOf(Simple(String), Simple(Unknown))))
+			case "stream":
+				return FuncOf([]*Type{Simple(SQLParameters)}, Simple(SQLRows))
+			case "parameterCount":
+				return FuncOf(nil, Simple(Int))
+			case "columns":
+				return FuncOf(nil, ArrayOf(Simple(String)))
 			case "close", "isOpen":
 				return FuncOf(nil, Simple(Bool))
 			case "sql":
@@ -2784,13 +2883,176 @@ func (c *Checker) inferExpressionImpl(exp ast.Expression) *Type {
 		case SQLiteTransaction:
 			switch e.Property.Value {
 			case "exec":
-				return FuncOf([]*Type{Simple(String), ArrayOf(Simple(Unknown))}, DictOf(Simple(String), Simple(Int)))
+				return FuncOf([]*Type{Simple(String), Simple(SQLParameters)}, DictOf(Simple(String), Simple(Int)))
 			case "query":
-				return FuncOf([]*Type{Simple(String), ArrayOf(Simple(Unknown))}, ArrayOf(DictOf(Simple(String), Simple(Unknown))))
+				return FuncOf([]*Type{Simple(String), Simple(SQLParameters)}, ArrayOf(DictOf(Simple(String), Simple(Unknown))))
+			case "stream":
+				return FuncOf([]*Type{Simple(String), Simple(SQLParameters)}, Simple(SQLRows))
 			case "prepare":
 				return FuncOf([]*Type{Simple(String)}, Simple(SQLiteStatement))
+			case "savepoint", "rollbackTo", "release":
+				return FuncOf([]*Type{Simple(String)}, Simple(Bool))
 			case "commit", "rollback", "active":
 				return FuncOf(nil, Simple(Bool))
+			}
+		case SQLRows:
+			switch e.Property.Value {
+			case "next":
+				return FuncOf(nil, ArrayOf(Simple(Unknown)))
+			case "columns":
+				return FuncOf(nil, ArrayOf(Simple(String)))
+			case "close", "isOpen":
+				return FuncOf(nil, Simple(Bool))
+			}
+		case PostgresDatabase:
+			switch e.Property.Value {
+			case "exec":
+				return FuncOf([]*Type{Simple(String), Simple(SQLParameters)}, DictOf(Simple(String), Simple(Int)))
+			case "query":
+				return FuncOf([]*Type{Simple(String), Simple(SQLParameters)}, ArrayOf(DictOf(Simple(String), Simple(Unknown))))
+			case "queryOne":
+				return FuncOf([]*Type{Simple(String), Simple(SQLParameters)}, Simple(Unknown))
+			case "stream":
+				return FuncOf([]*Type{Simple(String), Simple(SQLParameters)}, Simple(SQLRows))
+			case "prepare":
+				return FuncOf([]*Type{Simple(String)}, Simple(PostgresStatement))
+			case "begin":
+				return FuncOf(nil, Simple(PostgresTransaction))
+			case "configurePool":
+				return FuncOf([]*Type{Simple(Int), Simple(Int), Simple(Int), Simple(Int)}, Simple(PostgresDatabase))
+			case "poolStats":
+				return FuncOf(nil, DictOf(Simple(String), Simple(Int)))
+			case "ping", "close", "isOpen":
+				return FuncOf(nil, Simple(Bool))
+			}
+		case PostgresStatement:
+			switch e.Property.Value {
+			case "exec":
+				return FuncOf([]*Type{Simple(SQLParameters)}, DictOf(Simple(String), Simple(Int)))
+			case "query":
+				return FuncOf([]*Type{Simple(SQLParameters)}, ArrayOf(DictOf(Simple(String), Simple(Unknown))))
+			case "stream":
+				return FuncOf([]*Type{Simple(SQLParameters)}, Simple(SQLRows))
+			case "close", "isOpen":
+				return FuncOf(nil, Simple(Bool))
+			case "sql":
+				return FuncOf(nil, Simple(String))
+			}
+		case PostgresTransaction:
+			switch e.Property.Value {
+			case "exec":
+				return FuncOf([]*Type{Simple(String), Simple(SQLParameters)}, DictOf(Simple(String), Simple(Int)))
+			case "query":
+				return FuncOf([]*Type{Simple(String), Simple(SQLParameters)}, ArrayOf(DictOf(Simple(String), Simple(Unknown))))
+			case "stream":
+				return FuncOf([]*Type{Simple(String), Simple(SQLParameters)}, Simple(SQLRows))
+			case "prepare":
+				return FuncOf([]*Type{Simple(String)}, Simple(PostgresStatement))
+			case "savepoint", "rollbackTo", "release":
+				return FuncOf([]*Type{Simple(String)}, Simple(Bool))
+			case "commit", "rollback", "active":
+				return FuncOf(nil, Simple(Bool))
+			}
+		case RedisClient:
+			switch e.Property.Value {
+			case "ping", "close", "isOpen":
+				return FuncOf(nil, Simple(Bool))
+			case "set":
+				return FuncOf([]*Type{Simple(String), Simple(Unknown), Simple(Int)}, Simple(Bool))
+			case "get":
+				return FuncOf([]*Type{Simple(String)}, Simple(Unknown))
+			case "delete", "exists":
+				return FuncOf([]*Type{Simple(String)}, Simple(Int))
+			case "expire":
+				return FuncOf([]*Type{Simple(String), Simple(Int)}, Simple(Bool))
+			case "ttl":
+				return FuncOf([]*Type{Simple(String)}, Simple(Int))
+			case "increment":
+				return FuncOf([]*Type{Simple(String), Simple(Int)}, Simple(Int))
+			case "pipeline":
+				return FuncOf([]*Type{ArrayOf(DictOf(Simple(String), Simple(Unknown)))}, ArrayOf(Simple(Unknown)))
+			case "poolStats":
+				return FuncOf(nil, DictOf(Simple(String), Simple(Int)))
+			}
+		case Config:
+			switch e.Property.Value {
+			case "merge":
+				return FuncOf([]*Type{Simple(Config)}, Simple(Config))
+			case "required":
+				return FuncOf([]*Type{Simple(String), Simple(Unknown)}, Simple(Unknown))
+			case "string":
+				return FuncOf([]*Type{Simple(String), Simple(Unknown)}, Simple(String))
+			case "int":
+				return FuncOf([]*Type{Simple(String), Simple(Unknown)}, Simple(Int))
+			case "float":
+				return FuncOf([]*Type{Simple(String), Simple(Unknown)}, Simple(Float))
+			case "bool":
+				return FuncOf([]*Type{Simple(String), Simple(Unknown)}, Simple(Bool))
+			case "secret":
+				return FuncOf([]*Type{Simple(String)}, Simple(Config))
+			case "redacted":
+				return FuncOf(nil, DictOf(Simple(String), Simple(Unknown)))
+			}
+		case Logger:
+			switch e.Property.Value {
+			case "with":
+				return FuncOf([]*Type{DictOf(Simple(String), Simple(Unknown))}, Simple(Logger))
+			case "setLevel":
+				return FuncOf([]*Type{Simple(String)}, Simple(Logger))
+			case "log":
+				return FuncOf([]*Type{Simple(String), Simple(String), DictOf(Simple(String), Simple(Unknown))}, Simple(Bool))
+			case "trace", "debug", "info", "warn", "error", "fatal":
+				return FuncOf([]*Type{Simple(String), DictOf(Simple(String), Simple(Unknown))}, Simple(Bool))
+			case "close":
+				return FuncOf(nil, Simple(Bool))
+			}
+		case MetricsRegistry:
+			switch e.Property.Value {
+			case "counter", "gauge", "observe":
+				return FuncOf([]*Type{Simple(String), Simple(Float), DictOf(Simple(String), Simple(String))}, Simple(Bool))
+			case "snapshot":
+				return FuncOf(nil, DictOf(Simple(String), Simple(Unknown)))
+			case "reset":
+				return FuncOf(nil, Simple(Bool))
+			}
+		case TraceSpan:
+			switch e.Property.Value {
+			case "child":
+				return FuncOf([]*Type{Simple(String), DictOf(Simple(String), Simple(Unknown))}, Simple(TraceSpan))
+			case "set":
+				return FuncOf([]*Type{Simple(String), Simple(Unknown)}, Simple(TraceSpan))
+			case "event":
+				return FuncOf([]*Type{Simple(String), DictOf(Simple(String), Simple(Unknown))}, Simple(TraceSpan))
+			case "finish":
+				return FuncOf([]*Type{Simple(String)}, DictOf(Simple(String), Simple(Unknown)))
+			case "active":
+				return FuncOf(nil, Simple(Bool))
+			}
+		case SessionStore:
+			switch e.Property.Value {
+			case "create":
+				return FuncOf([]*Type{DictOf(Simple(String), Simple(Unknown)), Simple(Int)}, Simple(String))
+			case "get":
+				return FuncOf([]*Type{Simple(String)}, Simple(Unknown))
+			case "set":
+				return FuncOf([]*Type{Simple(String), DictOf(Simple(String), Simple(Unknown)), Simple(Int)}, Simple(Bool))
+			case "delete":
+				return FuncOf([]*Type{Simple(String)}, Simple(Bool))
+			case "rotate":
+				return FuncOf([]*Type{Simple(String), Simple(Int)}, Simple(String))
+			case "touch":
+				return FuncOf([]*Type{Simple(String), Simple(Int)}, Simple(Bool))
+			case "cleanup":
+				return FuncOf(nil, Simple(Int))
+			case "close":
+				return FuncOf(nil, Simple(Bool))
+			}
+		case RateLimiter:
+			switch e.Property.Value {
+			case "allow":
+				return FuncOf([]*Type{Simple(String)}, DictOf(Simple(String), Simple(Unknown)))
+			case "reset":
+				return FuncOf([]*Type{Simple(String)}, Simple(Bool))
 			}
 		case HttpApp:
 			handler := FuncOf([]*Type{Simple(HttpRequest), Simple(HttpResponse)}, Simple(Unknown))
@@ -2939,7 +3201,7 @@ func (c *Checker) typeFromName(name string) *Type {
 		return value
 	}
 	switch Kind(name) {
-	case Int, U8, U16, U32, U64, I8, I16, I32, I64, Float, Bool, String, Pointer, Null, Task, Channel, Mutex, RWMutex, WaitGroup, Semaphore, AtomicInt, NetListener, NetStream, UDPSocket, HttpApp, HttpServer, HttpRequest, HttpResponse, HttpClientResponse, HttpStream, HttpFile, WebSocket, SQLiteDatabase, SQLiteStatement, SQLiteTransaction:
+	case Int, U8, U16, U32, U64, I8, I16, I32, I64, Float, Bool, String, Pointer, Null, Task, Channel, Mutex, RWMutex, WaitGroup, Semaphore, AtomicInt, NetListener, NetStream, UDPSocket, HttpApp, HttpServer, HttpRequest, HttpResponse, HttpClientResponse, HttpStream, HttpFile, WebSocket, SQLiteDatabase, SQLiteStatement, SQLiteTransaction, SQLRows, SQLParameters, PostgresDatabase, PostgresStatement, PostgresTransaction, RedisClient, Config, Logger, MetricsRegistry, TraceSpan, SessionStore, RateLimiter:
 		return Simple(Kind(name))
 	default:
 		return Simple(Unknown)

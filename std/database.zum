@@ -1,18 +1,67 @@
+// SQLite
 pub fct open(path) { sqliteOpen(path); }
+pub fct sqlite(path) { sqliteOpen(path); }
 pub fct memory() { sqliteMemory(); }
 pub fct exec(database, sql, parameters) { sqliteExec(database, sql, parameters); }
 pub fct query(database, sql, parameters) { sqliteQuery(database, sql, parameters); }
+pub fct queryOne(database, sql, parameters) { sqliteQueryOne(database, sql, parameters); }
+pub fct stream(database, sql, parameters) { sqliteQueryStream(database, sql, parameters); }
 pub fct prepare(database, sql) { sqlitePrepare(database, sql); }
 pub fct begin(database) { sqliteBegin(database); }
+pub fct migrate(database, migrations) { sqliteMigrate(database, migrations); }
+pub fct schemaVersion(database) { sqliteSchemaVersion(database); }
 pub fct close(database) { sqliteClose(database); }
 pub fct isOpen(database) { sqliteIsOpen(database); }
 pub fct path(database) { sqlitePath(database); }
 
 pub fct statementExec(statement, parameters) { sqliteStatementExec(statement, parameters); }
 pub fct statementQuery(statement, parameters) { sqliteStatementQuery(statement, parameters); }
+pub fct statementStream(statement, parameters) { sqliteStatementQueryStream(statement, parameters); }
+pub fct statementParameterCount(statement) { sqliteStatementParameterCount(statement); }
+pub fct statementColumns(statement) { sqliteStatementColumns(statement); }
 pub fct closeStatement(statement) { sqliteStatementClose(statement); }
 
 pub fct transactionExec(transaction, sql, parameters) { sqliteTransactionExec(transaction, sql, parameters); }
 pub fct transactionQuery(transaction, sql, parameters) { sqliteTransactionQuery(transaction, sql, parameters); }
+pub fct transactionStream(transaction, sql, parameters) { sqliteTransactionQueryStream(transaction, sql, parameters); }
+pub fct transactionPrepare(transaction, sql) { sqliteTransactionPrepare(transaction, sql); }
+pub fct savepoint(transaction, name) { sqliteSavepoint(transaction, name); }
+pub fct rollbackTo(transaction, name) { sqliteRollbackTo(transaction, name); }
+pub fct releaseSavepoint(transaction, name) { sqliteRelease(transaction, name); }
 pub fct commit(transaction) { sqliteCommit(transaction); }
 pub fct rollback(transaction) { sqliteRollback(transaction); }
+
+pub fct next(rows) { sqlRowsNext(rows); }
+pub fct columns(rows) { sqlRowsColumns(rows); }
+pub fct closeRows(rows) { sqlRowsClose(rows); }
+
+// PostgreSQL
+pub fct postgres(dsn, options) { postgresOpen(dsn, options); }
+pub fct postgresConfigure(database, maxOpen, maxIdle, maxLifetimeMs, maxIdleTimeMs) {
+    postgresConfigurePool(database, maxOpen, maxIdle, maxLifetimeMs, maxIdleTimeMs);
+}
+pub fct postgresStats(database) { postgresPoolStats(database); }
+pub fct postgresPingServer(database) { postgresPing(database); }
+pub fct postgresExec(database, sql, parameters) { postgresExecDb(database, sql, parameters); }
+pub fct postgresQuery(database, sql, parameters) { postgresQueryDb(database, sql, parameters); }
+pub fct postgresQueryFirst(database, sql, parameters) { postgresQueryOne(database, sql, parameters); }
+pub fct postgresStream(database, sql, parameters) { postgresQueryStream(database, sql, parameters); }
+pub fct postgresStatement(database, sql) { postgresPrepare(database, sql); }
+pub fct postgresTransaction(database) { postgresBegin(database); }
+pub fct postgresCloseDatabase(database) { postgresClose(database); }
+
+// Redis
+pub fct redis(host, port, password, database, poolSize) {
+    redisOpen(host, port, password, database, poolSize);
+}
+pub fct redisPingServer(client) { redisPing(client); }
+pub fct redisSetValue(client, key, value, ttlMs) { redisSetClient(client, key, value, ttlMs); }
+pub fct redisGetValue(client, key) { redisGetClient(client, key); }
+pub fct redisDeleteKey(client, key) { redisDelete(client, key); }
+pub fct redisKeyExists(client, key) { redisExists(client, key); }
+pub fct redisExpireKey(client, key, ttlMs) { redisExpire(client, key, ttlMs); }
+pub fct redisKeyTtl(client, key) { redisTTL(client, key); }
+pub fct redisIncrementBy(client, key, amount) { redisIncrement(client, key, amount); }
+pub fct redisRunPipeline(client, commands) { redisPipeline(client, commands); }
+pub fct redisStats(client) { redisPoolStats(client); }
+pub fct redisCloseClient(client) { redisClose(client); }

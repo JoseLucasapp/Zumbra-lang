@@ -42,6 +42,13 @@ func TestCoreSyntaxSnippetsParseAndCompile(t *testing.T) {
 		`var listener << tcpListen("127.0.0.1", 0); var port << listenerPort(listener); listenerClose(listener); port;`,
 		`var socket << udpBind("127.0.0.1", 0); udpClose(socket);`,
 		`var db << sqliteMemory(); db.exec("create table test(id integer)", []); db.close();`,
+		`var db << sqliteMemory(); sqliteMigrate(db, [{"version": 1, "name": "test", "sql": "create table test(id integer)"}]); var rows << sqliteQueryStream(db, "select id from test", {}); sqlRowsClose(rows); sqliteClose(db);`,
+		`var config << configFrom({"port": "8080"}); configInt(config, "port", 0);`,
+		`var registry << metrics(); metricsCounter(registry, "requests", 1, {}); metricsSnapshot(registry);`,
+		`var span << traceStart("request", {}); traceEvent(span, "handled", {}); traceFinish(span, "ok");`,
+		`var store << sessionSQLite(":memory:"); var id << sessionCreate(store, {"user": "local"}, 1000); sessionDelete(store, id); sessionClose(store);`,
+		`var limiter << rateLimiter(2, 1000); rateAllow(limiter, "client");`,
+		`var encoded << binaryEncode({"score": 42}); binaryDecode(encoded);`,
 		`var run << fct() { 1; }; try run() or err { err; };`,
 	}
 
@@ -257,5 +264,25 @@ func TestZ11JSONAndWebSocketDocumentationTypes(t *testing.T) {
 		if !strings.Contains(dump, "web_socket") {
 			t.Fatalf("WebSocket type is missing:\n%s", dump)
 		}
+	}
+}
+
+func TestZ12DocumentationExamplesBuild(t *testing.T) {
+	for _, path := range []string{
+		"../code_examples/core/data_persistence.zum",
+		"../code_examples/core/data_serialization.zum",
+		"../code_examples/core/config_observability.zum",
+		"../code_examples/core/postgres_redis.zum",
+	} {
+		t.Run(filepath.Base(path), func(t *testing.T) {
+			result, diagnostics := pipeline.BuildFile(path, pipeline.Options{Optimize: true})
+			if len(diagnostics) != 0 {
+				t.Fatalf("Z12 documentation example failed: %s", pipeline.FormatDiagnostics(diagnostics))
+			}
+			sources, nativeDiagnostics := nativec.Generate(result.MIR)
+			if len(nativeDiagnostics) != 0 || len(sources.Program) == 0 {
+				t.Fatalf("Z12 native documentation generation failed: %v", nativeDiagnostics)
+			}
+		})
 	}
 }

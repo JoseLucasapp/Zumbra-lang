@@ -1,0 +1,19 @@
+pub fct log(name, level, path) { logger(name, level, path); }
+pub fct with(loggerValue, fields) { loggerWith(loggerValue, fields); }
+pub fct setLevel(loggerValue, level) { loggerSetLevel(loggerValue, level); }
+pub fct write(loggerValue, level, message, fields) { loggerLog(loggerValue, level, message, fields); }
+pub fct closeLogger(loggerValue) { loggerClose(loggerValue); }
+
+pub fct registry() { metrics(); }
+pub fct counter(registryValue, name, delta, labels) { metricsCounter(registryValue, name, delta, labels); }
+pub fct gauge(registryValue, name, value, labels) { metricsGauge(registryValue, name, value, labels); }
+pub fct observe(registryValue, name, value, labels) { metricsHistogram(registryValue, name, value, labels); }
+pub fct snapshot(registryValue) { metricsSnapshot(registryValue); }
+pub fct reset(registryValue) { metricsReset(registryValue); }
+
+pub fct trace(name, attributes) { traceStart(name, attributes); }
+pub fct child(parent, name, attributes) { traceChild(parent, name, attributes); }
+pub fct attribute(span, key, value) { traceSet(span, key, value); }
+pub fct event(span, name, attributes) { traceEvent(span, name, attributes); }
+pub fct finish(span, status) { traceFinish(span, status); }
+pub fct active(span) { traceActive(span); }

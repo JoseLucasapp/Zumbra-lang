@@ -66,6 +66,15 @@ static _Thread_local char z_task_error_message[1024];
 
 uint32_t z_abi_version(void) { return ZUMBRA_NATIVE_ABI_VERSION; }
 
+
+#if defined(ZUMBRA_ENABLE_Z12)
+static void z_z12_runtime_init(void);
+static void z_z12_runtime_shutdown(void);
+static ZValue z_z12_call_builtin(const char *name, const ZValue *args, size_t argc, bool *handled);
+static ZValue z_z12_get_field(ZValue value, const char *name, bool *handled);
+static ZValue z_z12_call_method(ZValue callable, const ZValue *args, size_t argc);
+#endif
+
 #if defined(ZUMBRA_ENABLE_SQLITE)
 static void z_sqlite_runtime_init(void);
 static void z_sqlite_runtime_shutdown(void);
@@ -91,6 +100,9 @@ void z_runtime_init(void) {
 #if defined(ZUMBRA_ENABLE_HTTP)
     z_http_runtime_init();
 #endif
+#if defined(ZUMBRA_ENABLE_Z12)
+    z_z12_runtime_init();
+#endif
 #if defined(ZUMBRA_ENABLE_SQLITE)
     z_sqlite_runtime_init();
 #endif
@@ -99,6 +111,9 @@ void z_runtime_init(void) {
 void z_runtime_shutdown(void) {
 #if defined(ZUMBRA_ENABLE_SQLITE)
     z_sqlite_runtime_shutdown();
+#endif
+#if defined(ZUMBRA_ENABLE_Z12)
+    z_z12_runtime_shutdown();
 #endif
 #if defined(ZUMBRA_ENABLE_HTTP)
     z_http_runtime_shutdown();
@@ -609,6 +624,11 @@ size_t z_size_of(ZValue value) {
 }
 
 ZValue z_get_field(ZValue object, const char *name) {
+#if defined(ZUMBRA_ENABLE_Z12)
+    bool z12_handled = false;
+    ZValue z12_value = z_z12_get_field(object, name, &z12_handled);
+    if (z12_handled) return z12_value;
+#endif
 #if defined(ZUMBRA_ENABLE_SQLITE)
     bool sqlite_handled = false;
     ZValue sqlite_value = z_sqlite_get_field(object, name, &sqlite_handled);
@@ -674,6 +694,9 @@ typedef struct { pthread_mutex_t mutex; pthread_cond_t condition; int64_t count;
 typedef struct { pthread_mutex_t mutex; pthread_cond_t condition; int64_t available; int64_t capacity; } ZSemaphoreNative;
 
 static ZValue z_call_sync(ZValue callable, const ZValue *args, size_t argc) {
+#if defined(ZUMBRA_ENABLE_Z12)
+    if (callable.tag == ZV_Z12_METHOD) return z_z12_call_method(callable, args, argc);
+#endif
 #if defined(ZUMBRA_ENABLE_HTTP)
     if (callable.tag == ZV_NATIVE_METHOD) return z_http_call_native_method(callable, args, argc);
 #endif
@@ -834,6 +857,9 @@ ZValue z_call(ZValue callable, const ZValue *args, size_t argc) {
 #if defined(ZUMBRA_ENABLE_SQLITE)
     if (callable.tag == ZV_SQLITE_METHOD) return z_sqlite_call_method(callable, args, argc);
 #endif
+#if defined(ZUMBRA_ENABLE_Z12)
+    if (callable.tag == ZV_Z12_METHOD) return z_z12_call_method(callable, args, argc);
+#endif
 #if defined(ZUMBRA_ENABLE_HTTP)
     if (callable.tag == ZV_NATIVE_METHOD) return z_http_call_native_method(callable, args, argc);
 #endif
@@ -873,6 +899,17 @@ static void z_show_inner(ZValue value) {
     case ZV_SQLITE_DATABASE: fputs("SQLiteDatabase", stdout); break;
     case ZV_SQLITE_STATEMENT: fputs("SQLiteStatement", stdout); break;
     case ZV_SQLITE_TRANSACTION: fputs("SQLiteTransaction", stdout); break;
+    case ZV_SQL_ROWS: fputs("SQLRows", stdout); break;
+    case ZV_POSTGRES_DATABASE: fputs("PostgresDatabase", stdout); break;
+    case ZV_POSTGRES_STATEMENT: fputs("PostgresStatement", stdout); break;
+    case ZV_POSTGRES_TRANSACTION: fputs("PostgresTransaction", stdout); break;
+    case ZV_REDIS_CLIENT: fputs("RedisClient", stdout); break;
+    case ZV_CONFIG: fputs("Config", stdout); break;
+    case ZV_LOGGER: fputs("Logger", stdout); break;
+    case ZV_METRICS: fputs("Metrics", stdout); break;
+    case ZV_TRACE_SPAN: fputs("TraceSpan", stdout); break;
+    case ZV_SESSION_STORE: fputs("SessionStore", stdout); break;
+    case ZV_RATE_LIMITER: fputs("RateLimiter", stdout); break;
 #endif
 #if defined(ZUMBRA_ENABLE_NETWORK)
     case ZV_NET_LISTENER: fputs("NetListener", stdout); break;
@@ -1693,6 +1730,11 @@ static bool z_udp_close_native(ZValue value) {
 #endif
 
 ZValue z_call_builtin(const char *name, const ZValue *args, size_t argc) {
+#if defined(ZUMBRA_ENABLE_Z12)
+    bool z12_handled = false;
+    ZValue z12_result = z_z12_call_builtin(name, args, argc, &z12_handled);
+    if (z12_handled) return z12_result;
+#endif
 #if defined(ZUMBRA_ENABLE_SQLITE)
     bool sqlite_handled = false;
     ZValue sqlite_result = z_sqlite_call_builtin(name, args, argc, &sqlite_handled);

@@ -17,7 +17,7 @@ import (
 	"zumbra/types"
 )
 
-//go:embed runtime/zumbra_runtime.c runtime/zumbra_runtime.h runtime/zumbra_http.inc runtime/zumbra_sqlite.inc
+//go:embed runtime/zumbra_runtime.c runtime/zumbra_runtime.h runtime/zumbra_http.inc runtime/zumbra_z12.inc runtime/zumbra_sqlite.inc
 var runtimeFiles embed.FS
 
 type Sources struct {
@@ -77,6 +77,118 @@ var supportedBuiltins = map[string]bool{
 	"sqliteOpen": true, "sqliteMemory": true, "sqliteExec": true, "sqliteQuery": true, "sqlitePrepare": true, "sqliteBegin": true, "sqliteClose": true, "sqliteIsOpen": true, "sqlitePath": true,
 	"sqliteStatementExec": true, "sqliteStatementQuery": true, "sqliteStatementClose": true, "sqliteStatementOpen": true, "sqliteStatementSQL": true,
 	"sqliteTransactionExec": true, "sqliteTransactionQuery": true, "sqliteTransactionPrepare": true, "sqliteCommit": true, "sqliteRollback": true, "sqliteTransactionActive": true,
+}
+
+var z12NativeBuiltins = map[string]bool{
+	"sqliteQueryOne":                true,
+	"sqliteQueryStream":             true,
+	"sqliteMigrate":                 true,
+	"sqliteSchemaVersion":           true,
+	"sqliteStatementQueryStream":    true,
+	"sqliteStatementParameterCount": true,
+	"sqliteStatementColumns":        true,
+	"sqliteTransactionQueryStream":  true,
+	"sqliteSavepoint":               true,
+	"sqliteRollbackTo":              true,
+	"sqliteRelease":                 true,
+	"sqlRowsNext":                   true,
+	"sqlRowsColumns":                true,
+	"sqlRowsClose":                  true,
+	"sqlRowsOpen":                   true,
+	"postgresOpen":                  true,
+	"postgresConfigurePool":         true,
+	"postgresPoolStats":             true,
+	"postgresPing":                  true,
+	"postgresClose":                 true,
+	"postgresIsOpen":                true,
+	"postgresExecDb":                true,
+	"postgresQueryDb":               true,
+	"postgresQueryOne":              true,
+	"postgresQueryStream":           true,
+	"postgresPrepare":               true,
+	"postgresBegin":                 true,
+	"postgresStatementExec":         true,
+	"postgresStatementQuery":        true,
+	"postgresStatementStream":       true,
+	"postgresStatementClose":        true,
+	"postgresStatementOpen":         true,
+	"postgresStatementSQL":          true,
+	"postgresTransactionExec":       true,
+	"postgresTransactionQuery":      true,
+	"postgresTransactionStream":     true,
+	"postgresTransactionPrepare":    true,
+	"postgresSavepoint":             true,
+	"postgresRollbackTo":            true,
+	"postgresRelease":               true,
+	"postgresCommit":                true,
+	"postgresRollback":              true,
+	"postgresTransactionActive":     true,
+	"redisOpen":                     true,
+	"redisPing":                     true,
+	"redisClose":                    true,
+	"redisIsOpen":                   true,
+	"redisSetClient":                true,
+	"redisGetClient":                true,
+	"redisDelete":                   true,
+	"redisExists":                   true,
+	"redisExpire":                   true,
+	"redisTTL":                      true,
+	"redisIncrement":                true,
+	"redisPipeline":                 true,
+	"redisPoolStats":                true,
+	"configLoad":                    true,
+	"configFrom":                    true,
+	"configEnv":                     true,
+	"configMerge":                   true,
+	"configRequired":                true,
+	"configString":                  true,
+	"configInt":                     true,
+	"configFloat":                   true,
+	"configBool":                    true,
+	"configSecret":                  true,
+	"configRedacted":                true,
+	"logger":                        true,
+	"loggerWith":                    true,
+	"loggerSetLevel":                true,
+	"loggerLog":                     true,
+	"loggerClose":                   true,
+	"metrics":                       true,
+	"metricsCounter":                true,
+	"metricsGauge":                  true,
+	"metricsHistogram":              true,
+	"metricsSnapshot":               true,
+	"metricsReset":                  true,
+	"traceStart":                    true,
+	"traceChild":                    true,
+	"traceSet":                      true,
+	"traceEvent":                    true,
+	"traceFinish":                   true,
+	"traceActive":                   true,
+	"sessionSQLite":                 true,
+	"sessionRedis":                  true,
+	"sessionCreate":                 true,
+	"sessionGet":                    true,
+	"sessionSet":                    true,
+	"sessionDelete":                 true,
+	"sessionRotate":                 true,
+	"sessionTouch":                  true,
+	"sessionCleanup":                true,
+	"sessionClose":                  true,
+	"rateLimiter":                   true,
+	"rateAllow":                     true,
+	"rateReset":                     true,
+	"jsonReadFile":                  true,
+	"jsonWriteFile":                 true,
+	"binaryEncode":                  true,
+	"binaryDecode":                  true,
+	"binaryWriteFile":               true,
+	"binaryReadFile":                true,
+}
+
+func init() {
+	for name := range z12NativeBuiltins {
+		supportedBuiltins[name] = true
+	}
 }
 
 type structInfo struct {
@@ -152,6 +264,15 @@ func Generate(module *mir.Module) (*Sources, []Diagnostic) {
 	if UsesHTTP(module) {
 		prefix += "#define ZUMBRA_ENABLE_HTTP 1\n"
 	}
+	if UsesZ12(module) {
+		prefix += "#define ZUMBRA_ENABLE_Z12 1\n"
+	}
+	if UsesPostgres(module) {
+		prefix += "#define ZUMBRA_ENABLE_POSTGRES 1\n"
+	}
+	if UsesRedis(module) {
+		prefix += "#define ZUMBRA_ENABLE_REDIS 1\n"
+	}
 	if UsesSQLite(module) {
 		prefix += "#define ZUMBRA_ENABLE_SQLITE 1\n"
 	}
@@ -162,6 +283,14 @@ func Generate(module *mir.Module) (*Sources, []Diagnostic) {
 		}
 		runtimeSource = append(runtimeSource, '\n')
 		runtimeSource = append(runtimeSource, httpRuntime...)
+	}
+	if UsesZ12(module) {
+		z12Runtime, readErr := runtimeFiles.ReadFile("runtime/zumbra_z12.inc")
+		if readErr != nil {
+			return nil, []Diagnostic{{Message: "could not load embedded Z12 runtime: " + readErr.Error()}}
+		}
+		runtimeSource = append(runtimeSource, '\n')
+		runtimeSource = append(runtimeSource, z12Runtime...)
 	}
 	if UsesSQLite(module) {
 		sqliteRuntime, readErr := runtimeFiles.ReadFile("runtime/zumbra_sqlite.inc")
@@ -983,6 +1112,28 @@ func cKind(value *types.Type) string {
 		return "ZK_SQLITE_STATEMENT"
 	case types.SQLiteTransaction:
 		return "ZK_SQLITE_TRANSACTION"
+	case types.SQLRows:
+		return "ZK_SQL_ROWS"
+	case types.PostgresDatabase:
+		return "ZK_POSTGRES_DATABASE"
+	case types.PostgresStatement:
+		return "ZK_POSTGRES_STATEMENT"
+	case types.PostgresTransaction:
+		return "ZK_POSTGRES_TRANSACTION"
+	case types.RedisClient:
+		return "ZK_REDIS_CLIENT"
+	case types.Config:
+		return "ZK_CONFIG"
+	case types.Logger:
+		return "ZK_LOGGER"
+	case types.MetricsRegistry:
+		return "ZK_METRICS"
+	case types.TraceSpan:
+		return "ZK_TRACE_SPAN"
+	case types.SessionStore:
+		return "ZK_SESSION_STORE"
+	case types.RateLimiter:
+		return "ZK_RATE_LIMITER"
 	default:
 		return "ZK_UNKNOWN"
 	}
@@ -1087,10 +1238,33 @@ var sqliteBuiltins = map[string]bool{
 	"sqliteOpen": true, "sqliteMemory": true, "sqliteExec": true, "sqliteQuery": true, "sqlitePrepare": true, "sqliteBegin": true, "sqliteClose": true, "sqliteIsOpen": true, "sqlitePath": true,
 	"sqliteStatementExec": true, "sqliteStatementQuery": true, "sqliteStatementClose": true, "sqliteStatementOpen": true, "sqliteStatementSQL": true,
 	"sqliteTransactionExec": true, "sqliteTransactionQuery": true, "sqliteTransactionPrepare": true, "sqliteCommit": true, "sqliteRollback": true, "sqliteTransactionActive": true,
+	"sqliteQueryOne": true, "sqliteQueryStream": true, "sqliteMigrate": true, "sqliteSchemaVersion": true,
+	"sqliteStatementQueryStream": true, "sqliteStatementParameterCount": true, "sqliteStatementColumns": true,
+	"sqliteTransactionQueryStream": true, "sqliteSavepoint": true, "sqliteRollbackTo": true, "sqliteRelease": true,
+	"sessionSQLite": true,
 }
 
-// UsesSQLite reports whether the MIR references the Z12.1 SQLite runtime.
-func UsesSQLite(module *mir.Module) bool { return moduleUsesAnyBuiltin(module, sqliteBuiltins) }
+var postgresBuiltins = map[string]bool{}
+var redisBuiltins = map[string]bool{}
+
+func init() {
+	for name := range z12NativeBuiltins {
+		if strings.HasPrefix(name, "postgres") {
+			postgresBuiltins[name] = true
+		}
+		if strings.HasPrefix(name, "redis") {
+			redisBuiltins[name] = true
+		}
+	}
+}
+
+// UsesSQLite reports whether the MIR references SQLite or persistent SQLite sessions.
+func UsesSQLite(module *mir.Module) bool   { return moduleUsesAnyBuiltin(module, sqliteBuiltins) }
+func UsesPostgres(module *mir.Module) bool { return moduleUsesAnyBuiltin(module, postgresBuiltins) }
+func UsesRedis(module *mir.Module) bool    { return moduleUsesAnyBuiltin(module, redisBuiltins) }
+func UsesZ12(module *mir.Module) bool {
+	return UsesSQLite(module) || moduleUsesAnyBuiltin(module, z12NativeBuiltins)
+}
 
 func moduleUsesAnyBuiltin(module *mir.Module, names map[string]bool) bool {
 	if module == nil {

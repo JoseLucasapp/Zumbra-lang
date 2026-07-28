@@ -29,6 +29,14 @@ typedef struct {
     char *sql;
 } ZSQLiteStatementNative;
 
+typedef struct {
+    ZSQLiteDatabaseNative *database;
+    sqlite3_stmt *statement;
+    bool owns_statement;
+    bool open;
+    ZValue columns;
+} ZSQLiteRowsNative;
+
 struct ZSQLiteTransactionNative {
     ZSQLiteDatabaseNative *database;
     bool active;
@@ -112,16 +120,36 @@ static void z_sqlite_bind_value(sqlite3_stmt *statement, int index, ZValue value
 }
 
 static void z_sqlite_bind_params(sqlite3_stmt *statement, ZValue params) {
-    if (params.tag != ZV_ARRAY) z_fatal("SQLite parameters must be an array");
     int expected = sqlite3_bind_parameter_count(statement);
-    if ((int)params.as.array->len != expected) {
-        z_fatal("SQLite statement expects %d parameters, got %zu", expected, params.as.array->len);
-    }
     sqlite3_reset(statement);
     sqlite3_clear_bindings(statement);
-    for (size_t index = 0; index < params.as.array->len; index++) {
-        z_sqlite_bind_value(statement, (int)index + 1, params.as.array->items[index]);
+    if (params.tag == ZV_ARRAY) {
+        if ((int)params.as.array->len != expected) {
+            z_fatal("SQLite statement expects %d parameters, got %zu", expected, params.as.array->len);
+        }
+        for (size_t index = 0; index < params.as.array->len; index++) {
+            z_sqlite_bind_value(statement, (int)index + 1, params.as.array->items[index]);
+        }
+        return;
     }
+    if (params.tag == ZV_DICT) {
+        if ((int)params.as.dict->len != expected) {
+            z_fatal("SQLite statement expects %d named parameters, got %zu", expected, params.as.dict->len);
+        }
+        for (int index = 1; index <= expected; index++) {
+            const char *parameter = sqlite3_bind_parameter_name(statement, index);
+            if (parameter == NULL || (*parameter != ':' && *parameter != '$' && *parameter != '@')) {
+                z_fatal("SQLite parameter %d is positional; use an array", index);
+            }
+            ZValue value;
+            bool found = z_z12_dict_find(params, parameter, &value);
+            if (!found) found = z_z12_dict_find(params, parameter + 1, &value);
+            if (!found) z_fatal("missing SQLite named parameter %s", parameter);
+            z_sqlite_bind_value(statement, index, value);
+        }
+        return;
+    }
+    z_fatal("SQLite parameters must be an array or dictionary");
 }
 
 static sqlite3_stmt *z_sqlite_prepare_locked(ZSQLiteDatabaseNative *database, const char *sql) {
@@ -333,6 +361,118 @@ static bool z_sqlite_finish_transaction(ZSQLiteTransactionNative *transaction, c
     return true;
 }
 
+
+static ZValue z_sqlite_rows_next_native(void *raw, bool *ok) {
+    ZSQLiteRowsNative *rows = (ZSQLiteRowsNative *)raw;
+    pthread_mutex_lock(&rows->database->mutex);
+    if (!rows->open || rows->statement == NULL) {
+        pthread_mutex_unlock(&rows->database->mutex);
+        *ok = false;
+        return z_null();
+    }
+    int code = sqlite3_step(rows->statement);
+    if (code == SQLITE_DONE) {
+        rows->open = false;
+        if (rows->owns_statement) { sqlite3_finalize(rows->statement); rows->statement = NULL; }
+        else { sqlite3_reset(rows->statement); sqlite3_clear_bindings(rows->statement); }
+        pthread_mutex_unlock(&rows->database->mutex);
+        *ok = false;
+        return z_null();
+    }
+    if (code != SQLITE_ROW) {
+        pthread_mutex_unlock(&rows->database->mutex);
+        z_sqlite_fail(rows->database, "stream SQLite row", code);
+    }
+    int columns = sqlite3_column_count(rows->statement);
+    ZValue *pairs = columns == 0 ? NULL : (ZValue *)z_alloc(sizeof(ZValue) * (size_t)columns);
+    for (int column = 0; column < columns; column++) pairs[column] = z_pair(z_string(sqlite3_column_name(rows->statement, column)), z_sqlite_column_value(rows->statement, column));
+    ZValue result = z_dict_from(pairs, (size_t)columns);
+    pthread_mutex_unlock(&rows->database->mutex);
+    *ok = true;
+    return result;
+}
+static ZValue z_sqlite_rows_columns_native(void *raw) { return ((ZSQLiteRowsNative *)raw)->columns; }
+static void z_sqlite_rows_close_native(void *raw) {
+    ZSQLiteRowsNative *rows = (ZSQLiteRowsNative *)raw;
+    pthread_mutex_lock(&rows->database->mutex);
+    if (rows->open && rows->statement != NULL) {
+        if (rows->owns_statement) sqlite3_finalize(rows->statement);
+        else { sqlite3_reset(rows->statement); sqlite3_clear_bindings(rows->statement); }
+    }
+    rows->statement = NULL;
+    rows->open = false;
+    pthread_mutex_unlock(&rows->database->mutex);
+}
+static ZValue z_sqlite_stream_from_statement(ZSQLiteDatabaseNative *database, sqlite3_stmt *statement, ZValue params, bool owns_statement) {
+    z_sqlite_bind_params(statement, params);
+    int count = sqlite3_column_count(statement);
+    ZValue *names = count == 0 ? NULL : (ZValue *)z_alloc(sizeof(ZValue) * (size_t)count);
+    for (int column = 0; column < count; column++) names[column] = z_string(sqlite3_column_name(statement, column));
+    ZSQLiteRowsNative *rows = (ZSQLiteRowsNative *)z_alloc(sizeof(ZSQLiteRowsNative));
+    rows->database = database; rows->statement = statement; rows->owns_statement = owns_statement; rows->open = true; rows->columns = z_array_from(names, (size_t)count);
+    return z_z12_rows_new(rows, z_sqlite_rows_next_native, z_sqlite_rows_columns_native, z_sqlite_rows_close_native);
+}
+static ZValue z_sqlite_database_stream(ZSQLiteDatabaseNative *database, const char *sql, ZValue params, bool transaction_call) {
+    pthread_mutex_lock(&database->mutex);
+    z_sqlite_check_database(database);
+    if (database->transaction_active && !transaction_call) { pthread_mutex_unlock(&database->mutex); z_fatal("SQLite database has an active transaction; use the transaction handle"); }
+    sqlite3_stmt *statement = z_sqlite_prepare_locked(database, sql);
+    ZValue result = z_sqlite_stream_from_statement(database, statement, params, true);
+    pthread_mutex_unlock(&database->mutex);
+    return result;
+}
+static ZValue z_sqlite_statement_stream(ZSQLiteStatementNative *statement, ZValue params) {
+    pthread_mutex_lock(&statement->database->mutex);
+    z_sqlite_check_statement(statement);
+    ZValue result = z_sqlite_stream_from_statement(statement->database, statement->statement, params, false);
+    pthread_mutex_unlock(&statement->database->mutex);
+    return result;
+}
+static bool z_sqlite_safe_identifier(const char *name) {
+    if (name == NULL || *name == '\0') return false;
+    for (const char *cursor = name; *cursor != '\0'; cursor++) if (!isalnum((unsigned char)*cursor) && *cursor != '_') return false;
+    return true;
+}
+static bool z_sqlite_transaction_control(ZSQLiteTransactionNative *transaction, const char *prefix, const char *name) {
+    if (!z_sqlite_safe_identifier(name)) z_fatal("invalid SQLite savepoint name");
+    ZZ12Buffer sql; z_z12_buffer_init(&sql); z_z12_buffer_append(&sql, prefix); z_z12_buffer_append(&sql, name);
+    ZSQLiteDatabaseNative *database = transaction->database;
+    pthread_mutex_lock(&database->mutex);
+    if (!transaction->active || !database->transaction_active) { pthread_mutex_unlock(&database->mutex); z_z12_buffer_free(&sql); z_fatal("SQLite transaction is no longer active"); }
+    char *error = NULL; int code = sqlite3_exec(database->database, sql.data, NULL, NULL, &error);
+    if (code != SQLITE_OK) { const char *message = error == NULL ? sqlite3_errmsg(database->database) : error; pthread_mutex_unlock(&database->mutex); z_z12_buffer_free(&sql); z_fatal("SQLite savepoint: %s", message); }
+    if (error != NULL) sqlite3_free(error);
+    pthread_mutex_unlock(&database->mutex); z_z12_buffer_free(&sql); return true;
+}
+static int64_t z_sqlite_schema_version(ZSQLiteDatabaseNative *database) {
+    pthread_mutex_lock(&database->mutex);
+    z_sqlite_check_database(database);
+    char *error = NULL;
+    int code = sqlite3_exec(database->database, "CREATE TABLE IF NOT EXISTS _zumbra_migrations(version INTEGER PRIMARY KEY,name TEXT NOT NULL,applied_at INTEGER NOT NULL)", NULL, NULL, &error);
+    if (code != SQLITE_OK) { const char *message=error==NULL?sqlite3_errmsg(database->database):error; pthread_mutex_unlock(&database->mutex); z_fatal("initialize migrations: %s", message); }
+    if (error != NULL) sqlite3_free(error);
+    sqlite3_stmt *statement = NULL; sqlite3_prepare_v2(database->database, "SELECT COALESCE(MAX(version),0) FROM _zumbra_migrations", -1, &statement, NULL);
+    int64_t result = 0; if (sqlite3_step(statement) == SQLITE_ROW) result = sqlite3_column_int64(statement, 0); sqlite3_finalize(statement);
+    pthread_mutex_unlock(&database->mutex); return result;
+}
+static int64_t z_sqlite_migrate(ZSQLiteDatabaseNative *database, ZValue migrations) {
+    if (migrations.tag != ZV_ARRAY) z_fatal("SQLite migrations must be array");
+    int64_t current = z_sqlite_schema_version(database), applied = 0, previous = current;
+    pthread_mutex_lock(&database->mutex);
+    char *error = NULL; if (sqlite3_exec(database->database, "BEGIN IMMEDIATE", NULL, NULL, &error) != SQLITE_OK) { const char *message=error==NULL?sqlite3_errmsg(database->database):error; pthread_mutex_unlock(&database->mutex); z_fatal("begin migrations: %s", message); }
+    for (size_t index = 0; index < migrations.as.array->len; index++) {
+        ZValue migration = migrations.as.array->items[index]; if (migration.tag != ZV_DICT) { sqlite3_exec(database->database,"ROLLBACK",NULL,NULL,NULL); pthread_mutex_unlock(&database->mutex); z_fatal("migration must be dictionary"); }
+        ZValue version_value, name_value, sql_value;
+        if (!z_z12_dict_find(migration,"version",&version_value) || !z_z12_dict_find(migration,"name",&name_value) || !z_z12_dict_find(migration,"sql",&sql_value)) { sqlite3_exec(database->database,"ROLLBACK",NULL,NULL,NULL); pthread_mutex_unlock(&database->mutex); z_fatal("migration requires version, name and sql"); }
+        int64_t version = z_as_i64(version_value); if (version <= previous && version > current) { sqlite3_exec(database->database,"ROLLBACK",NULL,NULL,NULL); pthread_mutex_unlock(&database->mutex); z_fatal("migration versions must be strictly increasing"); }
+        if (version <= current) continue;
+        if (name_value.tag != ZV_STRING || sql_value.tag != ZV_STRING) { sqlite3_exec(database->database,"ROLLBACK",NULL,NULL,NULL); pthread_mutex_unlock(&database->mutex); z_fatal("migration name and sql must be strings"); }
+        if (sqlite3_exec(database->database, sql_value.as.s, NULL, NULL, &error) != SQLITE_OK) { const char *message=error==NULL?sqlite3_errmsg(database->database):error; sqlite3_exec(database->database,"ROLLBACK",NULL,NULL,NULL); pthread_mutex_unlock(&database->mutex); z_fatal("apply migration %s: %s", name_value.as.s, message); }
+        sqlite3_stmt *record=NULL; sqlite3_prepare_v2(database->database,"INSERT INTO _zumbra_migrations(version,name,applied_at) VALUES(?,?,?)",-1,&record,NULL); sqlite3_bind_int64(record,1,version);sqlite3_bind_text(record,2,name_value.as.s,-1,SQLITE_TRANSIENT);sqlite3_bind_int64(record,3,z_z12_now_ms());if(sqlite3_step(record)!=SQLITE_DONE){sqlite3_finalize(record);sqlite3_exec(database->database,"ROLLBACK",NULL,NULL,NULL);pthread_mutex_unlock(&database->mutex);z_fatal("record migration: %s",sqlite3_errmsg(database->database));}sqlite3_finalize(record);previous=version;applied++;
+    }
+    if (sqlite3_exec(database->database,"COMMIT",NULL,NULL,&error)!=SQLITE_OK){const char*message=error==NULL?sqlite3_errmsg(database->database):error;sqlite3_exec(database->database,"ROLLBACK",NULL,NULL,NULL);pthread_mutex_unlock(&database->mutex);z_fatal("commit migrations: %s",message);}pthread_mutex_unlock(&database->mutex);return applied;
+}
+
 static ZValue z_sqlite_bound_method(ZValue receiver, const char *name) {
     ZSQLiteBoundMethodNative *method = (ZSQLiteBoundMethodNative *)z_alloc(sizeof(ZSQLiteBoundMethodNative));
     method->receiver = receiver;
@@ -350,6 +490,10 @@ static ZValue z_sqlite_call_method(ZValue callable, const ZValue *args, size_t a
     if (method->receiver.tag == ZV_SQLITE_DATABASE) {
         if (strcmp(method->name, "exec") == 0) builtin = "sqliteExec";
         else if (strcmp(method->name, "query") == 0) builtin = "sqliteQuery";
+        else if (strcmp(method->name, "queryOne") == 0) builtin = "sqliteQueryOne";
+        else if (strcmp(method->name, "stream") == 0) builtin = "sqliteQueryStream";
+        else if (strcmp(method->name, "migrate") == 0) builtin = "sqliteMigrate";
+        else if (strcmp(method->name, "schemaVersion") == 0) builtin = "sqliteSchemaVersion";
         else if (strcmp(method->name, "prepare") == 0) builtin = "sqlitePrepare";
         else if (strcmp(method->name, "begin") == 0) builtin = "sqliteBegin";
         else if (strcmp(method->name, "close") == 0) builtin = "sqliteClose";
@@ -358,12 +502,19 @@ static ZValue z_sqlite_call_method(ZValue callable, const ZValue *args, size_t a
     } else if (method->receiver.tag == ZV_SQLITE_STATEMENT) {
         if (strcmp(method->name, "exec") == 0) builtin = "sqliteStatementExec";
         else if (strcmp(method->name, "query") == 0) builtin = "sqliteStatementQuery";
+        else if (strcmp(method->name, "stream") == 0) builtin = "sqliteStatementQueryStream";
+        else if (strcmp(method->name, "parameterCount") == 0) builtin = "sqliteStatementParameterCount";
+        else if (strcmp(method->name, "columns") == 0) builtin = "sqliteStatementColumns";
         else if (strcmp(method->name, "close") == 0) builtin = "sqliteStatementClose";
         else if (strcmp(method->name, "isOpen") == 0) builtin = "sqliteStatementOpen";
         else if (strcmp(method->name, "sql") == 0) builtin = "sqliteStatementSQL";
     } else if (method->receiver.tag == ZV_SQLITE_TRANSACTION) {
         if (strcmp(method->name, "exec") == 0) builtin = "sqliteTransactionExec";
         else if (strcmp(method->name, "query") == 0) builtin = "sqliteTransactionQuery";
+        else if (strcmp(method->name, "stream") == 0) builtin = "sqliteTransactionQueryStream";
+        else if (strcmp(method->name, "savepoint") == 0) builtin = "sqliteSavepoint";
+        else if (strcmp(method->name, "rollbackTo") == 0) builtin = "sqliteRollbackTo";
+        else if (strcmp(method->name, "release") == 0) builtin = "sqliteRelease";
         else if (strcmp(method->name, "prepare") == 0) builtin = "sqliteTransactionPrepare";
         else if (strcmp(method->name, "commit") == 0) builtin = "sqliteCommit";
         else if (strcmp(method->name, "rollback") == 0) builtin = "sqliteRollback";
@@ -379,15 +530,15 @@ static ZValue z_sqlite_call_method(ZValue callable, const ZValue *args, size_t a
 static ZValue z_sqlite_get_field(ZValue value, const char *name, bool *handled) {
     *handled = true;
     if (value.tag == ZV_SQLITE_DATABASE) {
-        if (strcmp(name,"exec")==0||strcmp(name,"query")==0||strcmp(name,"prepare")==0||strcmp(name,"begin")==0||strcmp(name,"close")==0||strcmp(name,"isOpen")==0||strcmp(name,"path")==0) return z_sqlite_bound_method(value,name);
+        if (strcmp(name,"exec")==0||strcmp(name,"query")==0||strcmp(name,"queryOne")==0||strcmp(name,"stream")==0||strcmp(name,"prepare")==0||strcmp(name,"begin")==0||strcmp(name,"migrate")==0||strcmp(name,"schemaVersion")==0||strcmp(name,"close")==0||strcmp(name,"isOpen")==0||strcmp(name,"path")==0) return z_sqlite_bound_method(value,name);
         z_fatal("SQLiteDatabase has no method %s", name);
     }
     if (value.tag == ZV_SQLITE_STATEMENT) {
-        if (strcmp(name,"exec")==0||strcmp(name,"query")==0||strcmp(name,"close")==0||strcmp(name,"isOpen")==0||strcmp(name,"sql")==0) return z_sqlite_bound_method(value,name);
+        if (strcmp(name,"exec")==0||strcmp(name,"query")==0||strcmp(name,"stream")==0||strcmp(name,"parameterCount")==0||strcmp(name,"columns")==0||strcmp(name,"close")==0||strcmp(name,"isOpen")==0||strcmp(name,"sql")==0) return z_sqlite_bound_method(value,name);
         z_fatal("SQLiteStatement has no method %s", name);
     }
     if (value.tag == ZV_SQLITE_TRANSACTION) {
-        if (strcmp(name,"exec")==0||strcmp(name,"query")==0||strcmp(name,"prepare")==0||strcmp(name,"commit")==0||strcmp(name,"rollback")==0||strcmp(name,"active")==0) return z_sqlite_bound_method(value,name);
+        if (strcmp(name,"exec")==0||strcmp(name,"query")==0||strcmp(name,"stream")==0||strcmp(name,"prepare")==0||strcmp(name,"savepoint")==0||strcmp(name,"rollbackTo")==0||strcmp(name,"release")==0||strcmp(name,"commit")==0||strcmp(name,"rollback")==0||strcmp(name,"active")==0) return z_sqlite_bound_method(value,name);
         z_fatal("SQLiteTransaction has no method %s", name);
     }
     *handled = false;
@@ -457,20 +608,31 @@ static ZValue z_sqlite_call_builtin(const char *name, const ZValue *args, size_t
     *handled = true;
     if (strcmp(name,"sqliteOpen")==0) { z_expect_args(name,argc,1); return z_sqlite_open(z_as_cstring(args[0])); }
     if (strcmp(name,"sqliteMemory")==0) { z_expect_args(name,argc,0); return z_sqlite_open(":memory:"); }
-    if (strcmp(name,"sqliteExec")==0) { z_expect_args(name,argc,3); return z_sqlite_database_exec(z_sqlite_expect_database(args[0]),z_as_cstring(args[1]),args[2],false); }
-    if (strcmp(name,"sqliteQuery")==0) { z_expect_args(name,argc,3); return z_sqlite_database_query(z_sqlite_expect_database(args[0]),z_as_cstring(args[1]),args[2],false); }
+    if (strcmp(name,"sqliteExec")==0) { if(argc<2||argc>3)z_fatal("sqliteExec expects database, SQL and optional parameters"); return z_sqlite_database_exec(z_sqlite_expect_database(args[0]),z_as_cstring(args[1]),argc==3?args[2]:z_array_from(NULL,0),false); }
+    if (strcmp(name,"sqliteQuery")==0) { if(argc<2||argc>3)z_fatal("sqliteQuery expects database, SQL and optional parameters"); return z_sqlite_database_query(z_sqlite_expect_database(args[0]),z_as_cstring(args[1]),argc==3?args[2]:z_array_from(NULL,0),false); }
+    if (strcmp(name,"sqliteQueryOne")==0) { if(argc<2||argc>3)z_fatal("sqliteQueryOne expects database, SQL and optional parameters"); ZValue rows=z_sqlite_database_query(z_sqlite_expect_database(args[0]),z_as_cstring(args[1]),argc==3?args[2]:z_array_from(NULL,0),false); return rows.as.array->len==0?z_null():rows.as.array->items[0]; }
+    if (strcmp(name,"sqliteQueryStream")==0) { if(argc<2||argc>3)z_fatal("sqliteQueryStream expects database, SQL and optional parameters"); return z_sqlite_database_stream(z_sqlite_expect_database(args[0]),z_as_cstring(args[1]),argc==3?args[2]:z_array_from(NULL,0),false); }
+    if (strcmp(name,"sqliteMigrate")==0) { z_expect_args(name,argc,2); return z_int(z_sqlite_migrate(z_sqlite_expect_database(args[0]),args[1])); }
+    if (strcmp(name,"sqliteSchemaVersion")==0) { z_expect_args(name,argc,1); return z_int(z_sqlite_schema_version(z_sqlite_expect_database(args[0]))); }
     if (strcmp(name,"sqlitePrepare")==0) { z_expect_args(name,argc,2); return z_sqlite_prepare_value(z_sqlite_expect_database(args[0]),NULL,z_as_cstring(args[1])); }
     if (strcmp(name,"sqliteBegin")==0) { z_expect_args(name,argc,1); return z_sqlite_begin(z_sqlite_expect_database(args[0])); }
     if (strcmp(name,"sqliteClose")==0) { z_expect_args(name,argc,1); return z_bool(z_sqlite_close_database(z_sqlite_expect_database(args[0]))); }
     if (strcmp(name,"sqliteIsOpen")==0) { z_expect_args(name,argc,1); return z_bool(z_sqlite_database_is_open(z_sqlite_expect_database(args[0]))); }
     if (strcmp(name,"sqlitePath")==0) { z_expect_args(name,argc,1); return z_string(z_sqlite_expect_database(args[0])->path); }
-    if (strcmp(name,"sqliteStatementExec")==0) { z_expect_args(name,argc,2); return z_sqlite_statement_exec(z_sqlite_expect_statement(args[0]),args[1]); }
-    if (strcmp(name,"sqliteStatementQuery")==0) { z_expect_args(name,argc,2); return z_sqlite_statement_query(z_sqlite_expect_statement(args[0]),args[1]); }
+    if (strcmp(name,"sqliteStatementExec")==0) { if(argc<1||argc>2)z_fatal("sqliteStatementExec expects statement and optional parameters"); return z_sqlite_statement_exec(z_sqlite_expect_statement(args[0]),argc==2?args[1]:z_array_from(NULL,0)); }
+    if (strcmp(name,"sqliteStatementQuery")==0) { if(argc<1||argc>2)z_fatal("sqliteStatementQuery expects statement and optional parameters"); return z_sqlite_statement_query(z_sqlite_expect_statement(args[0]),argc==2?args[1]:z_array_from(NULL,0)); }
+    if (strcmp(name,"sqliteStatementQueryStream")==0) { if(argc<1||argc>2)z_fatal("sqliteStatementQueryStream expects statement and optional parameters"); return z_sqlite_statement_stream(z_sqlite_expect_statement(args[0]),argc==2?args[1]:z_array_from(NULL,0)); }
+    if (strcmp(name,"sqliteStatementParameterCount")==0) { z_expect_args(name,argc,1); return z_int(sqlite3_bind_parameter_count(z_sqlite_expect_statement(args[0])->statement)); }
+    if (strcmp(name,"sqliteStatementColumns")==0) { z_expect_args(name,argc,1); ZSQLiteStatementNative *statement=z_sqlite_expect_statement(args[0]); int count=sqlite3_column_count(statement->statement); ZValue *items=count==0?NULL:(ZValue*)z_alloc(sizeof(ZValue)*(size_t)count); for(int i=0;i<count;i++)items[i]=z_string(sqlite3_column_name(statement->statement,i)); return z_array_from(items,(size_t)count); }
     if (strcmp(name,"sqliteStatementClose")==0) { z_expect_args(name,argc,1); return z_bool(z_sqlite_statement_close(z_sqlite_expect_statement(args[0]))); }
     if (strcmp(name,"sqliteStatementOpen")==0) { z_expect_args(name,argc,1); return z_bool(z_sqlite_statement_is_open(z_sqlite_expect_statement(args[0]))); }
     if (strcmp(name,"sqliteStatementSQL")==0) { z_expect_args(name,argc,1); return z_string(z_sqlite_expect_statement(args[0])->sql); }
-    if (strcmp(name,"sqliteTransactionExec")==0) { z_expect_args(name,argc,3); return z_sqlite_transaction_exec(z_sqlite_expect_transaction(args[0]),z_as_cstring(args[1]),args[2],false); }
-    if (strcmp(name,"sqliteTransactionQuery")==0) { z_expect_args(name,argc,3); return z_sqlite_transaction_exec(z_sqlite_expect_transaction(args[0]),z_as_cstring(args[1]),args[2],true); }
+    if (strcmp(name,"sqliteTransactionExec")==0) { if(argc<2||argc>3)z_fatal("sqliteTransactionExec expects transaction, SQL and optional parameters"); return z_sqlite_transaction_exec(z_sqlite_expect_transaction(args[0]),z_as_cstring(args[1]),argc==3?args[2]:z_array_from(NULL,0),false); }
+    if (strcmp(name,"sqliteTransactionQuery")==0) { if(argc<2||argc>3)z_fatal("sqliteTransactionQuery expects transaction, SQL and optional parameters"); return z_sqlite_transaction_exec(z_sqlite_expect_transaction(args[0]),z_as_cstring(args[1]),argc==3?args[2]:z_array_from(NULL,0),true); }
+    if (strcmp(name,"sqliteTransactionQueryStream")==0) { if(argc<2||argc>3)z_fatal("sqliteTransactionQueryStream expects transaction, SQL and optional parameters"); ZSQLiteTransactionNative *tx=z_sqlite_expect_transaction(args[0]); return z_sqlite_database_stream(tx->database,z_as_cstring(args[1]),argc==3?args[2]:z_array_from(NULL,0),true); }
+    if (strcmp(name,"sqliteSavepoint")==0) { z_expect_args(name,argc,2); return z_bool(z_sqlite_transaction_control(z_sqlite_expect_transaction(args[0]),"SAVEPOINT ",z_as_cstring(args[1]))); }
+    if (strcmp(name,"sqliteRollbackTo")==0) { z_expect_args(name,argc,2); return z_bool(z_sqlite_transaction_control(z_sqlite_expect_transaction(args[0]),"ROLLBACK TO SAVEPOINT ",z_as_cstring(args[1]))); }
+    if (strcmp(name,"sqliteRelease")==0) { z_expect_args(name,argc,2); return z_bool(z_sqlite_transaction_control(z_sqlite_expect_transaction(args[0]),"RELEASE SAVEPOINT ",z_as_cstring(args[1]))); }
     if (strcmp(name,"sqliteTransactionPrepare")==0) { z_expect_args(name,argc,2); return z_sqlite_transaction_prepare(z_sqlite_expect_transaction(args[0]),z_as_cstring(args[1])); }
     if (strcmp(name,"sqliteCommit")==0) { z_expect_args(name,argc,1); return z_bool(z_sqlite_finish_transaction(z_sqlite_expect_transaction(args[0]),"COMMIT")); }
     if (strcmp(name,"sqliteRollback")==0) { z_expect_args(name,argc,1); return z_bool(z_sqlite_finish_transaction(z_sqlite_expect_transaction(args[0]),"ROLLBACK")); }
