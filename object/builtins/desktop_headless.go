@@ -346,6 +346,9 @@ func (w *headlessWindow) LastUIFrame() *object.UIRenderFrame {
 	defer w.mu.RUnlock()
 	return w.lastUI
 }
+func (w *headlessWindow) MeasureUIText(text string, style object.UITextStyle) object.UITextMetrics {
+	return approximateUITextMetrics(text, style)
+}
 
 type headlessTray struct {
 	backend *headlessDesktopBackend

@@ -100,3 +100,43 @@ func TestZ14ModalUsesCenteredContentBounds(t *testing.T) {
 		t.Fatalf("modal bounds=%+v", bounds)
 	}
 }
+
+func TestZ14PointOneThemeSwitchReRendersDarkPalette(t *testing.T) {
+	app := DesktopAppBuiltin().Fn(desktopTestDict(map[string]object.Object{"backend": NewString("headless")})).(*object.DesktopApp)
+	window := DesktopWindowBuiltin().Fn(app, desktopTestDict(map[string]object.Object{"title": NewString("Theme"), "width": NewInteger(360), "height": NewInteger(220)})).(*object.DesktopWindow)
+	label := uiTestNode("text", map[string]object.Object{"text": NewString("Ação e café")})
+	root := uiTestNode("column", map[string]object.Object{"padding": NewInteger(12)}, label)
+	ctx := UIMountBuiltin().Fn(app, window, root, desktopTestDict(map[string]object.Object{"theme": UIThemeBuiltin().Fn(NewString("light"))})).(*object.UIContext)
+	if got := ctx.LastFrame.Background; got != "#f5f7fb" {
+		t.Fatalf("light background=%q", got)
+	}
+	result := UISetThemeBuiltin().Fn(ctx, UIThemeBuiltin().Fn(NewString("dark")))
+	if result.Type() == object.ERROR_OBJ {
+		t.Fatal(result.Inspect())
+	}
+	if got := ctx.LastFrame.Background; got != "#141822" {
+		t.Fatalf("dark background=%q", got)
+	}
+	if len(ctx.LastFrame.Items) == 0 {
+		t.Fatal("missing rendered items")
+	}
+	if got := uiString(ctx.LastFrame.Items[0].Props, "textColor", ""); got != "#f2f5fa" {
+		t.Fatalf("dark text color=%q", got)
+	}
+}
+
+func TestZ14PointOneUTF8TextMeasurementUsesRunesAndFontSize(t *testing.T) {
+	style := object.UITextStyle{FontFamily: "sans", FontSize: 18, LineHeight: 1.25}
+	small := approximateUITextMetrics("ação", style)
+	if small.Width <= 0 || small.Height < 18 {
+		t.Fatalf("small metrics=%+v", small)
+	}
+	large := approximateUITextMetrics("ação", object.UITextStyle{FontFamily: "sans", FontSize: 28, LineHeight: 1.25})
+	if large.Width <= small.Width || large.Height <= small.Height {
+		t.Fatalf("font size did not affect metrics: small=%+v large=%+v", small, large)
+	}
+	ascii := approximateUITextMetrics("acao", style)
+	if small.Width != ascii.Width {
+		t.Fatalf("UTF-8 code points were measured as bytes: utf8=%+v ascii=%+v", small, ascii)
+	}
+}

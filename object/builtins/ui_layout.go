@@ -26,7 +26,11 @@ func renderUIContext(ctx *object.UIContext) error {
 	if theme == nil {
 		theme = &object.UITheme{Name: "light", Values: defaultUITheme("light")}
 	}
-	layoutUINode(root, object.UIRect{X: 0, Y: 0, Width: float64(width), Height: float64(height)}, theme)
+	var measurer object.DesktopUITextMeasurer
+	if candidate, ok := ctx.Window.Runtime.(object.DesktopUITextMeasurer); ok {
+		measurer = candidate
+	}
+	layoutUINode(root, object.UIRect{X: 0, Y: 0, Width: float64(width), Height: float64(height)}, theme, measurer)
 	frame := &object.UIRenderFrame{Width: float64(width), Height: float64(height), Background: uiThemeString(theme, "background", "#f5f7fb")}
 	flattenUIRender(root, theme, focusID, hoverID, &frame.Items)
 	if renderer, ok := ctx.Window.Runtime.(object.DesktopUIRenderer); ok {
@@ -41,7 +45,7 @@ func renderUIContext(ctx *object.UIContext) error {
 	return nil
 }
 
-func layoutUINode(node *object.UINode, available object.UIRect, theme *object.UITheme) {
+func layoutUINode(node *object.UINode, available object.UIRect, theme *object.UITheme, measurer object.DesktopUITextMeasurer) {
 	if node == nil {
 		return
 	}
@@ -86,7 +90,7 @@ func layoutUINode(node *object.UINode, available object.UIRect, theme *object.UI
 	if height < 0 {
 		height = 0
 	}
-	natural := uiNaturalHeight(kind, props, theme)
+	natural := uiNaturalHeight(kind, props, theme, measurer)
 	if _, explicit := uiNumber(props["height"]); !explicit && kind != "row" && kind != "column" && kind != "container" && kind != "modal" {
 		height = math.Min(height, natural)
 	}
@@ -136,9 +140,9 @@ func layoutUINode(node *object.UINode, available object.UIRect, theme *object.UI
 			totalGrow += grow
 			continue
 		}
-		size := uiNaturalHeight(ck, cp, theme)
+		size := uiNaturalHeight(ck, cp, theme, measurer)
 		if direction == "row" {
-			size = uiPropNumber(cp, "width", uiNaturalWidth(ck, cp, theme))
+			size = uiPropNumber(cp, "width", uiNaturalWidth(ck, cp, theme, measurer))
 		} else {
 			size = uiPropNumber(cp, "height", size)
 		}
@@ -175,13 +179,13 @@ func layoutUINode(node *object.UINode, available object.UIRect, theme *object.UI
 		grow := uiPropNumber(cp, "grow", 0)
 		var cw, ch float64
 		if direction == "row" {
-			cw = uiPropNumber(cp, "width", uiNaturalWidth(ck, cp, theme))
+			cw = uiPropNumber(cp, "width", uiNaturalWidth(ck, cp, theme, measurer))
 			if grow > 0 && totalGrow > 0 {
 				cw = remaining * grow / totalGrow
 			}
 			ch = inner.Height
 			align := optionString(props, "align", "stretch")
-			naturalH := uiNaturalHeight(ck, cp, theme)
+			naturalH := uiNaturalHeight(ck, cp, theme, measurer)
 			if align != "stretch" {
 				ch = math.Min(ch, uiPropNumber(cp, "height", naturalH))
 			}
@@ -191,16 +195,16 @@ func layoutUINode(node *object.UINode, available object.UIRect, theme *object.UI
 			} else if align == "end" {
 				cy = inner.Y + inner.Height - ch
 			}
-			layoutUINode(child, object.UIRect{X: cursorX, Y: cy, Width: cw, Height: ch}, theme)
+			layoutUINode(child, object.UIRect{X: cursorX, Y: cy, Width: cw, Height: ch}, theme, measurer)
 			cursorX += cw + gap
 		} else {
-			ch = uiPropNumber(cp, "height", uiNaturalHeight(ck, cp, theme))
+			ch = uiPropNumber(cp, "height", uiNaturalHeight(ck, cp, theme, measurer))
 			if grow > 0 && totalGrow > 0 {
 				ch = remaining * grow / totalGrow
 			}
 			cw = inner.Width
 			align := optionString(props, "align", "stretch")
-			naturalW := uiNaturalWidth(ck, cp, theme)
+			naturalW := uiNaturalWidth(ck, cp, theme, measurer)
 			if align != "stretch" {
 				cw = math.Min(cw, uiPropNumber(cp, "width", naturalW))
 			}
@@ -210,7 +214,7 @@ func layoutUINode(node *object.UINode, available object.UIRect, theme *object.UI
 			} else if align == "end" {
 				cx = inner.X + inner.Width - cw
 			}
-			layoutUINode(child, object.UIRect{X: cx, Y: cursorY, Width: cw, Height: ch}, theme)
+			layoutUINode(child, object.UIRect{X: cx, Y: cursorY, Width: cw, Height: ch}, theme, measurer)
 			cursorY += ch + gap
 		}
 	}
@@ -270,14 +274,111 @@ func uiThemeString(theme *object.UITheme, key, fallback string) string {
 	}
 	return fallback
 }
-func uiNaturalHeight(kind string, props map[string]object.Object, theme *object.UITheme) float64 {
+func uiTextStyle(props map[string]object.Object, theme *object.UITheme, wrapWidth float64) object.UITextStyle {
+	lineHeight := uiPropNumber(props, "lineHeight", uiThemeNumber(theme, "lineHeight", 1.25))
+	if lineHeight <= 0 {
+		lineHeight = 1.25
+	}
+	return object.UITextStyle{
+		FontFamily: uiString(props, "fontFamily", uiThemeString(theme, "fontFamily", "sans")),
+		FontPath:   uiString(props, "fontPath", uiThemeString(theme, "fontPath", "")),
+		FontSize:   uiPropNumber(props, "fontSize", uiThemeNumber(theme, "fontSize", 14)),
+		FontWeight: uiString(props, "fontWeight", uiThemeString(theme, "fontWeight", "normal")),
+		FontStyle:  uiString(props, "fontStyle", uiThemeString(theme, "fontStyle", "normal")),
+		LineHeight: lineHeight,
+		WrapWidth:  wrapWidth,
+	}
+}
+
+func uiTextFromProps(props map[string]object.Object) string {
+	for _, key := range []string{"text", "label", "value", "placeholder", "title"} {
+		if value, ok := props[key].(*object.String); ok && value.Value != "" {
+			return value.Value
+		}
+	}
+	return ""
+}
+
+func uiMeasureText(text string, props map[string]object.Object, theme *object.UITheme, measurer object.DesktopUITextMeasurer, wrapWidth float64) object.UITextMetrics {
+	style := uiTextStyle(props, theme, wrapWidth)
+	if style.FontSize <= 0 {
+		style.FontSize = 14
+	}
+	if measurer != nil {
+		metrics := measurer.MeasureUIText(text, style)
+		if metrics.Width >= 0 && metrics.Height > 0 {
+			return metrics
+		}
+	}
+	return approximateUITextMetrics(text, style)
+}
+
+func approximateUITextMetrics(text string, style object.UITextStyle) object.UITextMetrics {
+	fontSize := style.FontSize
+	if fontSize <= 0 {
+		fontSize = 14
+	}
+	lineHeight := style.LineHeight
+	if lineHeight <= 0 {
+		lineHeight = 1.25
+	}
+	measureLine := func(line string) float64 {
+		width := 0.0
+		for _, r := range line {
+			switch {
+			case r == '\t':
+				width += fontSize * 1.32
+			case r == ' ':
+				width += fontSize * 0.34
+			case strings.ContainsRune("ilI.,'`!|:;", r):
+				width += fontSize * 0.32
+			case strings.ContainsRune("MW@#%&", r):
+				width += fontSize * 0.88
+			case r >= 0x2E80:
+				width += fontSize
+			default:
+				width += fontSize * 0.58
+			}
+		}
+		return width
+	}
+	lines := strings.Split(text, "\n")
+	if len(lines) == 0 {
+		lines = []string{""}
+	}
+	maxWidth := 0.0
+	lineCount := 0
+	for _, line := range lines {
+		width := measureLine(line)
+		if style.WrapWidth > 0 && width > style.WrapWidth {
+			wrapped := int(math.Ceil(width / style.WrapWidth))
+			lineCount += wrapped
+			if style.WrapWidth > maxWidth {
+				maxWidth = style.WrapWidth
+			}
+		} else {
+			lineCount++
+			if width > maxWidth {
+				maxWidth = width
+			}
+		}
+	}
+	if lineCount < 1 {
+		lineCount = 1
+	}
+	return object.UITextMetrics{Width: maxWidth, Height: float64(lineCount) * fontSize * lineHeight}
+}
+
+func uiNaturalHeight(kind string, props map[string]object.Object, theme *object.UITheme, measurer object.DesktopUITextMeasurer) float64 {
 	control := uiThemeNumber(theme, "controlHeight", 36)
 	font := uiPropNumber(props, "fontSize", uiThemeNumber(theme, "fontSize", 14))
+	textMetrics := uiMeasureText(uiTextFromProps(props), props, theme, measurer, uiPropNumber(props, "wrapWidth", 0))
 	switch kind {
 	case "text":
-		return font + 8
+		return math.Max(font+8, textMetrics.Height+8)
 	case "textarea":
-		return uiPropNumber(props, "rows", 4)*(font+5) + 16
+		rows := uiPropNumber(props, "rows", 4)
+		return math.Max(rows*(font*uiPropNumber(props, "lineHeight", uiThemeNumber(theme, "lineHeight", 1.25)))+16, control)
 	case "table":
 		rows := len(uiObjectArray(props["rows"]))
 		if rows == 0 {
@@ -295,7 +396,7 @@ func uiNaturalHeight(kind string, props map[string]object.Object, theme *object.
 	case "modal":
 		return uiPropNumber(props, "height", 320)
 	case "tooltip":
-		return font + 16
+		return math.Max(font+16, textMetrics.Height+12)
 	case "progress":
 		return 20
 	case "image", "canvas":
@@ -307,10 +408,10 @@ func uiNaturalHeight(kind string, props map[string]object.Object, theme *object.
 	}
 	return control
 }
-func uiNaturalWidth(kind string, props map[string]object.Object, theme *object.UITheme) float64 {
-	text := optionString(props, "text", optionString(props, "label", optionString(props, "value", "")))
-	font := uiPropNumber(props, "fontSize", uiThemeNumber(theme, "fontSize", 14))
-	base := math.Max(48, float64(len([]rune(text)))*font*0.62+24)
+func uiNaturalWidth(kind string, props map[string]object.Object, theme *object.UITheme, measurer object.DesktopUITextMeasurer) float64 {
+	text := uiTextFromProps(props)
+	metrics := uiMeasureText(text, props, theme, measurer, 0)
+	base := math.Max(48, metrics.Width+24)
 	switch kind {
 	case "input", "textarea", "select":
 		return math.Max(base, 180)
@@ -373,6 +474,11 @@ func applyUIStyleDefaults(kind string, props map[string]object.Object, theme *ob
 		}
 	}
 	set("fontSize", NewFloat(uiThemeNumber(theme, "fontSize", 14)))
+	set("fontFamily", NewString(uiThemeString(theme, "fontFamily", "sans")))
+	set("fontPath", NewString(uiThemeString(theme, "fontPath", "")))
+	set("fontWeight", NewString(uiThemeString(theme, "fontWeight", "normal")))
+	set("fontStyle", NewString(uiThemeString(theme, "fontStyle", "normal")))
+	set("lineHeight", NewFloat(uiThemeNumber(theme, "lineHeight", 1.25)))
 	set("textColor", NewString(uiThemeString(theme, "text", "#172033")))
 	set("borderColor", NewString(uiThemeString(theme, "border", "#cfd6e2")))
 	set("radius", NewFloat(uiThemeNumber(theme, "radius", 6)))

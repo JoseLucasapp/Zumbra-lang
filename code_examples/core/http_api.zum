@@ -7,7 +7,7 @@ api.cors(["*"], ["GET", "POST", "OPTIONS"], ["Content-Type", "Authorization"], f
 
 api.use(fct(request, response) {
     request;
-    response.header("X-Zumbra", "0.8.0");
+    response.header("X-Zumbra", "0.8.1");
     true;
 });
 

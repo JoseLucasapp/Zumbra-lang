@@ -1,6 +1,6 @@
 # Z14 — Toolkit de Interface Gráfica
 
-A versão 0.8.0 adiciona ao Zumbra um toolkit de interface gráfica retido e portátil, construído sobre o runtime desktop do Z13. O código Zumbra trabalha com componentes, estado, layout e eventos; SDL3 permanece como detalhe do backend gráfico Linux.
+A versão 0.8.1 adiciona ao Zumbra um toolkit de interface gráfica retido e portátil, construído sobre o runtime desktop do Z13. O código Zumbra trabalha com componentes, estado, layout e eventos; SDL3 permanece como detalhe do backend gráfico Linux.
 
 ## Objetivos do marco
 
@@ -28,7 +28,7 @@ import "../../std/ui.zum" as ui;
 
 var app << desktop.app({
     "name": "Minha aplicação",
-    "version": "0.8.0",
+    "version": "0.8.1",
     "identifier": "dev.zumbra.example"
 });
 
@@ -296,7 +296,63 @@ go run . version
 Versão esperada:
 
 ```text
-0.8.0
+0.8.1
 ```
 
 A ABI nativa do Z14 é a versão 6.
+
+## Hardening 0.8.1: fontes, UTF-8 e temas dinâmicos
+
+A versão 0.8.1 substitui a fonte bitmap de depuração por renderização de texto via SDL3_ttf quando a biblioteca está disponível. O toolkit mede o texto com a mesma fonte usada para renderizar, preserva strings UTF-8 e mantém um cache de fontes por caminho, tamanho e estilo.
+
+Propriedades de texto suportadas:
+
+```text
+fontFamily
+fontPath
+fontSize
+fontWeight
+fontStyle
+lineHeight
+wrapWidth
+```
+
+Exemplo:
+
+```zumbra
+ui.textWith("Ação, café e São João", {
+    "fontFamily": "sans",
+    "fontSize": 20,
+    "fontWeight": "bold",
+    "lineHeight": 1.3
+});
+```
+
+`fontPath` aceita um arquivo de fonte do sistema. A variável `ZUMBRA_UI_FONT` pode definir a fonte padrão sem alterar o programa:
+
+```bash
+ZUMBRA_UI_FONT=/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf \
+  go run . run code_examples/core/gui_window.zum
+```
+
+Na ausência de SDL3_ttf ou de uma fonte válida, o backend mantém um fallback de depuração para que o aplicativo continue executando. O backend headless usa medição determinística baseada em pontos de código Unicode.
+
+Temas podem ser trocados durante a execução:
+
+```zumbra
+var darkMode << ui.boolState(false);
+var toggle << ui.checkbox({"text": "Dark mode", "checked": false});
+ui.bind(toggle, "checked", darkMode);
+
+var context << ui.mount(app, window, root, {"theme": ui.theme("light")});
+
+ui.subscribe(darkMode, fct(enabled) {
+    if (enabled) {
+        context.setTheme(ui.theme("dark"));
+    } else {
+        context.setTheme(ui.theme("light"));
+    }
+});
+```
+
+O exemplo `gui_window.zum` usa essa ligação e serve como validação visual do modo claro e escuro.

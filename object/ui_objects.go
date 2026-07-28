@@ -33,6 +33,31 @@ type UIRenderFrame struct {
 	Items         []UIRenderItem
 }
 
+// UITextStyle describes portable font properties used by layout and renderers.
+// FontPath is optional; when empty, renderers resolve FontFamily to a system font.
+type UITextStyle struct {
+	FontFamily string
+	FontPath   string
+	FontSize   float64
+	FontWeight string
+	FontStyle  string
+	LineHeight float64
+	WrapWidth  float64
+}
+
+// UITextMetrics is the logical-pixel size of a UTF-8 text run.
+type UITextMetrics struct {
+	Width  float64
+	Height float64
+}
+
+// DesktopUITextMeasurer is an optional capability used by the retained layout
+// engine. SDL3_ttf provides exact UTF-8 metrics; headless backends use a
+// deterministic Unicode-aware approximation.
+type DesktopUITextMeasurer interface {
+	MeasureUIText(text string, style UITextStyle) UITextMetrics
+}
+
 // DesktopUIRenderer is an optional capability implemented by desktop windows.
 // Headless windows keep the last frame for tests; SDL3 windows draw it.
 type DesktopUIRenderer interface {

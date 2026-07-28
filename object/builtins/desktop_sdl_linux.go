@@ -9,6 +9,9 @@ package builtins
 #include <stdbool.h>
 #include <stdlib.h>
 #include <string.h>
+#include <strings.h>
+#include <unistd.h>
+#include <ctype.h>
 #include <stdio.h>
 
 typedef struct SDL_Window SDL_Window;
@@ -19,7 +22,9 @@ typedef struct SDL_TrayMenu SDL_TrayMenu;
 typedef struct SDL_TrayEntry SDL_TrayEntry;
 typedef struct SDL_Renderer SDL_Renderer;
 typedef struct SDL_Texture SDL_Texture;
+typedef struct TTF_Font TTF_Font;
 typedef struct { float x,y,w,h; } SDL_FRect;
+typedef struct { uint8_t r,g,b,a; } ZSDL_Color;
 
 typedef union ZSDL_Event { uint32_t type; uint8_t padding[128]; } ZSDL_Event;
 typedef struct { uint32_t type,reserved; uint64_t timestamp; } ZSDL_CommonEvent;
@@ -102,6 +107,17 @@ typedef bool (*PFN_SDL_RenderDebugText)(SDL_Renderer*,float,float,const char*);
 typedef SDL_Texture *(*PFN_SDL_CreateTextureFromSurface)(SDL_Renderer*,SDL_Surface*);
 typedef bool (*PFN_SDL_RenderTexture)(SDL_Renderer*,SDL_Texture*,const SDL_FRect*,const SDL_FRect*);
 typedef void (*PFN_SDL_DestroyTexture)(SDL_Texture*);
+typedef bool (*PFN_SDL_GetTextureSize)(SDL_Texture*,float*,float*);
+
+typedef bool (*PFN_TTF_Init)(void);
+typedef void (*PFN_TTF_Quit)(void);
+typedef TTF_Font *(*PFN_TTF_OpenFont)(const char*,float);
+typedef void (*PFN_TTF_CloseFont)(TTF_Font*);
+typedef void (*PFN_TTF_SetFontStyle)(TTF_Font*,uint32_t);
+typedef bool (*PFN_TTF_GetStringSize)(TTF_Font*,const char*,size_t,int*,int*);
+typedef bool (*PFN_TTF_GetStringSizeWrapped)(TTF_Font*,const char*,size_t,int,int*,int*);
+typedef SDL_Surface *(*PFN_TTF_RenderText_Blended)(TTF_Font*,const char*,size_t,ZSDL_Color);
+typedef SDL_Surface *(*PFN_TTF_RenderText_Blended_Wrapped)(TTF_Font*,const char*,size_t,ZSDL_Color,int);
 
 static void *zsdl_lib = NULL;
 static PFN_SDL_Init p_Init; static PFN_SDL_Quit p_Quit; static PFN_SDL_GetError p_GetError;
@@ -116,8 +132,14 @@ static PFN_SDL_PollEvent p_PollEvent; static PFN_SDL_WaitEvent p_WaitEvent; stat
 static PFN_SDL_SetClipboardText p_SetClipboardText; static PFN_SDL_GetClipboardText p_GetClipboardText; static PFN_SDL_free p_free;
 static PFN_SDL_IOFromFile p_IOFromFile; static PFN_SDL_LoadBMP_IO p_LoadBMP_IO; static PFN_SDL_DestroySurface p_DestroySurface; static PFN_SDL_SetWindowIcon p_SetWindowIcon;
 static PFN_SDL_CreateTray p_CreateTray; static PFN_SDL_CreateTrayMenu p_CreateTrayMenu; static PFN_SDL_InsertTrayEntryAt p_InsertTrayEntryAt; static PFN_SDL_SetTrayEntryCallback p_SetTrayEntryCallback; static PFN_SDL_SetTrayTooltip p_SetTrayTooltip; static PFN_SDL_DestroyTray p_DestroyTray;
-static PFN_SDL_CreateRenderer p_CreateRenderer; static PFN_SDL_DestroyRenderer p_DestroyRenderer; static PFN_SDL_SetRenderDrawColor p_SetRenderDrawColor; static PFN_SDL_RenderClear p_RenderClear; static PFN_SDL_RenderFillRect p_RenderFillRect; static PFN_SDL_RenderRect p_RenderRect; static PFN_SDL_RenderLine p_RenderLine; static PFN_SDL_RenderPresent p_RenderPresent; static PFN_SDL_RenderDebugText p_RenderDebugText; static PFN_SDL_CreateTextureFromSurface p_CreateTextureFromSurface; static PFN_SDL_RenderTexture p_RenderTexture; static PFN_SDL_DestroyTexture p_DestroyTexture;
+static PFN_SDL_CreateRenderer p_CreateRenderer; static PFN_SDL_DestroyRenderer p_DestroyRenderer; static PFN_SDL_SetRenderDrawColor p_SetRenderDrawColor; static PFN_SDL_RenderClear p_RenderClear; static PFN_SDL_RenderFillRect p_RenderFillRect; static PFN_SDL_RenderRect p_RenderRect; static PFN_SDL_RenderLine p_RenderLine; static PFN_SDL_RenderPresent p_RenderPresent; static PFN_SDL_RenderDebugText p_RenderDebugText; static PFN_SDL_CreateTextureFromSurface p_CreateTextureFromSurface; static PFN_SDL_RenderTexture p_RenderTexture; static PFN_SDL_DestroyTexture p_DestroyTexture; static PFN_SDL_GetTextureSize p_GetTextureSize;
 static char zsdl_error[512];
+
+static void *zttf_lib = NULL;
+static bool zttf_initialized = false;
+static PFN_TTF_Init p_TTF_Init; static PFN_TTF_Quit p_TTF_Quit; static PFN_TTF_OpenFont p_TTF_OpenFont; static PFN_TTF_CloseFont p_TTF_CloseFont; static PFN_TTF_SetFontStyle p_TTF_SetFontStyle; static PFN_TTF_GetStringSize p_TTF_GetStringSize; static PFN_TTF_GetStringSizeWrapped p_TTF_GetStringSizeWrapped; static PFN_TTF_RenderText_Blended p_TTF_RenderText_Blended; static PFN_TTF_RenderText_Blended_Wrapped p_TTF_RenderText_Blended_Wrapped;
+typedef struct ZTTFFontCache { char path[4096]; float size; uint32_t style; TTF_Font *font; struct ZTTFFontCache *next; } ZTTFFontCache;
+static ZTTFFontCache *zttf_fonts = NULL;
 
 #define LOAD_REQ(name) do { p_##name = (PFN_SDL_##name)dlsym(zsdl_lib,"SDL_" #name); if(!p_##name){snprintf(zsdl_error,sizeof(zsdl_error),"missing SDL3 symbol SDL_%s",#name);return false;} } while(0)
 #define LOAD_OPT(name) do { p_##name = (PFN_SDL_##name)dlsym(zsdl_lib,"SDL_" #name); } while(0)
@@ -134,12 +156,71 @@ static bool zsdl_load(void) {
     LOAD_REQ(PollEvent); LOAD_REQ(WaitEvent); LOAD_REQ(WaitEventTimeout); LOAD_REQ(GetKeyName); LOAD_REQ(SetClipboardText); LOAD_REQ(GetClipboardText); LOAD_REQ(free);
     LOAD_OPT(IOFromFile); LOAD_OPT(LoadBMP_IO); LOAD_OPT(DestroySurface); LOAD_OPT(SetWindowIcon);
     LOAD_OPT(CreateTray); LOAD_OPT(CreateTrayMenu); LOAD_OPT(InsertTrayEntryAt); LOAD_OPT(SetTrayEntryCallback); LOAD_OPT(SetTrayTooltip); LOAD_OPT(DestroyTray);
-    LOAD_REQ(CreateRenderer); LOAD_REQ(DestroyRenderer); LOAD_REQ(SetRenderDrawColor); LOAD_REQ(RenderClear); LOAD_REQ(RenderFillRect); LOAD_REQ(RenderRect); LOAD_REQ(RenderLine); LOAD_REQ(RenderPresent); LOAD_OPT(RenderDebugText); LOAD_OPT(CreateTextureFromSurface); LOAD_OPT(RenderTexture); LOAD_OPT(DestroyTexture);
+    LOAD_REQ(CreateRenderer); LOAD_REQ(DestroyRenderer); LOAD_REQ(SetRenderDrawColor); LOAD_REQ(RenderClear); LOAD_REQ(RenderFillRect); LOAD_REQ(RenderRect); LOAD_REQ(RenderLine); LOAD_REQ(RenderPresent); LOAD_OPT(RenderDebugText); LOAD_OPT(CreateTextureFromSurface); LOAD_OPT(RenderTexture); LOAD_OPT(DestroyTexture); LOAD_OPT(GetTextureSize);
     return true;
 }
+
+static bool zttf_file_exists(const char *path){return path&&*path&&access(path,R_OK)==0;}
+static bool zttf_contains_ci(const char*text,const char*needle){if(!text||!needle||!*needle)return false;size_t n=strlen(needle);for(const char*p=text;*p;p++){size_t i=0;while(i<n&&p[i]&&tolower((unsigned char)p[i])==tolower((unsigned char)needle[i]))i++;if(i==n)return true;}return false;}
+static bool zttf_bold(const char *weight){if(!weight)return false;if(strcasecmp(weight,"bold")==0||strcasecmp(weight,"semibold")==0)return true;char*end=NULL;long value=strtol(weight,&end,10);return end!=weight&&value>=600;}
+static bool zttf_italic(const char *style){return style&&(strcasecmp(style,"italic")==0||strcasecmp(style,"oblique")==0);}
+static const char*zttf_resolve_font(const char*family,const char*explicit_path,const char*weight,const char*style){
+    static char selected[4096];selected[0]=0;
+    const char*env=getenv("ZUMBRA_UI_FONT");
+    if(zttf_file_exists(explicit_path)){snprintf(selected,sizeof(selected),"%s",explicit_path);return selected;}
+    if(family&&strchr(family,'/')&&zttf_file_exists(family)){snprintf(selected,sizeof(selected),"%s",family);return selected;}
+    if(zttf_file_exists(env)){snprintf(selected,sizeof(selected),"%s",env);return selected;}
+    bool mono=family&&(zttf_contains_ci(family,"mono")||zttf_contains_ci(family,"code"));
+    bool serif=family&&zttf_contains_ci(family,"serif")&&!mono;
+    bool bold=zttf_bold(weight),italic=zttf_italic(style);
+    const char*candidates[24];size_t n=0;
+    if(mono){
+        if(bold&&italic)candidates[n++]="/usr/share/fonts/truetype/dejavu/DejaVuSansMono-BoldOblique.ttf";
+        else if(bold)candidates[n++]="/usr/share/fonts/truetype/dejavu/DejaVuSansMono-Bold.ttf";
+        else if(italic)candidates[n++]="/usr/share/fonts/truetype/dejavu/DejaVuSansMono-Oblique.ttf";
+        candidates[n++]="/usr/share/fonts/truetype/dejavu/DejaVuSansMono.ttf";
+        candidates[n++]="/usr/share/fonts/truetype/liberation2/LiberationMono-Regular.ttf";
+    } else if(serif){
+        if(bold&&italic)candidates[n++]="/usr/share/fonts/truetype/dejavu/DejaVuSerif-BoldItalic.ttf";
+        else if(bold)candidates[n++]="/usr/share/fonts/truetype/dejavu/DejaVuSerif-Bold.ttf";
+        else if(italic)candidates[n++]="/usr/share/fonts/truetype/dejavu/DejaVuSerif-Italic.ttf";
+        candidates[n++]="/usr/share/fonts/truetype/dejavu/DejaVuSerif.ttf";
+        candidates[n++]="/usr/share/fonts/truetype/liberation2/LiberationSerif-Regular.ttf";
+    } else {
+        if(bold&&italic)candidates[n++]="/usr/share/fonts/truetype/dejavu/DejaVuSans-BoldOblique.ttf";
+        else if(bold)candidates[n++]="/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf";
+        else if(italic)candidates[n++]="/usr/share/fonts/truetype/dejavu/DejaVuSans-Oblique.ttf";
+        candidates[n++]="/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf";
+        candidates[n++]="/usr/share/fonts/truetype/liberation2/LiberationSans-Regular.ttf";
+        candidates[n++]="/usr/share/fonts/opentype/noto/NotoSans-Regular.ttf";
+    }
+    candidates[n]=NULL;for(size_t i=0;i<n;i++)if(zttf_file_exists(candidates[i])){snprintf(selected,sizeof(selected),"%s",candidates[i]);return selected;}return NULL;
+}
+static bool zttf_load(void){
+    if(zttf_initialized)return true;if(zttf_lib==NULL){const char*names[]={"libSDL3_ttf.so.0","libSDL3_ttf.so",NULL};for(int i=0;names[i];i++){zttf_lib=dlopen(names[i],RTLD_NOW|RTLD_LOCAL);if(zttf_lib)break;}}
+    if(!zttf_lib)return false;
+#define ZTTF_REQ(name) do{p_TTF_##name=(PFN_TTF_##name)dlsym(zttf_lib,"TTF_" #name);if(!p_TTF_##name)return false;}while(0)
+#define ZTTF_OPT(name) do{p_TTF_##name=(PFN_TTF_##name)dlsym(zttf_lib,"TTF_" #name);}while(0)
+    ZTTF_REQ(Init);ZTTF_REQ(Quit);ZTTF_REQ(OpenFont);ZTTF_REQ(CloseFont);ZTTF_OPT(SetFontStyle);ZTTF_REQ(GetStringSize);ZTTF_OPT(GetStringSizeWrapped);ZTTF_REQ(RenderText_Blended);ZTTF_OPT(RenderText_Blended_Wrapped);
+#undef ZTTF_REQ
+#undef ZTTF_OPT
+    if(!p_TTF_Init())return false;zttf_initialized=true;return true;
+}
+static uint32_t zttf_style_flags(const char*weight,const char*style){uint32_t flags=0;if(zttf_bold(weight))flags|=0x01u;if(zttf_italic(style))flags|=0x02u;return flags;}
+static TTF_Font*zttf_font(const char*family,const char*path,float size,const char*weight,const char*style){if(size<1)size=14;if(!zttf_load())return NULL;const char*resolved=zttf_resolve_font(family,path,weight,style);if(!resolved)return NULL;uint32_t flags=zttf_style_flags(weight,style);for(ZTTFFontCache*c=zttf_fonts;c;c=c->next)if(c->size==size&&c->style==flags&&strcmp(c->path,resolved)==0)return c->font;TTF_Font*font=p_TTF_OpenFont(resolved,size);if(!font)return NULL;if(p_TTF_SetFontStyle)p_TTF_SetFontStyle(font,flags);ZTTFFontCache*c=(ZTTFFontCache*)calloc(1,sizeof(*c));if(!c){p_TTF_CloseFont(font);return NULL;}snprintf(c->path,sizeof(c->path),"%s",resolved);c->size=size;c->style=flags;c->font=font;c->next=zttf_fonts;zttf_fonts=c;return font;}
+static size_t zttf_codepoints(const char*text){size_t count=0;if(!text)return 0;for(const unsigned char*p=(const unsigned char*)text;*p;p++)if((*p&0xC0)!=0x80)count++;return count;}
+static bool zsdl_measure_text(const char*text,const char*family,const char*path,float size,const char*weight,const char*style,float wrap,float*out_w,float*out_h){
+    if(!text)text="";TTF_Font*font=zttf_font(family,path,size,weight,style);int w=0,h=0;bool ok=false;if(font){if(wrap>0&&p_TTF_GetStringSizeWrapped)ok=p_TTF_GetStringSizeWrapped(font,text,0,(int)wrap,&w,&h);else ok=p_TTF_GetStringSize(font,text,0,&w,&h);}if(!ok){size_t count=zttf_codepoints(text);w=(int)((double)count*(size>0?size:14)*0.58);h=(int)((size>0?size:14)*1.25);if(wrap>0&&w>(int)wrap){int lines=(w+(int)wrap-1)/(int)wrap;w=(int)wrap;h*=lines;}}if(out_w)*out_w=(float)w;if(out_h)*out_h=(float)h;return font!=NULL&&ok;
+}
+static bool zsdl_text_ex(SDL_Renderer*r,float x,float y,const char*text,uint8_t red,uint8_t green,uint8_t blue,uint8_t alpha,const char*family,const char*path,float size,const char*weight,const char*style,float wrap){
+    if(!text||!*text)return true;TTF_Font*font=zttf_font(family,path,size,weight,style);if(font&&p_CreateTextureFromSurface&&p_RenderTexture&&p_DestroyTexture&&p_DestroySurface){ZSDL_Color color={red,green,blue,alpha};SDL_Surface*surface=(wrap>0&&p_TTF_RenderText_Blended_Wrapped)?p_TTF_RenderText_Blended_Wrapped(font,text,0,color,(int)wrap):p_TTF_RenderText_Blended(font,text,0,color);if(surface){SDL_Texture*texture=p_CreateTextureFromSurface(r,surface);p_DestroySurface(surface);if(texture){float w=0,h=0;if(p_GetTextureSize)p_GetTextureSize(texture,&w,&h);if(w<=0||h<=0)zsdl_measure_text(text,family,path,size,weight,style,wrap,&w,&h);SDL_FRect dst={x,y,w,h};bool ok=p_RenderTexture(r,texture,NULL,&dst);p_DestroyTexture(texture);return ok;}}}
+    if(p_RenderDebugText){p_SetRenderDrawColor(r,red,green,blue,alpha);return p_RenderDebugText(r,x,y,text);}return false;
+}
+static bool zsdl_ttf_available(void){return zttf_load();}
+static void zttf_shutdown(void){ZTTFFontCache*c=zttf_fonts;while(c){ZTTFFontCache*n=c->next;if(c->font&&p_TTF_CloseFont)p_TTF_CloseFont(c->font);free(c);c=n;}zttf_fonts=NULL;if(zttf_initialized&&p_TTF_Quit)p_TTF_Quit();zttf_initialized=false;if(zttf_lib){dlclose(zttf_lib);zttf_lib=NULL;}}
 static const char *zsdl_last_error(void){ if(zsdl_error[0])return zsdl_error; if(p_GetError){const char*e=p_GetError();if(e&&*e)return e;} return "unknown SDL3 error"; }
 static bool zsdl_init(const char*name,const char*version,const char*identifier){ if(!zsdl_load())return false; if(p_SetAppMetadata)p_SetAppMetadata(name,version,identifier); if(!p_Init(0x00000020u)){snprintf(zsdl_error,sizeof(zsdl_error),"%s",p_GetError());return false;} return true; }
-static void zsdl_quit(void){if(p_Quit)p_Quit();}
+static void zsdl_quit(void){zttf_shutdown();if(p_Quit)p_Quit();}
 static SDL_Window *zsdl_create_window(const char*t,int w,int h,uint64_t flags){return p_CreateWindow(t,w,h,flags);}
 static void zsdl_destroy_window(SDL_Window*w){if(w)p_DestroyWindow(w);} static uint32_t zsdl_window_id(SDL_Window*w){return p_GetWindowID(w);}
 static bool zsdl_show(SDL_Window*w){return p_ShowWindow(w);} static bool zsdl_hide(SDL_Window*w){return p_HideWindow(w);}
@@ -154,7 +235,6 @@ static bool zsdl_set_icon(SDL_Window*w,const char*path){if(!p_IOFromFile||!p_Loa
 static SDL_Renderer*zsdl_renderer(SDL_Window*w){return p_CreateRenderer(w,NULL);} static void zsdl_destroy_renderer(SDL_Renderer*r){if(r)p_DestroyRenderer(r);}
 static bool zsdl_color(SDL_Renderer*r,uint8_t red,uint8_t green,uint8_t blue,uint8_t alpha){return p_SetRenderDrawColor(r,red,green,blue,alpha);} static bool zsdl_clear(SDL_Renderer*r){return p_RenderClear(r);}
 static bool zsdl_fill(SDL_Renderer*r,float x,float y,float w,float h){SDL_FRect q={x,y,w,h};return p_RenderFillRect(r,&q);} static bool zsdl_stroke(SDL_Renderer*r,float x,float y,float w,float h){SDL_FRect q={x,y,w,h};return p_RenderRect(r,&q);} static bool zsdl_line(SDL_Renderer*r,float x1,float y1,float x2,float y2){return p_RenderLine(r,x1,y1,x2,y2);} static bool zsdl_present(SDL_Renderer*r){return p_RenderPresent(r);}
-static bool zsdl_text(SDL_Renderer*r,float x,float y,const char*t){return p_RenderDebugText?p_RenderDebugText(r,x,y,t):false;}
 static bool zsdl_bmp(SDL_Renderer*r,const char*path,float x,float y,float w,float h){if(!p_IOFromFile||!p_LoadBMP_IO||!p_DestroySurface||!p_CreateTextureFromSurface||!p_RenderTexture||!p_DestroyTexture)return false;SDL_IOStream*io=p_IOFromFile(path,"rb");if(!io)return false;SDL_Surface*s=p_LoadBMP_IO(io,true);if(!s)return false;SDL_Texture*t=p_CreateTextureFromSurface(r,s);p_DestroySurface(s);if(!t)return false;SDL_FRect d={x,y,w,h};bool ok=p_RenderTexture(r,t,NULL,&d);p_DestroyTexture(t);return ok;}
 
 #define ZSDL_TRAY_QUEUE 128
@@ -907,14 +987,61 @@ func sdlUIStroke(renderer *C.SDL_Renderer, rect object.UIRect, color string) {
 	sdlUISetColor(renderer, color)
 	C.zsdl_stroke(renderer, C.float(rect.X), C.float(rect.Y), C.float(rect.Width), C.float(rect.Height))
 }
-func sdlUIText(renderer *C.SDL_Renderer, x, y float64, text, color string) {
-	if text == "" {
-		return
+func sdlUITextStyle(props map[string]object.Object) object.UITextStyle {
+	lineHeight := uiFloat(props, "lineHeight", 1.25)
+	if lineHeight <= 0 {
+		lineHeight = 1.25
 	}
-	sdlUISetColor(renderer, color)
-	c := C.CString(text)
-	defer C.free(unsafe.Pointer(c))
-	C.zsdl_text(renderer, C.float(x), C.float(y), c)
+	return object.UITextStyle{
+		FontFamily: uiString(props, "fontFamily", "sans"),
+		FontPath:   uiString(props, "fontPath", ""),
+		FontSize:   uiFloat(props, "fontSize", 14),
+		FontWeight: uiString(props, "fontWeight", "normal"),
+		FontStyle:  uiString(props, "fontStyle", "normal"),
+		LineHeight: lineHeight,
+		WrapWidth:  uiFloat(props, "wrapWidth", 0),
+	}
+}
+func sdlMeasureUIText(text string, style object.UITextStyle) object.UITextMetrics {
+	if style.FontSize <= 0 {
+		style.FontSize = 14
+	}
+	ctext, cfamily, cpath := C.CString(text), C.CString(style.FontFamily), C.CString(style.FontPath)
+	cweight, cstyle := C.CString(style.FontWeight), C.CString(style.FontStyle)
+	defer C.free(unsafe.Pointer(ctext))
+	defer C.free(unsafe.Pointer(cfamily))
+	defer C.free(unsafe.Pointer(cpath))
+	defer C.free(unsafe.Pointer(cweight))
+	defer C.free(unsafe.Pointer(cstyle))
+	var width, height C.float
+	C.zsdl_measure_text(ctext, cfamily, cpath, C.float(style.FontSize), cweight, cstyle, C.float(style.WrapWidth), &width, &height)
+	metrics := object.UITextMetrics{Width: float64(width), Height: float64(height)}
+	if metrics.Height <= 0 {
+		return approximateUITextMetrics(text, style)
+	}
+	return metrics
+}
+func sdlUIText(renderer *C.SDL_Renderer, x, y float64, text, color string, props map[string]object.Object) object.UITextMetrics {
+	style := sdlUITextStyle(props)
+	metrics := sdlMeasureUIText(text, style)
+	if text == "" {
+		return metrics
+	}
+	r, g, b, a := parseUIHexColor(color)
+	ctext, cfamily, cpath := C.CString(text), C.CString(style.FontFamily), C.CString(style.FontPath)
+	cweight, cstyle := C.CString(style.FontWeight), C.CString(style.FontStyle)
+	defer C.free(unsafe.Pointer(ctext))
+	defer C.free(unsafe.Pointer(cfamily))
+	defer C.free(unsafe.Pointer(cpath))
+	defer C.free(unsafe.Pointer(cweight))
+	defer C.free(unsafe.Pointer(cstyle))
+	C.zsdl_text_ex(renderer, C.float(x), C.float(y), ctext, C.uint8_t(r), C.uint8_t(g), C.uint8_t(b), C.uint8_t(a), cfamily, cpath, C.float(style.FontSize), cweight, cstyle, C.float(style.WrapWidth))
+	return metrics
+}
+func sdlUITextCentered(renderer *C.SDL_Renderer, bounds object.UIRect, leftPadding float64, text, color string, props map[string]object.Object) {
+	metrics := sdlMeasureUIText(text, sdlUITextStyle(props))
+	y := bounds.Y + math.Max(0, (bounds.Height-metrics.Height)/2)
+	sdlUIText(renderer, bounds.X+leftPadding, y, text, color, props)
 }
 func sdlUIItemText(item object.UIRenderItem) string {
 	for _, key := range []string{"text", "label", "value", "placeholder", "title"} {
@@ -953,7 +1080,7 @@ func sdlUIRenderItem(renderer *C.SDL_Renderer, item object.UIRenderItem) {
 			if item.Kind == "tree" {
 				prefix = "- "
 			}
-			sdlUIText(renderer, bounds.X+8, y, prefix+uiTextDisplay(value), textColor)
+			sdlUIText(renderer, bounds.X+8, y, prefix+uiTextDisplay(value), textColor, item.Props)
 		}
 	case "tabs":
 		sdlUIFill(renderer, bounds, background)
@@ -968,7 +1095,7 @@ func sdlUIRenderItem(renderer *C.SDL_Renderer, item object.UIRenderItem) {
 				sdlUIFill(renderer, tabBounds, uiColor(item.Props, "selectedBackground", "#ffffff"))
 			}
 			sdlUIStroke(renderer, tabBounds, border)
-			sdlUIText(renderer, x+10, bounds.Y+(bounds.Height-8)/2, label, textColor)
+			sdlUITextCentered(renderer, tabBounds, 10, label, textColor, item.Props)
 			x += w
 		}
 	case "menu":
@@ -978,7 +1105,7 @@ func sdlUIRenderItem(renderer *C.SDL_Renderer, item object.UIRenderItem) {
 		if label == "" {
 			label = "Menu"
 		}
-		sdlUIText(renderer, bounds.X+10, bounds.Y+(bounds.Height-8)/2, label, textColor)
+		sdlUITextCentered(renderer, bounds, 10, label, textColor, item.Props)
 	case "table":
 		sdlUIFill(renderer, bounds, background)
 		sdlUIStroke(renderer, bounds, border)
@@ -992,7 +1119,7 @@ func sdlUIRenderItem(renderer *C.SDL_Renderer, item object.UIRenderItem) {
 		columnWidth := bounds.Width / float64(columnCount)
 		for index, column := range columns {
 			x := bounds.X + float64(index)*columnWidth
-			sdlUIText(renderer, x+6, bounds.Y+8, uiTextDisplay(column), textColor)
+			sdlUIText(renderer, x+6, bounds.Y+8, uiTextDisplay(column), textColor, item.Props)
 			if index > 0 {
 				sdlUISetColor(renderer, border)
 				C.zsdl_line(renderer, C.float(x), C.float(bounds.Y), C.float(x), C.float(bounds.Y+bounds.Height))
@@ -1005,19 +1132,19 @@ func sdlUIRenderItem(renderer *C.SDL_Renderer, item object.UIRenderItem) {
 			if y+8 > bounds.Y+bounds.Height {
 				break
 			}
-			sdlUIText(renderer, bounds.X+6, y+8, uiTextDisplay(row), textColor)
+			sdlUIText(renderer, bounds.X+6, y+8, uiTextDisplay(row), textColor, item.Props)
 			sdlUISetColor(renderer, border)
 			C.zsdl_line(renderer, C.float(bounds.X), C.float(y+rowHeight), C.float(bounds.X+bounds.Width), C.float(y+rowHeight))
 		}
 	case "text":
-		sdlUIText(renderer, bounds.X+2, bounds.Y+4, sdlUIItemText(item), textColor)
+		sdlUIText(renderer, bounds.X+2, bounds.Y+4, sdlUIItemText(item), textColor, item.Props)
 	case "button":
 		if item.Hovered && !disabled {
 			background = uiColor(item.Props, "hoverBackground", "#2f57c7")
 		}
 		sdlUIFill(renderer, bounds, background)
 		sdlUIStroke(renderer, bounds, border)
-		sdlUIText(renderer, bounds.X+10, bounds.Y+(bounds.Height-8)/2, sdlUIItemText(item), textColor)
+		sdlUITextCentered(renderer, bounds, 10, sdlUIItemText(item), textColor, item.Props)
 	case "input", "textarea", "select":
 		sdlUIFill(renderer, bounds, background)
 		sdlUIStroke(renderer, bounds, border)
@@ -1026,9 +1153,9 @@ func sdlUIRenderItem(renderer *C.SDL_Renderer, item object.UIRenderItem) {
 			text = uiString(item.Props, "placeholder", "")
 			textColor = "#87909f"
 		}
-		sdlUIText(renderer, bounds.X+8, bounds.Y+8, text, textColor)
+		sdlUITextCentered(renderer, bounds, 8, text, textColor, item.Props)
 		if item.Kind == "select" {
-			sdlUIText(renderer, bounds.X+bounds.Width-18, bounds.Y+8, "v", textColor)
+			sdlUITextCentered(renderer, object.UIRect{X: bounds.X + bounds.Width - 24, Y: bounds.Y, Width: 20, Height: bounds.Height}, 2, "v", textColor, item.Props)
 		}
 	case "checkbox", "radio":
 		box := object.UIRect{X: bounds.X + 4, Y: bounds.Y + (bounds.Height-16)/2, Width: 16, Height: 16}
@@ -1038,7 +1165,7 @@ func sdlUIRenderItem(renderer *C.SDL_Renderer, item object.UIRenderItem) {
 			sdlUISetColor(renderer, uiColor(item.Props, "checkColor", "#3867e8"))
 			C.zsdl_fill(renderer, C.float(box.X+4), C.float(box.Y+4), 8, 8)
 		}
-		sdlUIText(renderer, bounds.X+28, bounds.Y+(bounds.Height-8)/2, sdlUIItemText(item), textColor)
+		sdlUITextCentered(renderer, object.UIRect{X: bounds.X + 20, Y: bounds.Y, Width: bounds.Width - 20, Height: bounds.Height}, 8, sdlUIItemText(item), textColor, item.Props)
 	case "progress":
 		sdlUIFill(renderer, bounds, background)
 		value := uiClamp(uiFloat(item.Props, "value", 0), 0, uiFloat(item.Props, "max", 100))
@@ -1062,7 +1189,7 @@ func sdlUIRenderItem(renderer *C.SDL_Renderer, item object.UIRenderItem) {
 		sdlUIStroke(renderer, bounds, border)
 	case "tooltip":
 		sdlUIFill(renderer, bounds, background)
-		sdlUIText(renderer, bounds.X+6, bounds.Y+5, sdlUIItemText(item), textColor)
+		sdlUIText(renderer, bounds.X+6, bounds.Y+5, sdlUIItemText(item), textColor, item.Props)
 	case "canvas":
 		sdlUIFill(renderer, bounds, background)
 		for _, command := range item.Commands {
@@ -1072,7 +1199,7 @@ func sdlUIRenderItem(renderer *C.SDL_Renderer, item object.UIRenderItem) {
 		// Layout-only node.
 	default:
 		sdlUIFill(renderer, bounds, background)
-		sdlUIText(renderer, bounds.X+4, bounds.Y+4, sdlUIItemText(item), textColor)
+		sdlUIText(renderer, bounds.X+4, bounds.Y+4, sdlUIItemText(item), textColor, item.Props)
 	}
 	if item.Focused {
 		sdlUIStroke(renderer, object.UIRect{X: bounds.X - 2, Y: bounds.Y - 2, Width: bounds.Width + 4, Height: bounds.Height + 4}, uiColor(item.Props, "focusColor", "#6e95ff"))
@@ -1095,7 +1222,7 @@ func sdlUIRenderCanvasCommand(renderer *C.SDL_Renderer, origin object.UIRect, co
 		sdlUISetColor(renderer, color)
 		C.zsdl_line(renderer, C.float(x), C.float(y), C.float(origin.X+uiFloat(values, "x2", 0)), C.float(origin.Y+uiFloat(values, "y2", 0)))
 	case "text":
-		sdlUIText(renderer, x, y, uiString(values, "text", ""), color)
+		sdlUIText(renderer, x, y, uiString(values, "text", ""), color, values)
 	case "image":
 		path := uiString(values, "path", "")
 		if path != "" {
@@ -1134,4 +1261,7 @@ func (w *sdlWindow) LastUIFrame() *object.UIRenderFrame {
 	w.mu.RLock()
 	defer w.mu.RUnlock()
 	return w.lastUI
+}
+func (w *sdlWindow) MeasureUIText(text string, style object.UITextStyle) object.UITextMetrics {
+	return sdlMeasureUIText(text, style)
 }

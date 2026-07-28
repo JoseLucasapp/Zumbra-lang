@@ -4,7 +4,7 @@ import "../../std/ui.zum" as ui;
 var application << desktop.app({
     "backend": "headless",
     "name": "Zumbra UI",
-    "version": "0.8.0",
+    "version": "0.8.1",
     "quitOnLastWindow": false
 });
 var window << application.window({"title": "Zumbra UI", "width": 640, "height": 480});
@@ -50,8 +50,8 @@ var root << ui.columnWith({"padding": 12, "gap": 8}, [
 ]);
 
 var context << ui.mount(application, window, root, {"theme": ui.theme("light")});
-ui.dispatch(context, {"type": "mouse_down", "x": 20, "y": 50});
-ui.dispatch(context, {"type": "mouse_up", "x": 20, "y": 50});
+ui.dispatch(context, {"type": "mouse_down", "x": 20, "y": 70});
+ui.dispatch(context, {"type": "mouse_up", "x": 20, "y": 70});
 var snapshot << ui.snapshot(context);
 var accessibility << ui.accessibility(context);
 

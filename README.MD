@@ -255,7 +255,7 @@ app.close();
 
 Z14 provides a retained component tree, deterministic row/column layout, controls, collections, overlays, canvas drawing, themes, reactive state, bidirectional binding, custom components, focus navigation and accessibility. The headless backend supports deterministic CI tests; the Linux graphical backend renders through dynamically loaded SDL3. See [`docs/pt-BR/toolkit-interface-grafica-z14.md`](./docs/pt-BR/toolkit-interface-grafica-z14.md).
 
-Zumbra 0.8.0 completes Z14 and establishes the baseline for Z15 desktop distribution. See [`docs/releases/0.8.0.md`](./docs/releases/0.8.0.md).
+Zumbra 0.8.1 completes Z14 and establishes the baseline for Z15 desktop distribution. See [`docs/releases/0.8.1.md`](./docs/releases/0.8.1.md).
 
 
 Zumbra 0.5.1 widens the VM builtin index operand from 8 to 16 bits. This prevents overflow now that Z12.1 raises the builtin table above 255 entries and restores binary I/O parity between the evaluator and VM. See [`docs/pt-BR/correcao-indice-builtins-0.5.1.md`](./docs/pt-BR/correcao-indice-builtins-0.5.1.md).

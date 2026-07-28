@@ -1,6 +1,12 @@
 // Z14 retained-mode GUI toolkit.
 pub fct theme(value) { uiTheme(value); }
 pub fct state(value) { uiState(value); }
+// Typed aliases avoid cross-specializing the same wrapper when an application
+// stores different primitive kinds in retained UI state.
+pub fct stringState(value) { uiState(value); }
+pub fct boolState(value) { uiState(value); }
+pub fct intState(value) { uiState(value); }
+pub fct floatState(value) { uiState(value); }
 pub fct value(stateValue) { uiStateGet(stateValue); }
 pub fct update(stateValue, nextValue) { uiStateSet(stateValue, nextValue); }
 pub fct subscribe(stateValue, handler) { uiStateSubscribe(stateValue, handler); }

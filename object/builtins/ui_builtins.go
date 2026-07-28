@@ -162,7 +162,9 @@ func defaultUITheme(name string) map[string]object.Object {
 		"muted": color("#697386", "#a9b4c7"), "primary": NewString("#3867e8"),
 		"primaryText": NewString("#ffffff"), "border": color("#cfd6e2", "#465066"),
 		"danger": NewString("#c73737"), "focus": NewString("#6e95ff"), "radius": NewInteger(6),
-		"fontSize": NewInteger(14), "spacing": NewInteger(8), "controlHeight": NewInteger(36),
+		"fontFamily": NewString("sans"), "fontPath": NewString(""), "fontWeight": NewString("normal"),
+		"fontStyle": NewString("normal"), "fontSize": NewInteger(14), "lineHeight": NewFloat(1.25),
+		"spacing": NewInteger(8), "controlHeight": NewInteger(36),
 	}
 }
 

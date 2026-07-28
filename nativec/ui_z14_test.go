@@ -23,7 +23,24 @@ func TestZ14UIRuntimeIsConditionallyEnabled(t *testing.T) {
 		t.Fatalf("native: %#v", nativeDiagnostics)
 	}
 	runtime := string(sources.Runtime)
-	for _, expected := range []string{"#define ZUMBRA_ENABLE_UI 1", "z_ui_render_context", "SDL_RenderDebugText", "uiCanvasCommand"} {
+	for _, expected := range []string{"#define ZUMBRA_ENABLE_UI 1", "z_ui_render_context", "TTF_OpenFont", "TTF_RenderText_Blended", "fontFamily", "uiCanvasCommand"} {
+		if !strings.Contains(runtime, expected) {
+			t.Fatalf("missing %q", expected)
+		}
+	}
+}
+
+func TestZ14PointOneNativeRuntimeContainsThemeAndUTF8FontSupport(t *testing.T) {
+	result, diagnostics := pipeline.Build("ui-font.zum", `var app << desktopApp({"backend":"headless"}); var w << app.window({"title":"UI"}); var n << uiText({"text":"ação e café","fontSize":22,"fontWeight":"bold"}, []); var c << uiMount(app,w,n,{"theme":uiTheme("dark")}); uiSnapshot(c);`, pipeline.Options{Optimize: true})
+	if len(diagnostics) != 0 {
+		t.Fatalf("pipeline: %s", pipeline.FormatDiagnostics(diagnostics))
+	}
+	sources, nativeDiagnostics := nativec.Generate(result.MIR)
+	if len(nativeDiagnostics) != 0 {
+		t.Fatalf("native: %#v", nativeDiagnostics)
+	}
+	runtime := string(sources.Runtime)
+	for _, expected := range []string{"libSDL3_ttf.so.0", "TTF_GetStringSize", "TTF_RenderText_Blended", "#141822", "lineHeight", "ZUMBRA_UI_FONT"} {
 		if !strings.Contains(runtime, expected) {
 			t.Fatalf("missing %q", expected)
 		}
