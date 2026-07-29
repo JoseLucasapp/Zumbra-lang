@@ -1227,7 +1227,7 @@ func sdlUIRenderItem(renderer *C.SDL_Renderer, item object.UIRenderItem) {
 		sdlUIText(renderer, bounds.X+4, bounds.Y+4, sdlUIItemText(item), textColor, item.Props)
 	}
 	viewportHeight := item.ContentBounds.Height
-	if item.ScrollContentHeight > viewportHeight && viewportHeight > 0 {
+	if uiShouldRenderVerticalScrollbar(item.Props, item.ScrollContentHeight, viewportHeight) {
 		barWidth := math.Max(4, uiFloat(item.Props, "scrollbarWidth", 8))
 		track := object.UIRect{X: item.ContentBounds.X + item.ContentBounds.Width + math.Max(2, uiFloat(item.Props, "scrollbarGutter", 4)), Y: item.ContentBounds.Y, Width: barWidth, Height: viewportHeight}
 		sdlUIFill(renderer, track, uiColor(item.Props, "scrollbarTrack", "#e1e6ef"))

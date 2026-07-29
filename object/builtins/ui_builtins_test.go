@@ -258,3 +258,24 @@ func TestZ16PointTwoVerticalOverflowScrollsAndClipsChildren(t *testing.T) {
 		t.Fatalf("clamped scroll offset=%v", root.ScrollOffsetY)
 	}
 }
+
+func TestZ16PointThreeScrollbarRequiresExplicitVerticalOverflow(t *testing.T) {
+	nonScrollableProps := map[string]object.Object{}
+	if uiShouldRenderVerticalScrollbar(nonScrollableProps, 100, 20) {
+		t.Fatal("ordinary overflowing containers must not render a vertical scrollbar")
+	}
+	autoProps := map[string]object.Object{"overflowY": NewString("auto")}
+	if !uiShouldRenderVerticalScrollbar(autoProps, 100, 20) {
+		t.Fatal("overflowY=auto with real overflow must render a vertical scrollbar")
+	}
+	if uiShouldRenderVerticalScrollbar(autoProps, 20.4, 20) {
+		t.Fatal("subpixel measurement noise must not render a vertical scrollbar")
+	}
+	if !uiShouldRenderVerticalScrollbar(autoProps, 20.6, 20) {
+		t.Fatal("overflow beyond the tolerance must render a vertical scrollbar")
+	}
+	scrollProps := map[string]object.Object{"scrollY": NewBoolean(true)}
+	if !uiShouldRenderVerticalScrollbar(scrollProps, 100, 20) {
+		t.Fatal("scrollY=true with real overflow must render a vertical scrollbar")
+	}
+}

@@ -170,8 +170,11 @@ func layoutUINode(node *object.UINode, available object.UIRect, theme *object.UI
 		scrollOffsetY = 0
 	} else {
 		maxOffset := math.Max(0, contentHeight-inner.Height)
+		if maxOffset <= uiScrollOverflowEpsilon {
+			maxOffset = 0
+		}
 		scrollOffsetY = uiClamp(scrollOffsetY, 0, maxOffset)
-		if maxOffset > 0 {
+		if uiHasVerticalOverflow(contentHeight, inner.Height) {
 			scrollbarWidth := math.Max(4, uiPropNumber(props, "scrollbarWidth", 8))
 			gutter := math.Max(2, uiPropNumber(props, "scrollbarGutter", 4))
 			inner.Width = math.Max(0, inner.Width-scrollbarWidth-gutter)
@@ -256,6 +259,16 @@ func layoutUINode(node *object.UINode, available object.UIRect, theme *object.UI
 			cursorY += ch + gap
 		}
 	}
+}
+
+const uiScrollOverflowEpsilon = 0.5
+
+func uiHasVerticalOverflow(contentHeight, viewportHeight float64) bool {
+	return viewportHeight > 0 && contentHeight > viewportHeight+uiScrollOverflowEpsilon
+}
+
+func uiShouldRenderVerticalScrollbar(props map[string]object.Object, contentHeight, viewportHeight float64) bool {
+	return uiScrollableY(props) && uiHasVerticalOverflow(contentHeight, viewportHeight)
 }
 
 func uiScrollableY(props map[string]object.Object) bool {

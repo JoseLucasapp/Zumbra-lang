@@ -94,3 +94,18 @@ func TestZ16PointTwoNativeRuntimeContainsScrollClipping(t *testing.T) {
 		}
 	}
 }
+
+func TestZ16PointThreeNativeScrollbarRequiresScrollableNode(t *testing.T) {
+	result, diagnostics := pipeline.Build("ui-scrollbar-visibility.zum", `var app << desktopApp({"backend":"headless"}); var w << app.window({"title":"UI"}); var n << uiColumn({"overflowY":"auto","height":120}, [uiContainer({"height":80}, []),uiContainer({"height":80}, [])]); uiMount(app,w,n,{});`, pipeline.Options{Optimize: true})
+	if len(diagnostics) != 0 {
+		t.Fatalf("pipeline: %s", pipeline.FormatDiagnostics(diagnostics))
+	}
+	sources, nativeDiagnostics := nativec.Generate(result.MIR)
+	if len(nativeDiagnostics) != 0 {
+		t.Fatalf("native: %#v", nativeDiagnostics)
+	}
+	runtime := string(sources.Runtime)
+	if !strings.Contains(runtime, "if(z_ui_scrollable_y(n)&&n->content_height>n->content_bounds.height+0.5") {
+		t.Fatal("native scrollbar rendering is not restricted to explicitly scrollable nodes")
+	}
+}

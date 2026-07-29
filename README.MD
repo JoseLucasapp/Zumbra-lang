@@ -307,3 +307,7 @@ Zumbra 0.11.1 enables SDL3 text input only while an editable UI control is focus
 
 Zumbra 0.11.2 corrects retained UI layout alignment, adds clipped vertical scrolling for overflowing rows, columns and containers, and hardens native C11 generation for dynamically typed string literals and discarded control-flow results. See [`docs/releases/0.11.2.md`](./docs/releases/0.11.2.md).
 
+## Zumbra 0.11.3
+
+Zumbra 0.11.3 restricts scrollbar rendering to nodes that explicitly enable vertical overflow, eliminating stray scrollbar fragments on labels, cards, buttons and ordinary containers. See [`docs/pt-BR/correcao-scrollbars-0.11.3.md`](./docs/pt-BR/correcao-scrollbars-0.11.3.md).
+
