@@ -292,3 +292,13 @@ scripts/check-repository-hygiene.sh
 ```
 
 Release packages belong in the release service or CI artifacts, not in the Git tree. The source archive should contain only language sources, tests, documentation, examples, and small public assets. See [`docs/pt-BR/higiene-do-repositorio.md`](./docs/pt-BR/higiene-do-repositorio.md).
+
+## Z16 reference desktop application
+
+The first official product built with Zumbra is maintained in the separate `zumbra-game-collection` repository. It is a local SQLite desktop application for cataloging, searching, sorting, editing, and deleting games from a physical or digital collection.
+
+Zumbra 0.11.0 adds UI target identity (`targetId` and `targetKind`) and native code-generation fixes required by dynamic database-backed component lists. See [`docs/pt-BR/aplicativo-referencia-z16.md`](./docs/pt-BR/aplicativo-referencia-z16.md) and [`docs/releases/0.11.0.md`](./docs/releases/0.11.0.md).
+
+## Zumbra 0.11.1
+
+Zumbra 0.11.1 enables SDL3 text input only while an editable UI control is focused, restoring real keyboard editing for desktop `input` and `textarea` components. See [`docs/releases/0.11.1.md`](./docs/releases/0.11.1.md).

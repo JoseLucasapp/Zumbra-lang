@@ -183,7 +183,7 @@ type headlessWindow struct {
 	id                                           int64
 	title                                        string
 	width, height, pixelWidth, pixelHeight, x, y int64
-	open, visible, fullscreen                    bool
+	open, visible, fullscreen, textInput         bool
 	scale, density                               float64
 	icon                                         string
 	lastUI                                       *object.UIRenderFrame
@@ -319,6 +319,15 @@ func (w *headlessWindow) Focus() error {
 }
 func (w *headlessWindow) DisplayScale() float64 { w.mu.RLock(); defer w.mu.RUnlock(); return w.scale }
 func (w *headlessWindow) PixelDensity() float64 { w.mu.RLock(); defer w.mu.RUnlock(); return w.density }
+func (w *headlessWindow) SetTextInput(enabled bool) error {
+	w.mu.Lock()
+	defer w.mu.Unlock()
+	if !w.open {
+		return errors.New("window is closed")
+	}
+	w.textInput = enabled
+	return nil
+}
 func (w *headlessWindow) SetIcon(path string) error {
 	if path == "" {
 		return errors.New("icon path cannot be empty")

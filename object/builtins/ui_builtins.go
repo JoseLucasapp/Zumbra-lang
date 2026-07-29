@@ -344,7 +344,11 @@ func UIUnmountBuiltin() *object.Builtin {
 			return NewBoolean(false)
 		}
 		ctx.Closed = true
+		ctx.FocusID = ""
 		ctx.Mu.Unlock()
+		if textErr := syncUITextInput(ctx, nil); textErr != nil {
+			return textErr
+		}
 		if ctx.App != nil && ctx.Window != nil {
 			ctx.App.Mu.Lock()
 			delete(ctx.App.UIContexts, ctx.Window.Runtime.ID())
@@ -578,6 +582,9 @@ func UIFocusBuiltin() *object.Builtin {
 		ctx.FocusID = n.ID
 		ctx.Dirty = true
 		ctx.Mu.Unlock()
+		if textErr := syncUITextInput(ctx, n); textErr != nil {
+			return textErr
+		}
 		_ = renderUIContext(ctx)
 		return NewBoolean(true)
 	}}
@@ -683,6 +690,25 @@ func markUIContextDirty(ctx *object.UIContext) {
 	ctx.Dirty = true
 	ctx.Mu.Unlock()
 }
+func uiNodeAcceptsTextInput(n *object.UINode) bool {
+	if n == nil {
+		return false
+	}
+	n.Mu.RLock()
+	defer n.Mu.RUnlock()
+	return n.Visible && n.Enabled && (n.Kind == "input" || n.Kind == "textarea")
+}
+
+func syncUITextInput(ctx *object.UIContext, node *object.UINode) *object.Error {
+	if ctx == nil || ctx.Window == nil || ctx.Window.Runtime == nil {
+		return nil
+	}
+	if err := ctx.Window.Runtime.SetTextInput(uiNodeAcceptsTextInput(node)); err != nil {
+		return NewError("UI text input: %s", err)
+	}
+	return nil
+}
+
 func uiNodeFocusable(n *object.UINode) bool {
 	if n == nil {
 		return false
@@ -740,6 +766,7 @@ func focusNextUI(ctx *object.UIContext, reverse bool) *object.UINode {
 	ctx.FocusID = nodes[index].ID
 	ctx.Dirty = true
 	ctx.Mu.Unlock()
+	_ = syncUITextInput(ctx, nodes[index])
 	return nodes[index]
 }
 func walkUI(node *object.UINode, fn func(*object.UINode)) {
@@ -947,7 +974,17 @@ func dispatchUIEvent(ctx *object.UIContext, event *object.DesktopEvent) *object.
 			return nil
 		}
 	}
+	down := event.Type == "mouse_down" || event.Type == "mouse_button_down"
 	if target == nil {
+		if down {
+			ctx.Mu.Lock()
+			ctx.FocusID = ""
+			ctx.Dirty = true
+			ctx.Mu.Unlock()
+			if textErr := syncUITextInput(ctx, nil); textErr != nil {
+				return textErr
+			}
+		}
 		return nil
 	}
 	if !target.Enabled {
@@ -955,8 +992,14 @@ func dispatchUIEvent(ctx *object.UIContext, event *object.DesktopEvent) *object.
 	}
 	target.Mu.RLock()
 	kind := target.Kind
+	targetID := target.ID
 	props := cloneUIProps(target.Props)
 	target.Mu.RUnlock()
+	if event.Data == nil {
+		event.Data = map[string]object.Object{}
+	}
+	event.Data["targetId"] = NewString(targetID)
+	event.Data["targetKind"] = NewString(kind)
 	eventObject := desktopEventObject(event)
 	invoke := func(name string) *object.Error {
 		handler := props[name]
@@ -968,15 +1011,27 @@ func dispatchUIEvent(ctx *object.UIContext, event *object.DesktopEvent) *object.
 		}
 		return nil
 	}
-	down := event.Type == "mouse_down" || event.Type == "mouse_button_down"
 	up := event.Type == "mouse_up" || event.Type == "mouse_button_up"
-	if down && uiNodeFocusable(target) {
-		ctx.Mu.Lock()
-		ctx.FocusID = target.ID
-		ctx.Dirty = true
-		ctx.Mu.Unlock()
-		if e := invoke("onFocus"); e != nil {
-			return e
+	if down {
+		if uiNodeFocusable(target) {
+			ctx.Mu.Lock()
+			ctx.FocusID = target.ID
+			ctx.Dirty = true
+			ctx.Mu.Unlock()
+			if textErr := syncUITextInput(ctx, target); textErr != nil {
+				return textErr
+			}
+			if e := invoke("onFocus"); e != nil {
+				return e
+			}
+		} else {
+			ctx.Mu.Lock()
+			ctx.FocusID = ""
+			ctx.Dirty = true
+			ctx.Mu.Unlock()
+			if textErr := syncUITextInput(ctx, nil); textErr != nil {
+				return textErr
+			}
 		}
 	}
 	if event.Type == "mouse_motion" {

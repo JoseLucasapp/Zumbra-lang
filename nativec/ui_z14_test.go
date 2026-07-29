@@ -46,3 +46,27 @@ func TestZ14PointOneNativeRuntimeContainsThemeAndUTF8FontSupport(t *testing.T) {
 		}
 	}
 }
+
+func TestZ16UIEventTargetIdentityRunsNatively(t *testing.T) {
+	expected := "edit-42\nbutton\n"
+	if output := buildAndRunZ8(t, "code_examples/core/ui_event_target.zum"); output != expected {
+		t.Fatalf("output=%q", output)
+	}
+}
+
+func TestZ16PointOneNativeRuntimeEnablesSDLTextInputForEditableFocus(t *testing.T) {
+	result, diagnostics := pipeline.Build("ui-text-input.zum", `var app << desktopApp({"backend":"headless"}); var w << app.window({"title":"UI"}); var n << uiInput({"id":"name","value":""}, []); var c << uiMount(app,w,n,{}); uiFocus(c,n); uiUnmount(c);`, pipeline.Options{Optimize: true})
+	if len(diagnostics) != 0 {
+		t.Fatalf("pipeline: %s", pipeline.FormatDiagnostics(diagnostics))
+	}
+	sources, nativeDiagnostics := nativec.Generate(result.MIR)
+	if len(nativeDiagnostics) != 0 {
+		t.Fatalf("native: %#v", nativeDiagnostics)
+	}
+	runtime := string(sources.Runtime)
+	for _, expected := range []string{"SDL_StartTextInput", "SDL_StopTextInput", "z_ui_sync_text_input", "z_ui_accepts_text_input"} {
+		if !strings.Contains(runtime, expected) {
+			t.Fatalf("missing %q", expected)
+		}
+	}
+}

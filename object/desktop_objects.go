@@ -52,6 +52,7 @@ type DesktopWindowRuntime interface {
 	DisplayScale() float64
 	PixelDensity() float64
 	SetIcon(string) error
+	SetTextInput(bool) error
 }
 
 type DesktopTrayRuntime interface {

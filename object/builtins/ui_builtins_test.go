@@ -140,3 +140,64 @@ func TestZ14PointOneUTF8TextMeasurementUsesRunesAndFontSize(t *testing.T) {
 		t.Fatalf("UTF-8 code points were measured as bytes: utf8=%+v ascii=%+v", small, ascii)
 	}
 }
+
+func TestZ16UIEventIncludesTargetIdentity(t *testing.T) {
+	app := DesktopAppBuiltin().Fn(desktopTestDict(map[string]object.Object{"backend": NewString("headless")})).(*object.DesktopApp)
+	window := DesktopWindowBuiltin().Fn(app, desktopTestDict(map[string]object.Object{"title": NewString("UI"), "width": NewInteger(320), "height": NewInteger(200)})).(*object.DesktopWindow)
+	var targetID, targetKind string
+	handler := &object.Builtin{Fn: func(args ...object.Object) object.Object {
+		if len(args) != 1 {
+			return NewError("handler expects one event")
+		}
+		event, ok := args[0].(*object.Dict)
+		if !ok {
+			return NewError("handler expects event dictionary")
+		}
+		targetID = objectDictValue(event, "targetId").Inspect()
+		targetKind = objectDictValue(event, "targetKind").Inspect()
+		return &object.Null{}
+	}}
+	button := uiTestNode("button", map[string]object.Object{"id": NewString("edit-42"), "text": NewString("Edit"), "onClick": handler})
+	root := uiTestNode("column", map[string]object.Object{"padding": NewInteger(8)}, button)
+	ctx := UIMountBuiltin().Fn(app, window, root, desktopTestDict(map[string]object.Object{})).(*object.UIContext)
+	UIDispatchBuiltin().Fn(ctx, desktopTestDict(map[string]object.Object{"type": NewString("mouse_down"), "x": NewInteger(12), "y": NewInteger(12)}))
+	UIDispatchBuiltin().Fn(ctx, desktopTestDict(map[string]object.Object{"type": NewString("mouse_up"), "x": NewInteger(12), "y": NewInteger(12)}))
+	if targetID != "edit-42" || targetKind != "button" {
+		t.Fatalf("target identity=%q/%q", targetID, targetKind)
+	}
+}
+
+func TestZ16PointOneTextInputLifecycleFollowsFocus(t *testing.T) {
+	app := DesktopAppBuiltin().Fn(desktopTestDict(map[string]object.Object{"backend": NewString("headless")})).(*object.DesktopApp)
+	window := DesktopWindowBuiltin().Fn(app, desktopTestDict(map[string]object.Object{"title": NewString("UI"), "width": NewInteger(360), "height": NewInteger(220)})).(*object.DesktopWindow)
+	input := uiTestNode("input", map[string]object.Object{"id": NewString("name"), "value": NewString("")})
+	button := uiTestNode("button", map[string]object.Object{"id": NewString("save"), "text": NewString("Save")})
+	root := uiTestNode("column", map[string]object.Object{"padding": NewInteger(8), "gap": NewInteger(8)}, input, button)
+	ctx := UIMountBuiltin().Fn(app, window, root, desktopTestDict(map[string]object.Object{})).(*object.UIContext)
+	runtime := window.Runtime.(*headlessWindow)
+
+	if runtime.textInput {
+		t.Fatal("text input started before an editable control received focus")
+	}
+	if result := UIFocusBuiltin().Fn(ctx, input); result.Type() == object.ERROR_OBJ {
+		t.Fatal(result.Inspect())
+	}
+	if !runtime.textInput {
+		t.Fatal("text input did not start when the input received focus")
+	}
+	if result := UIFocusBuiltin().Fn(ctx, button); result.Type() == object.ERROR_OBJ {
+		t.Fatal(result.Inspect())
+	}
+	if runtime.textInput {
+		t.Fatal("text input remained enabled after focus moved to a button")
+	}
+	if result := UIFocusBuiltin().Fn(ctx, input); result.Type() == object.ERROR_OBJ {
+		t.Fatal(result.Inspect())
+	}
+	if result := UIUnmountBuiltin().Fn(ctx); result.Type() == object.ERROR_OBJ {
+		t.Fatal(result.Inspect())
+	}
+	if runtime.textInput {
+		t.Fatal("text input remained enabled after UI unmount")
+	}
+}

@@ -82,6 +82,8 @@ typedef bool (*PFN_SDL_PollEvent)(ZSDL_Event*);
 typedef bool (*PFN_SDL_WaitEvent)(ZSDL_Event*);
 typedef bool (*PFN_SDL_WaitEventTimeout)(ZSDL_Event*,int32_t);
 typedef const char *(*PFN_SDL_GetKeyName)(uint32_t);
+typedef bool (*PFN_SDL_StartTextInput)(SDL_Window*);
+typedef bool (*PFN_SDL_StopTextInput)(SDL_Window*);
 typedef bool (*PFN_SDL_SetClipboardText)(const char*);
 typedef char *(*PFN_SDL_GetClipboardText)(void);
 typedef void (*PFN_SDL_free)(void*);
@@ -129,6 +131,7 @@ static PFN_SDL_GetWindowPosition p_GetWindowPosition; static PFN_SDL_SetWindowPo
 static PFN_SDL_GetWindowFlags p_GetWindowFlags; static PFN_SDL_MaximizeWindow p_MaximizeWindow; static PFN_SDL_MinimizeWindow p_MinimizeWindow; static PFN_SDL_RestoreWindow p_RestoreWindow; static PFN_SDL_RaiseWindow p_RaiseWindow;
 static PFN_SDL_GetWindowDisplayScale p_GetWindowDisplayScale; static PFN_SDL_GetWindowPixelDensity p_GetWindowPixelDensity;
 static PFN_SDL_PollEvent p_PollEvent; static PFN_SDL_WaitEvent p_WaitEvent; static PFN_SDL_WaitEventTimeout p_WaitEventTimeout; static PFN_SDL_GetKeyName p_GetKeyName;
+static PFN_SDL_StartTextInput p_StartTextInput; static PFN_SDL_StopTextInput p_StopTextInput;
 static PFN_SDL_SetClipboardText p_SetClipboardText; static PFN_SDL_GetClipboardText p_GetClipboardText; static PFN_SDL_free p_free;
 static PFN_SDL_IOFromFile p_IOFromFile; static PFN_SDL_LoadBMP_IO p_LoadBMP_IO; static PFN_SDL_DestroySurface p_DestroySurface; static PFN_SDL_SetWindowIcon p_SetWindowIcon;
 static PFN_SDL_CreateTray p_CreateTray; static PFN_SDL_CreateTrayMenu p_CreateTrayMenu; static PFN_SDL_InsertTrayEntryAt p_InsertTrayEntryAt; static PFN_SDL_SetTrayEntryCallback p_SetTrayEntryCallback; static PFN_SDL_SetTrayTooltip p_SetTrayTooltip; static PFN_SDL_DestroyTray p_DestroyTray;
@@ -153,7 +156,7 @@ static bool zsdl_load(void) {
     LOAD_REQ(CreateWindow); LOAD_REQ(DestroyWindow); LOAD_REQ(GetWindowID); LOAD_REQ(ShowWindow); LOAD_REQ(HideWindow); LOAD_REQ(GetWindowTitle); LOAD_REQ(SetWindowTitle);
     LOAD_REQ(GetWindowSize); LOAD_REQ(GetWindowSizeInPixels); LOAD_REQ(SetWindowSize); LOAD_REQ(GetWindowPosition); LOAD_REQ(SetWindowPosition); LOAD_REQ(SetWindowFullscreen); LOAD_REQ(GetWindowFlags);
     LOAD_REQ(MaximizeWindow); LOAD_REQ(MinimizeWindow); LOAD_REQ(RestoreWindow); LOAD_REQ(RaiseWindow); LOAD_REQ(GetWindowDisplayScale); LOAD_REQ(GetWindowPixelDensity);
-    LOAD_REQ(PollEvent); LOAD_REQ(WaitEvent); LOAD_REQ(WaitEventTimeout); LOAD_REQ(GetKeyName); LOAD_REQ(SetClipboardText); LOAD_REQ(GetClipboardText); LOAD_REQ(free);
+    LOAD_REQ(PollEvent); LOAD_REQ(WaitEvent); LOAD_REQ(WaitEventTimeout); LOAD_REQ(GetKeyName); LOAD_REQ(StartTextInput); LOAD_REQ(StopTextInput); LOAD_REQ(SetClipboardText); LOAD_REQ(GetClipboardText); LOAD_REQ(free);
     LOAD_OPT(IOFromFile); LOAD_OPT(LoadBMP_IO); LOAD_OPT(DestroySurface); LOAD_OPT(SetWindowIcon);
     LOAD_OPT(CreateTray); LOAD_OPT(CreateTrayMenu); LOAD_OPT(InsertTrayEntryAt); LOAD_OPT(SetTrayEntryCallback); LOAD_OPT(SetTrayTooltip); LOAD_OPT(DestroyTray);
     LOAD_REQ(CreateRenderer); LOAD_REQ(DestroyRenderer); LOAD_REQ(SetRenderDrawColor); LOAD_REQ(RenderClear); LOAD_REQ(RenderFillRect); LOAD_REQ(RenderRect); LOAD_REQ(RenderLine); LOAD_REQ(RenderPresent); LOAD_OPT(RenderDebugText); LOAD_OPT(CreateTextureFromSurface); LOAD_OPT(RenderTexture); LOAD_OPT(DestroyTexture); LOAD_OPT(GetTextureSize);
@@ -231,6 +234,8 @@ static bool zsdl_set_fullscreen(SDL_Window*w,bool v){return p_SetWindowFullscree
 static bool zsdl_maximize(SDL_Window*w){return p_MaximizeWindow(w);} static bool zsdl_minimize(SDL_Window*w){return p_MinimizeWindow(w);} static bool zsdl_restore(SDL_Window*w){return p_RestoreWindow(w);} static bool zsdl_raise(SDL_Window*w){return p_RaiseWindow(w);}
 static float zsdl_display_scale(SDL_Window*w){return p_GetWindowDisplayScale(w);} static float zsdl_pixel_density(SDL_Window*w){return p_GetWindowPixelDensity(w);}
 static bool zsdl_set_clipboard(const char*t){return p_SetClipboardText(t);} static char*zsdl_get_clipboard(void){return p_GetClipboardText();} static void zsdl_free_text(void*p){if(p)p_free(p);}
+static bool zsdl_start_text_input(SDL_Window*w){return w&&p_StartTextInput&&p_StartTextInput(w);}
+static bool zsdl_stop_text_input(SDL_Window*w){return w&&p_StopTextInput&&p_StopTextInput(w);}
 static bool zsdl_set_icon(SDL_Window*w,const char*path){if(!p_IOFromFile||!p_LoadBMP_IO||!p_SetWindowIcon||!p_DestroySurface){snprintf(zsdl_error,sizeof(zsdl_error),"SDL3 BMP icon APIs are unavailable");return false;}SDL_IOStream*io=p_IOFromFile(path,"rb");if(!io)return false;SDL_Surface*s=p_LoadBMP_IO(io,true);if(!s)return false;bool ok=p_SetWindowIcon(w,s);p_DestroySurface(s);return ok;}
 static SDL_Renderer*zsdl_renderer(SDL_Window*w){return p_CreateRenderer(w,NULL);} static void zsdl_destroy_renderer(SDL_Renderer*r){if(r)p_DestroyRenderer(r);}
 static bool zsdl_color(SDL_Renderer*r,uint8_t red,uint8_t green,uint8_t blue,uint8_t alpha){return p_SetRenderDrawColor(r,red,green,blue,alpha);} static bool zsdl_clear(SDL_Renderer*r){return p_RenderClear(r);}
@@ -806,6 +811,21 @@ func (w *sdlWindow) PixelDensity() float64 {
 		return 0
 	}
 	return float64(C.zsdl_pixel_density(w.handle))
+}
+func (w *sdlWindow) SetTextInput(enabled bool) error {
+	if err := w.ensure(); err != nil {
+		return err
+	}
+	var ok bool
+	if enabled {
+		ok = bool(C.zsdl_start_text_input(w.handle))
+	} else {
+		ok = bool(C.zsdl_stop_text_input(w.handle))
+	}
+	if !ok {
+		return errors.New(C.GoString(C.zsdl_last_error()))
+	}
+	return nil
 }
 func (w *sdlWindow) SetIcon(path string) error {
 	if err := validateDesktopPath(path); err != nil {
