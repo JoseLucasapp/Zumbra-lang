@@ -32,12 +32,13 @@ type appCLIOptions struct {
 	NSISTool        string
 	SignIdentity    string
 	Symbols         bool
+	JSON            bool
 	SourceDateEpoch int64
 }
 
 func handleAppCommand(arguments []string) error {
 	if len(arguments) == 0 {
-		return fmt.Errorf("missing app command; use inspect, run, build or package")
+		return fmt.Errorf("missing app command; use inspect, run, build, package or doctor")
 	}
 	command := arguments[0]
 	options, err := parseAppOptions(arguments[1:])
@@ -57,8 +58,10 @@ func handleAppCommand(arguments []string) error {
 		return buildApp(manifest, options)
 	case "package":
 		return packageApp(manifest, options)
+	case "doctor":
+		return doctorApp(manifest, options)
 	default:
-		return fmt.Errorf("unknown app command %q; use inspect, run, build or package", command)
+		return fmt.Errorf("unknown app command %q; use inspect, run, build, package or doctor", command)
 	}
 }
 
@@ -140,6 +143,8 @@ func parseAppOptions(arguments []string) (appCLIOptions, error) {
 			options.SignIdentity = arguments[index]
 		case "--symbols":
 			options.Symbols = true
+		case "--json":
+			options.JSON = true
 		case "--source-date-epoch":
 			index++
 			if index >= len(arguments) {
@@ -372,3 +377,127 @@ func packageApp(manifest *appmanifest.Manifest, cli appCLIOptions) error {
 
 func runtimeGOOS() string   { return runtime.GOOS }
 func runtimeGOARCH() string { return runtime.GOARCH }
+
+type appDoctorCheck struct {
+	Name     string `json:"name"`
+	Status   string `json:"status"`
+	Required bool   `json:"required"`
+	Detail   string `json:"detail"`
+}
+
+type appDoctorReport struct {
+	SchemaVersion int              `json:"schema_version"`
+	Target        string           `json:"target"`
+	Arch          string           `json:"arch"`
+	Format        string           `json:"format"`
+	Ready         bool             `json:"ready"`
+	Checks        []appDoctorCheck `json:"checks"`
+}
+
+func doctorApp(manifest *appmanifest.Manifest, cli appCLIOptions) error {
+	target, err := appdist.NormalizeTarget(cli.Target)
+	if err != nil {
+		return err
+	}
+	arch, err := appdist.NormalizeArch(cli.Arch)
+	if err != nil {
+		return err
+	}
+	formats, err := appdist.ParseFormats(target, cli.Format)
+	if err != nil {
+		return err
+	}
+	formatLabel := strings.TrimSpace(cli.Format)
+	if formatLabel == "" {
+		formatLabel = "all"
+	}
+	report := appDoctorReport{SchemaVersion: 1, Target: target, Arch: arch, Format: formatLabel, Ready: true}
+	add := func(name string, required bool, checkErr error, detail string) {
+		status := "ok"
+		if checkErr != nil {
+			status = "missing"
+			report.Ready = false
+			detail = checkErr.Error()
+		}
+		report.Checks = append(report.Checks, appDoctorCheck{Name: name, Status: status, Required: required, Detail: detail})
+	}
+
+	add("manifest", true, nil, manifest.Path)
+
+	binary := strings.TrimSpace(cli.Binary)
+	if binary != "" {
+		if !filepath.IsAbs(binary) {
+			binary = filepath.Join(manifest.Root, binary)
+		}
+		info, inspectErr := appdist.InspectBinary(binary)
+		if inspectErr == nil {
+			if info.OS != target || (info.Arch != arch && info.Arch != "universal") {
+				inspectErr = fmt.Errorf("binary is %s/%s, expected %s/%s", info.OS, info.Arch, target, arch)
+			}
+		}
+		add("package binary", true, inspectErr, binary)
+	} else {
+		result, diagnostics := pipeline.BuildFile(manifest.EntryPath(), pipeline.Options{Optimize: true})
+		if len(diagnostics) > 0 {
+			add("application pipeline", true, fmt.Errorf("pipeline failed:\n%s", pipeline.FormatDiagnostics(diagnostics)), "")
+		} else {
+			add("application pipeline", true, nil, manifest.EntryPath())
+			if target != "linux" && (nativec.UsesDesktop(result.MIR) || nativec.UsesUI(result.MIR)) {
+				add("desktop runtime backend", true, fmt.Errorf("Z13/Z14 graphical runtime is currently Linux-only; provide a native %s/%s binary with --binary until that backend is implemented", target, arch), "")
+			} else {
+				add("desktop runtime backend", true, nil, target+"/"+arch)
+			}
+		}
+		compilerName := strings.TrimSpace(cli.Compiler)
+		if compilerName == "" {
+			compilerName = strings.TrimSpace(manifest.Build.Compiler)
+		}
+		compiler, compilerErr := nativec.DetectCompilerForTarget(compilerName, target, arch)
+		add("C compiler", true, compilerErr, compiler)
+		if target == "windows" {
+			resource, resourceErr := nativec.DetectWindres(arch)
+			add("Windows resource compiler", true, resourceErr, resource)
+		}
+	}
+
+	wants := func(name string) bool { return formats["all"] || formats[name] }
+	if target == "linux" && wants("appimage") {
+		tool, toolErr := appdist.FindAppImageTool(cli.AppImageTool, manifest.Root, arch)
+		if toolErr != nil {
+			toolErr = fmt.Errorf("%s", appdist.AppImageInstallHint(arch))
+		}
+		add("appimagetool", true, toolErr, tool)
+	}
+	if target == "windows" && wants("installer") && manifest.Windows.Installer != "none" {
+		tool, toolErr := appdist.FindNSISTool(cli.NSISTool)
+		if toolErr != nil {
+			toolErr = fmt.Errorf("%s", appdist.NSISInstallHint())
+		}
+		add("makensis", true, toolErr, tool)
+	}
+	if target == "macos" && strings.TrimSpace(cli.SignIdentity) != "" {
+		tool, toolErr := appdist.FindCodeSignTool()
+		add("codesign", true, toolErr, tool)
+	}
+
+	if cli.JSON {
+		encoded, encodeErr := json.MarshalIndent(report, "", "  ")
+		if encodeErr != nil {
+			return encodeErr
+		}
+		fmt.Println(string(encoded))
+	} else {
+		fmt.Printf("Zumbra application doctor: %s/%s (%s)\n", target, arch, formatLabel)
+		for _, check := range report.Checks {
+			marker := "ok"
+			if check.Status != "ok" {
+				marker = "missing"
+			}
+			fmt.Printf("[%s] %-28s %s\n", marker, check.Name, check.Detail)
+		}
+	}
+	if !report.Ready {
+		return fmt.Errorf("application doctor found blocking requirements for %s/%s", target, arch)
+	}
+	return nil
+}

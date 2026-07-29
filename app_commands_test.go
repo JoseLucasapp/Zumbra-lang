@@ -4,11 +4,11 @@ import "testing"
 
 func TestParseAppOptions(t *testing.T) {
 	release := false
-	options, err := parseAppOptions([]string{"--manifest", "app.toml", "--compiler", "clang", "--debug", "-o", "dist/app", "--target", "windows", "--arch", "amd64", "--format", "portable", "--sign", "Example"})
+	options, err := parseAppOptions([]string{"--manifest", "app.toml", "--compiler", "clang", "--debug", "-o", "dist/app", "--target", "windows", "--arch", "amd64", "--format", "portable", "--sign", "Example", "--json"})
 	if err != nil {
 		t.Fatal(err)
 	}
-	if options.Manifest != "app.toml" || options.Compiler != "clang" || options.Output != "dist/app" || options.Release == nil || *options.Release != release || options.Target != "windows" || options.Arch != "amd64" || options.Format != "portable" || options.SignIdentity != "Example" {
+	if options.Manifest != "app.toml" || options.Compiler != "clang" || options.Output != "dist/app" || options.Release == nil || *options.Release != release || options.Target != "windows" || options.Arch != "amd64" || options.Format != "portable" || options.SignIdentity != "Example" || !options.JSON {
 		t.Fatalf("unexpected options: %#v", options)
 	}
 }

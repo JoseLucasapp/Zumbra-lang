@@ -33,36 +33,23 @@ func (c *packageContext) packageWindows() error {
 		if err := c.addArtifact("nsis-script", script); err != nil {
 			return err
 		}
-		tool := strings.TrimSpace(c.options.NSISTool)
-		if tool == "" {
-			tool = strings.TrimSpace(os.Getenv("MAKENSIS"))
+		tool, findErr := FindNSISTool(c.options.NSISTool)
+		if findErr != nil {
+			return fmt.Errorf("Windows installer requested but makensis is unavailable: %s", NSISInstallHint())
 		}
-		if tool == "" {
-			if found, err := exec.LookPath("makensis"); err == nil {
-				tool = found
-			}
+		cmd := exec.Command(tool, script)
+		cmd.Stdout, cmd.Stderr = os.Stdout, os.Stderr
+		if err := cmd.Run(); err != nil {
+			return fmt.Errorf("makensis failed: %w", err)
 		}
-		if tool == "" {
-			message := "makensis was not found; portable ZIP and NSIS script were generated but installer EXE was skipped"
-			if c.explicit("installer") {
-				return fmt.Errorf("%s", message)
-			}
-			c.result.Warnings = append(c.result.Warnings, message)
-		} else {
-			cmd := exec.Command(tool, script)
-			cmd.Stdout, cmd.Stderr = os.Stdout, os.Stderr
-			if err := cmd.Run(); err != nil {
-				return fmt.Errorf("makensis failed: %w", err)
-			}
-			if _, err := os.Stat(installer); err != nil {
-				return fmt.Errorf("makensis did not create %s", installer)
-			}
-			if err := os.Chtimes(installer, c.epoch, c.epoch); err != nil {
-				return err
-			}
-			if err := c.addArtifact("windows-installer", installer); err != nil {
-				return err
-			}
+		if _, err := os.Stat(installer); err != nil {
+			return fmt.Errorf("makensis did not create %s", installer)
+		}
+		if err := os.Chtimes(installer, c.epoch, c.epoch); err != nil {
+			return err
+		}
+		if err := c.addArtifact("windows-installer", installer); err != nil {
+			return err
 		}
 	}
 	return nil

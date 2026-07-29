@@ -3,7 +3,7 @@ import "../../std/desktop.zum" as desktop;
 var application << desktop.app({
     "backend": "auto",
     "name": "Zumbra Desktop",
-    "version": "0.10.0",
+    "version": "0.10.1",
     "identifier": "dev.zumbra.desktop-window",
     "quitOnLastWindow": true,
     "closeOnRequest": true

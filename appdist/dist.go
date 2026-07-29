@@ -49,6 +49,7 @@ type Result struct {
 	Version       string     `json:"version"`
 	Target        string     `json:"target"`
 	Arch          string     `json:"arch"`
+	Binary        BinaryInfo `json:"binary"`
 	BuildID       string     `json:"build_id"`
 	Artifacts     []Artifact `json:"artifacts"`
 	Warnings      []string   `json:"warnings,omitempty"`
@@ -94,6 +95,21 @@ func Package(options Options) (*Result, error) {
 	if err != nil {
 		return nil, err
 	}
+	wants := func(name string) bool { return formats["all"] || formats[name] }
+	if options.Target == "linux" && wants("appimage") {
+		tool, findErr := FindAppImageTool(options.AppImageTool, options.Manifest.Root, options.Arch)
+		if findErr != nil {
+			return nil, fmt.Errorf("AppImage requested but appimagetool is unavailable: %s", AppImageInstallHint(options.Arch))
+		}
+		options.AppImageTool = tool
+	}
+	if options.Target == "windows" && wants("installer") && options.Manifest.Windows.Installer != "none" {
+		tool, findErr := FindNSISTool(options.NSISTool)
+		if findErr != nil {
+			return nil, fmt.Errorf("Windows installer requested but makensis is unavailable: %s", NSISInstallHint())
+		}
+		options.NSISTool = tool
+	}
 	if options.OutputDir == "" {
 		options.OutputDir = filepath.Join(options.Manifest.Root, "dist", "packages")
 	} else if !filepath.IsAbs(options.OutputDir) {
@@ -103,19 +119,20 @@ func Package(options Options) (*Result, error) {
 		return nil, fmt.Errorf("create package output directory: %w", err)
 	}
 	epoch := sourceDateEpoch(options.SourceDateEpoch)
+	binaryInfo, err := validateBinaryForTarget(binary, options.Target, options.Arch)
+	if err != nil {
+		return nil, err
+	}
 	buildID, err := calculateBuildID(options.Manifest, binary, options.Target, options.Arch)
 	if err != nil {
 		return nil, err
 	}
 	ctx := &packageContext{
 		options: options,
-		result:  Result{SchemaVersion: 1, App: options.Manifest.App.Name, Version: options.Manifest.App.Version, Target: options.Target, Arch: options.Arch, BuildID: buildID},
+		result:  Result{SchemaVersion: 2, App: options.Manifest.App.Name, Version: options.Manifest.App.Version, Target: options.Target, Arch: options.Arch, Binary: binaryInfo, BuildID: buildID},
 		outDir:  options.OutputDir,
 		epoch:   epoch,
 		formats: formats,
-	}
-	if detected := detectBinaryTarget(binary); detected != "" && detected != options.Target {
-		ctx.result.Warnings = append(ctx.result.Warnings, fmt.Sprintf("binary format looks like %s but package target is %s", detected, options.Target))
 	}
 
 	switch options.Target {
@@ -158,31 +175,6 @@ func Package(options Options) (*Result, error) {
 		return nil, err
 	}
 	return &ctx.result, nil
-}
-
-func detectBinaryTarget(path string) string {
-	file, err := os.Open(path)
-	if err != nil {
-		return ""
-	}
-	defer file.Close()
-	header := make([]byte, 8)
-	n, _ := file.Read(header)
-	header = header[:n]
-	if len(header) >= 4 && header[0] == 0x7f && string(header[1:4]) == "ELF" {
-		return "linux"
-	}
-	if len(header) >= 2 && header[0] == 'M' && header[1] == 'Z' {
-		return "windows"
-	}
-	if len(header) >= 4 {
-		magic := uint32(header[0])<<24 | uint32(header[1])<<16 | uint32(header[2])<<8 | uint32(header[3])
-		switch magic {
-		case 0xfeedface, 0xfeedfacf, 0xcefaedfe, 0xcffaedfe, 0xcafebabe, 0xbebafeca:
-			return "macos"
-		}
-	}
-	return ""
 }
 
 func normalizeTarget(value string) (string, error) {
@@ -449,3 +441,12 @@ func (c *packageContext) auditDependencies(binary, destination string) {
 	output = regexp.MustCompile(`0x[0-9a-fA-F]+`).ReplaceAll(output, []byte("0xADDR"))
 	_ = writeFile(destination, output, 0o644, c.epoch)
 }
+
+// NormalizeTarget exposes the same target normalization used by the packager.
+func NormalizeTarget(value string) (string, error) { return normalizeTarget(value) }
+
+// NormalizeArch exposes the same architecture normalization used by the packager.
+func NormalizeArch(value string) (string, error) { return normalizeArch(value) }
+
+// ParseFormats validates a comma-separated package format list for a target.
+func ParseFormats(target, value string) (map[string]bool, error) { return parseFormats(target, value) }

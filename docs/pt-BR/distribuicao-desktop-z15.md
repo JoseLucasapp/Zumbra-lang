@@ -64,6 +64,7 @@ exclude = ["**/*.tmp"]
 ```bash
 zumbra app inspect --manifest zumbra.toml
 zumbra app run --manifest zumbra.toml
+zumbra app doctor --manifest zumbra.toml
 zumbra app build --manifest zumbra.toml
 zumbra app package --manifest zumbra.toml
 ```
@@ -92,7 +93,7 @@ Artefatos:
 - bundle `.tar.gz` standalone;
 - pacote `.deb` determinístico;
 - diretório `.AppDir`;
-- AppImage, quando `appimagetool` estiver instalado.
+- AppImage, com `appimagetool` obrigatório quando o formato é solicitado.
 
 O `.deb` é criado diretamente pelo Zumbra, sem depender de `dpkg-deb`.
 
@@ -108,7 +109,7 @@ Artefatos:
 
 - ZIP portátil;
 - script NSIS auditável;
-- instalador `.exe`, quando `makensis` estiver instalado.
+- instalador `.exe`, com `makensis` obrigatório quando o formato é solicitado.
 
 Um build Windows feito pelo Zumbra usa MinGW, adiciona metadados de versão, ícone `.ico` e pode usar o subsistema gráfico sem console.
 
@@ -150,7 +151,7 @@ zumbra app package \
   --format all
 ```
 
-O binário fornecido precisa ter sido realmente compilado para o sistema escolhido.
+O binário fornecido precisa ter sido realmente compilado para o sistema e a arquitetura escolhidos. O Zumbra valida diretamente os cabeçalhos ELF, PE e Mach-O antes de empacotar.
 
 ## Builds reproduzíveis
 
@@ -203,8 +204,13 @@ Assinatura macOS: codesign
 Símbolos: objcopy, llvm-objcopy ou dsymutil
 ```
 
-Quando `--format all` é usado e AppImage/NSIS não está disponível, os formatos independentes continuam sendo gerados e o relatório registra um aviso. Ao pedir somente `appimage` ou `installer`, a ausência da ferramenta é tratada como erro.
+`--format all` significa que todos os formatos precisam ser produzidos. A ausência de `appimagetool` ou `makensis` é um erro acionável. Para um pacote parcial, os formatos devem ser listados explicitamente, por exemplo `bundle,deb,appdir` ou `portable`. Antes de empacotar, use `zumbra app doctor` para verificar todos os requisitos.
 
 ## Limite de portabilidade
 
 O sistema de distribuição é multi-plataforma. A aplicação precisa usar recursos de runtime disponíveis no alvo. O backend gráfico SDL3 implementado em Z13/Z14 continua Linux-first; empacotar para Windows ou macOS não transforma automaticamente um backend ainda não implementado nesses sistemas.
+
+
+## Hardening 0.10.1
+
+Consulte `docs/pt-BR/fechamento-multiplataforma-z15-0.10.1.md` para o doctor, validação de binários e configuração de toolchains por alvo.

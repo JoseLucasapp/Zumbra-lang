@@ -264,11 +264,12 @@ Zumbra 0.5.1 widens the VM builtin index operand from 8 to 16 bits. This prevent
 
 ```bash
 zumbra app inspect --manifest zumbra.toml
+zumbra app doctor --manifest zumbra.toml
 zumbra app build --manifest zumbra.toml
 zumbra app package --manifest zumbra.toml
 ```
 
 Z15 adds one target-aware packaging command for Linux, Windows and macOS. It creates Linux bundles, `.deb`, AppDir/AppImage, Windows portable ZIP/NSIS installers, and macOS `.app`/ZIP bundles. Packages include platform metadata, icons, embedded assets, dependency audits, deterministic timestamps, SHA-256 checksums, update descriptors, optional signatures and optional debug symbols. See [`docs/pt-BR/distribuicao-desktop-z15.md`](./docs/pt-BR/distribuicao-desktop-z15.md).
 
-Zumbra 0.10.0 completes Z15 and establishes the baseline for Z16, the first official desktop application. See [`docs/releases/0.10.0.md`](./docs/releases/0.10.0.md).
+Zumbra 0.10.1 hardens Z15 with target-correct binary validation and a preflight doctor. The stable baseline remains 0.9.0 until real AppImage, Windows and macOS acceptance gates are completed. See [`docs/releases/0.10.1.md`](./docs/releases/0.10.1.md).
 

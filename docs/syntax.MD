@@ -1035,6 +1035,7 @@ O executável nativo contém os assets selecionados pelo manifesto. Caminhos for
 ## Z15 — Distribuição desktop
 
 ```bash
+zumbra app doctor --manifest zumbra.toml
 zumbra app package --manifest zumbra.toml
 zumbra app package --target linux --format deb
 zumbra app package --target linux --format appimage
@@ -1043,5 +1044,5 @@ zumbra app package --target windows --format installer
 zumbra app package --target macos --format app,zip
 ```
 
-O comando usa o mesmo `zumbra.toml` do build, incorpora assets, gera metadados, checksums e relatórios, e suporta `SOURCE_DATE_EPOCH`, assinatura e símbolos separados. Consulte `docs/pt-BR/distribuicao-desktop-z15.md`.
+`app doctor` verifica compilador, runtime, formato do binário e ferramentas externas antes de criar artefatos. O empacotador rejeita binários cujo sistema ou arquitetura não correspondam ao alvo. Consulte `docs/pt-BR/distribuicao-desktop-z15.md` e `docs/pt-BR/fechamento-multiplataforma-z15-0.10.1.md`.
 

@@ -44,35 +44,22 @@ func (c *packageContext) packageLinux() error {
 			return err
 		}
 		if c.wants("appimage") {
-			tool := strings.TrimSpace(c.options.AppImageTool)
-			if tool == "" {
-				tool = strings.TrimSpace(os.Getenv("APPIMAGETOOL"))
+			tool, findErr := FindAppImageTool(c.options.AppImageTool, c.options.Manifest.Root, c.options.Arch)
+			if findErr != nil {
+				return fmt.Errorf("AppImage requested but appimagetool is unavailable: %s", AppImageInstallHint(c.options.Arch))
 			}
-			if tool == "" {
-				if found, err := exec.LookPath("appimagetool"); err == nil {
-					tool = found
-				}
+			output := filepath.Join(c.outDir, base+".AppImage")
+			cmd := exec.Command(tool, appDir, output)
+			cmd.Env = append(os.Environ(), "ARCH="+appImageArch(c.options.Arch), fmt.Sprintf("SOURCE_DATE_EPOCH=%d", c.epoch.Unix()))
+			cmd.Stdout, cmd.Stderr = os.Stdout, os.Stderr
+			if err := cmd.Run(); err != nil {
+				return fmt.Errorf("appimagetool failed: %w", err)
 			}
-			if tool == "" {
-				message := "appimagetool was not found; AppDir was generated but AppImage was skipped"
-				if c.explicit("appimage") {
-					return fmt.Errorf("%s", message)
-				}
-				c.result.Warnings = append(c.result.Warnings, message)
-			} else {
-				output := filepath.Join(c.outDir, base+".AppImage")
-				cmd := exec.Command(tool, appDir, output)
-				cmd.Env = append(os.Environ(), "ARCH="+appImageArch(c.options.Arch), fmt.Sprintf("SOURCE_DATE_EPOCH=%d", c.epoch.Unix()))
-				cmd.Stdout, cmd.Stderr = os.Stdout, os.Stderr
-				if err := cmd.Run(); err != nil {
-					return fmt.Errorf("appimagetool failed: %w", err)
-				}
-				if err := os.Chtimes(output, c.epoch, c.epoch); err != nil {
-					return err
-				}
-				if err := c.addArtifact("appimage", output); err != nil {
-					return err
-				}
+			if err := os.Chtimes(output, c.epoch, c.epoch); err != nil {
+				return err
+			}
+			if err := c.addArtifact("appimage", output); err != nil {
+				return err
 			}
 		}
 	}

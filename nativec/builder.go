@@ -104,22 +104,42 @@ func DetectCompilerForTarget(preferred, targetOS, targetArch string) (string, er
 	candidates := []string{}
 	switch targetOS + "/" + targetArch {
 	case "windows/amd64":
-		candidates = []string{"x86_64-w64-mingw32-gcc"}
+		candidates = []string{"x86_64-w64-mingw32-gcc", "x86_64-w64-mingw32-clang"}
 	case "windows/arm64":
-		candidates = []string{"aarch64-w64-mingw32-gcc"}
+		candidates = []string{"aarch64-w64-mingw32-gcc", "aarch64-w64-mingw32-clang"}
 	case "linux/amd64":
 		candidates = []string{"x86_64-linux-gnu-gcc"}
 	case "linux/arm64":
 		candidates = []string{"aarch64-linux-gnu-gcc"}
-	case "macos/amd64", "macos/arm64":
-		return "", fmt.Errorf("cross-compiling for %s/%s requires %s", targetOS, targetArch, key)
+	case "macos/amd64":
+		candidates = []string{"o64-clang", "x86_64-apple-darwin-clang"}
+	case "macos/arm64":
+		candidates = []string{"oa64-clang", "arm64-apple-darwin-clang", "aarch64-apple-darwin-clang"}
 	}
 	for _, candidate := range candidates {
 		if path, err := exec.LookPath(candidate); err == nil {
 			return path, nil
 		}
 	}
-	return "", fmt.Errorf("no compiler found for %s/%s; install a cross compiler or set %s", targetOS, targetArch, key)
+	return "", fmt.Errorf("no compiler found for %s/%s; %s", targetOS, targetArch, CompilerInstallHint(targetOS, targetArch))
+}
+
+// CompilerInstallHint returns the concise setup action used by CLI diagnostics.
+func CompilerInstallHint(targetOS, targetArch string) string {
+	key := "ZUMBRA_CC_" + strings.ToUpper(strings.ReplaceAll(targetOS+"_"+targetArch, "-", "_"))
+	switch targetOS {
+	case "windows":
+		if runtime.GOOS == "linux" {
+			return "install MinGW-w64 (Debian/Ubuntu: sudo apt install gcc-mingw-w64-x86-64 binutils-mingw-w64-x86-64 nsis) or set " + key
+		}
+		return "install a MinGW-w64 cross compiler or set " + key
+	case "macos":
+		return "build on macOS or configure an osxcross compiler and SDK through " + key
+	case "linux":
+		return "install the target GNU cross compiler or set " + key
+	default:
+		return "install a cross compiler or set " + key
+	}
 }
 
 func Build(module *mir.Module, options BuildOptions) (*BuildResult, []Diagnostic, error) {
@@ -192,6 +212,13 @@ func Build(module *mir.Module, options BuildOptions) (*BuildResult, []Diagnostic
 	}
 	for _, libraryDir := range options.LibraryDirs {
 		args = append(args, "-L", libraryDir)
+	}
+	targetKey := strings.ToUpper(strings.ReplaceAll(targetOS+"_"+targetArch, "-", "_"))
+	if sysroot := strings.TrimSpace(os.Getenv("ZUMBRA_SYSROOT_" + targetKey)); sysroot != "" {
+		args = append(args, "--sysroot="+sysroot)
+	}
+	if flags := strings.TrimSpace(os.Getenv("ZUMBRA_CFLAGS_" + targetKey)); flags != "" {
+		args = append(args, strings.Fields(flags)...)
 	}
 	if options.Reproducible {
 		root := strings.TrimSpace(options.ProjectRoot)
@@ -274,6 +301,9 @@ func Build(module *mir.Module, options BuildOptions) (*BuildResult, []Diagnostic
 	}
 	if UsesRedis(module) {
 		args = append(args, "-lhiredis")
+	}
+	if flags := strings.TrimSpace(os.Getenv("ZUMBRA_LDFLAGS_" + targetKey)); flags != "" {
+		args = append(args, strings.Fields(flags)...)
 	}
 	args = append(args, "-lm", "-pthread", "-o", output)
 	command := exec.Command(compiler, args...)
@@ -422,3 +452,6 @@ func uniqueStrings(values []string) []string {
 	}
 	return result
 }
+
+// DetectWindres reports the Windows resource compiler selected for an architecture.
+func DetectWindres(targetArch string) (string, error) { return detectWindres(targetArch) }

@@ -48,7 +48,9 @@ func TestLinuxPackagesAreReproducible(t *testing.T) {
 }
 
 func TestWindowsPortableAndInstaller(t *testing.T) {
-	manifest, binary := testFixture(t)
+	manifest, _ := testFixture(t)
+	binary := filepath.Join(t.TempDir(), "app.exe")
+	writePEFixture(t, binary, "amd64")
 	tool := filepath.Join(t.TempDir(), "makensis")
 	script := `#!/bin/sh
 set -eu
@@ -84,7 +86,9 @@ printf 'MZfake installer' > "$out"
 }
 
 func TestMacOSApplicationBundleAndZip(t *testing.T) {
-	manifest, binary := testFixture(t)
+	manifest, _ := testFixture(t)
+	binary := filepath.Join(t.TempDir(), "app")
+	writeMachOFixture(t, binary, "arm64")
 	result, err := Package(Options{Manifest: manifest, Binary: binary, Target: "macos", Arch: "arm64", Format: "all", OutputDir: t.TempDir(), SourceDateEpoch: 1700000000})
 	if err != nil {
 		t.Fatal(err)
@@ -172,10 +176,7 @@ include = ["assets/**"]
 		t.Fatal(err)
 	}
 	binary := filepath.Join(root, "build", "app")
-	mustWrite(t, binary, "#!/bin/sh\necho test\n")
-	if err := os.Chmod(binary, 0o755); err != nil {
-		t.Fatal(err)
-	}
+	writeELFFixture(t, binary, "amd64")
 	return manifest, binary
 }
 
@@ -206,4 +207,134 @@ func findArtifact(t *testing.T, result *Result, kind string) string {
 	}
 	t.Fatalf("artifact %s not found in %#v", kind, result.Artifacts)
 	return ""
+}
+
+func TestPackageRejectsForeignBinary(t *testing.T) {
+	manifest, binary := testFixture(t)
+	_, err := Package(Options{Manifest: manifest, Binary: binary, Target: "windows", Arch: "amd64", Format: "portable", OutputDir: t.TempDir(), SourceDateEpoch: 1700000000})
+	if err == nil || !strings.Contains(err.Error(), "binary target mismatch") {
+		t.Fatalf("expected target mismatch, got %v", err)
+	}
+}
+
+func TestInspectNativeBinaryFormats(t *testing.T) {
+	fixtures := []struct {
+		name, osName, arch string
+		write              func(*testing.T, string, string)
+	}{
+		{"elf", "linux", "amd64", writeELFFixture},
+		{"pe", "windows", "amd64", writePEFixture},
+		{"macho", "macos", "arm64", writeMachOFixture},
+	}
+	for _, fixture := range fixtures {
+		t.Run(fixture.name, func(t *testing.T) {
+			path := filepath.Join(t.TempDir(), fixture.name)
+			fixture.write(t, path, fixture.arch)
+			info, err := InspectBinary(path)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if info.OS != fixture.osName || info.Arch != fixture.arch {
+				t.Fatalf("unexpected binary info: %#v", info)
+			}
+		})
+	}
+}
+
+func writeELFFixture(t *testing.T, path, arch string) {
+	t.Helper()
+	data := make([]byte, 64)
+	copy(data[:4], []byte{0x7f, 'E', 'L', 'F'})
+	data[4], data[5], data[6] = 2, 1, 1
+	machine := uint16(0x3e)
+	if arch == "arm64" {
+		machine = 0xb7
+	}
+	data[18], data[19] = byte(machine), byte(machine>>8)
+	writeBinaryFixture(t, path, data)
+}
+
+func writePEFixture(t *testing.T, path, arch string) {
+	t.Helper()
+	data := make([]byte, 256)
+	data[0], data[1] = 'M', 'Z'
+	data[0x3c] = 0x80
+	copy(data[0x80:0x84], []byte{'P', 'E', 0, 0})
+	machine := uint16(0x8664)
+	if arch == "arm64" {
+		machine = 0xaa64
+	}
+	data[0x84], data[0x85] = byte(machine), byte(machine>>8)
+	writeBinaryFixture(t, path, data)
+}
+
+func writeMachOFixture(t *testing.T, path, arch string) {
+	t.Helper()
+	data := make([]byte, 64)
+	copy(data[:4], []byte{0xcf, 0xfa, 0xed, 0xfe})
+	cpu := uint32(0x01000007)
+	if arch == "arm64" {
+		cpu = 0x0100000c
+	}
+	data[4], data[5], data[6], data[7] = byte(cpu), byte(cpu>>8), byte(cpu>>16), byte(cpu>>24)
+	writeBinaryFixture(t, path, data)
+}
+
+func writeBinaryFixture(t *testing.T, path string, data []byte) {
+	t.Helper()
+	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(path, data, 0o755); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func TestAllRequiresAppImageTool(t *testing.T) {
+	manifest, binary := testFixture(t)
+	t.Setenv("PATH", t.TempDir())
+	t.Setenv("APPIMAGETOOL", "")
+	t.Setenv("XDG_CACHE_HOME", t.TempDir())
+	_, err := Package(Options{Manifest: manifest, Binary: binary, Target: "linux", Arch: "amd64", Format: "all", OutputDir: t.TempDir(), SourceDateEpoch: 1700000000})
+	if err == nil || !strings.Contains(err.Error(), "appimagetool is unavailable") {
+		t.Fatalf("expected appimagetool requirement, got %v", err)
+	}
+}
+
+func TestAllRequiresNSIS(t *testing.T) {
+	manifest, _ := testFixture(t)
+	binary := filepath.Join(t.TempDir(), "app.exe")
+	writePEFixture(t, binary, "amd64")
+	t.Setenv("PATH", t.TempDir())
+	t.Setenv("MAKENSIS", "")
+	_, err := Package(Options{Manifest: manifest, Binary: binary, Target: "windows", Arch: "amd64", Format: "all", OutputDir: t.TempDir(), SourceDateEpoch: 1700000000})
+	if err == nil || !strings.Contains(err.Error(), "makensis is unavailable") {
+		t.Fatalf("expected makensis requirement, got %v", err)
+	}
+}
+
+func TestProjectLocalAppImageTool(t *testing.T) {
+	manifest, _ := testFixture(t)
+	tool := filepath.Join(manifest.Root, "tools", "appimagetool-x86_64.AppImage")
+	mustWrite(t, tool, "#!/bin/sh\nexit 0\n")
+	if err := os.Chmod(tool, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	found, err := FindAppImageTool("", manifest.Root, "amd64")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if found != tool {
+		t.Fatalf("expected project-local tool %s, got %s", tool, found)
+	}
+}
+
+func TestPackageRejectsArchitectureMismatch(t *testing.T) {
+	manifest, _ := testFixture(t)
+	binary := filepath.Join(t.TempDir(), "app")
+	writeELFFixture(t, binary, "arm64")
+	_, err := Package(Options{Manifest: manifest, Binary: binary, Target: "linux", Arch: "amd64", Format: "bundle", OutputDir: t.TempDir(), SourceDateEpoch: 1700000000})
+	if err == nil || !strings.Contains(err.Error(), "binary architecture mismatch") {
+		t.Fatalf("expected architecture mismatch, got %v", err)
+	}
 }
