@@ -91,6 +91,9 @@ maxWidth / maxHeight
 grow
 gap
 padding / paddingLeft / paddingTop / paddingRight / paddingBottom
+overflowY / scrollY
+scrollStep / scrollbarWidth / scrollbarGutter
+scrollbarTrack / scrollbarThumb
 margin / marginLeft / marginTop / marginRight / marginBottom
 align: start | center | end | stretch
 justify: start | center | end | space-between
@@ -356,3 +359,24 @@ ui.subscribe(darkMode, fct(enabled) {
 ```
 
 O exemplo `gui_window.zum` usa essa ligação e serve como validação visual do modo claro e escuro.
+## Rolagem vertical interna
+
+`row`, `column` e `container` não possuem padding implícito. Declare `padding` quando o conteúdo precisar de margem interna.
+
+Para limitar uma lista ao espaço disponível e manter a rolagem dentro do componente, use um container vertical com overflow:
+
+```zum
+var list << ui.columnWith({
+    "grow": 1,
+    "gap": 8,
+    "overflowY": "auto",
+    "scrollStep": 88,
+    "scrollbarWidth": 8,
+    "scrollbarGutter": 4
+}, items);
+```
+
+Valores aceitos para `overflowY` são `"auto"` e `"scroll"`. A forma booleana equivalente é `scrollY: true`. A roda do mouse procura o ancestral rolável sob o ponteiro, limita o deslocamento ao conteúdo e recorta os descendentes ao viewport.
+
+O snapshot headless inclui `contentX`, `contentY`, `contentWidth`, `contentHeight` e `scrollOffsetY`, permitindo testar overflow sem abrir uma janela gráfica.
+

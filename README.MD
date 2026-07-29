@@ -302,3 +302,8 @@ Zumbra 0.11.0 adds UI target identity (`targetId` and `targetKind`) and native c
 ## Zumbra 0.11.1
 
 Zumbra 0.11.1 enables SDL3 text input only while an editable UI control is focused, restoring real keyboard editing for desktop `input` and `textarea` components. See [`docs/releases/0.11.1.md`](./docs/releases/0.11.1.md).
+
+## Zumbra 0.11.2
+
+Zumbra 0.11.2 corrects retained UI layout alignment, adds clipped vertical scrolling for overflowing rows, columns and containers, and hardens native C11 generation for dynamically typed string literals and discarded control-flow results. See [`docs/releases/0.11.2.md`](./docs/releases/0.11.2.md).
+

@@ -229,3 +229,70 @@ show(bytesEqual(clone, readBytes("roundtrip.bin")));
 		t.Fatalf("unexpected binary output:\nwant: %q\n got: %q", want, got)
 	}
 }
+
+func TestNativeUnknownLiteralsInsideDynamicLoopPreserveSourceKinds(t *testing.T) {
+	compiler, err := nativec.DetectCompiler("auto")
+	if err != nil {
+		t.Skip(err)
+	}
+	source := `
+fct render(rows) {
+    for row in rows {
+        var id << row["id"];
+        show("game-row-" + toString(id));
+        if (sizeOf(row["name"]) == 0) {
+            show("empty");
+        } else {
+            show(row["name"]);
+        }
+    }
+}
+render([{"id": 7, "name": "Final Fantasy IX"}]);
+`
+	result := buildMIR(t, source)
+	sources, diagnostics := nativec.Generate(result.MIR)
+	if len(diagnostics) != 0 {
+		t.Fatalf("native diagnostics: %v", diagnostics)
+	}
+	program := string(sources.Program)
+	for _, expected := range []string{
+		`z_string("game-row-")`,
+		`z_string("id")`,
+		`z_string("name")`,
+	} {
+		if !strings.Contains(program, expected) {
+			t.Fatalf("generated C does not preserve %q:\n%s", expected, program)
+		}
+	}
+	for _, forbidden := range []string{
+		"INT64_C(game-row-)",
+		"INT64_C(id)",
+		"INT64_C(name)",
+	} {
+		if strings.Contains(program, forbidden) {
+			t.Fatalf("generated C incorrectly emits %q as an integer", forbidden)
+		}
+	}
+
+	directory := t.TempDir()
+	output := filepath.Join(directory, "dynamic-loop")
+	_, diagnostics, err = nativec.Build(result.MIR, nativec.BuildOptions{
+		Release:  true,
+		Compiler: compiler,
+		Output:   output,
+		BuildDir: filepath.Join(directory, "src"),
+	})
+	if err != nil {
+		t.Fatalf("native build failed: %v", err)
+	}
+	if len(diagnostics) != 0 {
+		t.Fatalf("native diagnostics: %v", diagnostics)
+	}
+	data, err := exec.Command(output).CombinedOutput()
+	if err != nil {
+		t.Fatalf("native executable failed: %v\n%s", err, data)
+	}
+	if got, want := string(data), "game-row-7\nFinal Fantasy IX\n"; got != want {
+		t.Fatalf("unexpected native output: want %q, got %q", want, got)
+	}
+}

@@ -17,13 +17,17 @@ type UICanvasCommand struct {
 
 // UIRenderItem is a flattened immutable render record for one retained node.
 type UIRenderItem struct {
-	ID       string
-	Kind     string
-	Bounds   UIRect
-	Props    map[string]Object
-	Focused  bool
-	Hovered  bool
-	Commands []UICanvasCommand
+	ID                  string
+	Kind                string
+	Bounds              UIRect
+	ContentBounds       UIRect
+	Clip                *UIRect
+	Props               map[string]Object
+	Focused             bool
+	Hovered             bool
+	Commands            []UICanvasCommand
+	ScrollOffsetY       float64
+	ScrollContentHeight float64
 }
 
 // UIRenderFrame is the portable output of layout + styling.
@@ -66,17 +70,20 @@ type DesktopUIRenderer interface {
 }
 
 type UINode struct {
-	Mu       sync.RWMutex
-	ID       string
-	Kind     string
-	Props    map[string]Object
-	Bindings map[string]*UIState
-	Children []*UINode
-	Parent   *UINode
-	Context  *UIContext
-	Bounds   UIRect
-	Visible  bool
-	Enabled  bool
+	Mu            sync.RWMutex
+	ID            string
+	Kind          string
+	Props         map[string]Object
+	Bindings      map[string]*UIState
+	Children      []*UINode
+	Parent        *UINode
+	Context       *UIContext
+	Bounds        UIRect
+	ContentBounds UIRect
+	ScrollOffsetY float64
+	ContentHeight float64
+	Visible       bool
+	Enabled       bool
 }
 
 func (n *UINode) Type() ObjectType { return UI_NODE_OBJ }

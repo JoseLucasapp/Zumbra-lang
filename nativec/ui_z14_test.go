@@ -70,3 +70,27 @@ func TestZ16PointOneNativeRuntimeEnablesSDLTextInputForEditableFocus(t *testing.
 		}
 	}
 }
+
+func TestZ16PointTwoVerticalScrollRunsHeadlessNatively(t *testing.T) {
+	expected := "256\n40\n-40\ntrue\n"
+	if output := buildAndRunZ8(t, "code_examples/core/ui_scroll.zum"); output != expected {
+		t.Fatalf("output=%q", output)
+	}
+}
+
+func TestZ16PointTwoNativeRuntimeContainsScrollClipping(t *testing.T) {
+	result, diagnostics := pipeline.Build("ui-scroll.zum", `var app << desktopApp({"backend":"headless"}); var w << app.window({"title":"UI"}); var n << uiColumn({"overflowY":"auto","height":120}, [uiContainer({"height":80}, []),uiContainer({"height":80}, [])]); var c << uiMount(app,w,n,{}); uiDispatch(c,{"type":"mouse_wheel","x":10,"y":10,"dy":-1});`, pipeline.Options{Optimize: true})
+	if len(diagnostics) != 0 {
+		t.Fatalf("pipeline: %s", pipeline.FormatDiagnostics(diagnostics))
+	}
+	sources, nativeDiagnostics := nativec.Generate(result.MIR)
+	if len(nativeDiagnostics) != 0 {
+		t.Fatalf("native: %#v", nativeDiagnostics)
+	}
+	runtime := string(sources.Runtime)
+	for _, expected := range []string{"SDL_SetRenderClipRect", "scroll_offset_y", "content_height", "mouse_wheel", "z_ui_scrollable_y"} {
+		if !strings.Contains(runtime, expected) {
+			t.Fatalf("missing %q", expected)
+		}
+	}
+}

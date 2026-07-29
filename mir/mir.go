@@ -248,6 +248,11 @@ func (l *lowerer) lowerExpression(region *Region, node *hir.Node) ValueID {
 	switch node.Kind {
 	case hir.IntegerKind, hir.FloatKind, hir.StringKind, hir.BooleanKind:
 		inst := l.newInstruction(OpConst, node)
+		// Preserve the source literal category even when contextual type analysis
+		// leaves the expression as unknown (for example, dictionary access inside
+		// a for-each body). Native backends must not guess a string literal is an
+		// integer merely because its inferred type is unknown.
+		inst.Meta["literal_kind"] = string(node.Kind)
 		result := l.value(inst)
 		l.emit(region, inst)
 		return result

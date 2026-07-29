@@ -1,0 +1,44 @@
+import "../../std/desktop.zum" as desktop;
+import "../../std/ui.zum" as ui;
+
+var application << desktop.app({
+    "backend": "headless",
+    "quitOnLastWindow": false
+});
+var window << application.window({
+    "title": "UI scroll",
+    "width": 320,
+    "height": 180
+});
+
+var root << ui.columnWith({
+    "id": "scroll-list",
+    "height": 120,
+    "maxHeight": 120,
+    "gap": 8,
+    "overflowY": "auto",
+    "scrollStep": 40
+}, [
+    ui.containerWith({"id": "first", "height": 80, "minHeight": 80}, []),
+    ui.containerWith({"id": "second", "height": 80, "minHeight": 80}, []),
+    ui.containerWith({"id": "third", "height": 80, "minHeight": 80}, [])
+]);
+
+var context << ui.mount(application, window, root, {});
+var before << ui.snapshot(context);
+show(before["items"][0]["contentHeight"]);
+
+ui.dispatch(context, {
+    "type": "mouse_wheel",
+    "x": 20,
+    "y": 20,
+    "dy": -1
+});
+
+var after << ui.snapshot(context);
+show(after["items"][0]["scrollOffsetY"]);
+show(after["items"][1]["y"]);
+show(after["items"][1]["contentWidth"] < after["items"][0]["width"]);
+
+context.close();
+application.close();

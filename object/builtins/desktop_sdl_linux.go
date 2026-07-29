@@ -24,6 +24,7 @@ typedef struct SDL_Renderer SDL_Renderer;
 typedef struct SDL_Texture SDL_Texture;
 typedef struct TTF_Font TTF_Font;
 typedef struct { float x,y,w,h; } SDL_FRect;
+typedef struct { int32_t x,y,w,h; } SDL_Rect;
 typedef struct { uint8_t r,g,b,a; } ZSDL_Color;
 
 typedef union ZSDL_Event { uint32_t type; uint8_t padding[128]; } ZSDL_Event;
@@ -100,6 +101,7 @@ typedef void (*PFN_SDL_DestroyTray)(SDL_Tray*);
 typedef SDL_Renderer *(*PFN_SDL_CreateRenderer)(SDL_Window*,const char*);
 typedef void (*PFN_SDL_DestroyRenderer)(SDL_Renderer*);
 typedef bool (*PFN_SDL_SetRenderDrawColor)(SDL_Renderer*,uint8_t,uint8_t,uint8_t,uint8_t);
+typedef bool (*PFN_SDL_SetRenderClipRect)(SDL_Renderer*,const SDL_Rect*);
 typedef bool (*PFN_SDL_RenderClear)(SDL_Renderer*);
 typedef bool (*PFN_SDL_RenderFillRect)(SDL_Renderer*,const SDL_FRect*);
 typedef bool (*PFN_SDL_RenderRect)(SDL_Renderer*,const SDL_FRect*);
@@ -135,7 +137,7 @@ static PFN_SDL_StartTextInput p_StartTextInput; static PFN_SDL_StopTextInput p_S
 static PFN_SDL_SetClipboardText p_SetClipboardText; static PFN_SDL_GetClipboardText p_GetClipboardText; static PFN_SDL_free p_free;
 static PFN_SDL_IOFromFile p_IOFromFile; static PFN_SDL_LoadBMP_IO p_LoadBMP_IO; static PFN_SDL_DestroySurface p_DestroySurface; static PFN_SDL_SetWindowIcon p_SetWindowIcon;
 static PFN_SDL_CreateTray p_CreateTray; static PFN_SDL_CreateTrayMenu p_CreateTrayMenu; static PFN_SDL_InsertTrayEntryAt p_InsertTrayEntryAt; static PFN_SDL_SetTrayEntryCallback p_SetTrayEntryCallback; static PFN_SDL_SetTrayTooltip p_SetTrayTooltip; static PFN_SDL_DestroyTray p_DestroyTray;
-static PFN_SDL_CreateRenderer p_CreateRenderer; static PFN_SDL_DestroyRenderer p_DestroyRenderer; static PFN_SDL_SetRenderDrawColor p_SetRenderDrawColor; static PFN_SDL_RenderClear p_RenderClear; static PFN_SDL_RenderFillRect p_RenderFillRect; static PFN_SDL_RenderRect p_RenderRect; static PFN_SDL_RenderLine p_RenderLine; static PFN_SDL_RenderPresent p_RenderPresent; static PFN_SDL_RenderDebugText p_RenderDebugText; static PFN_SDL_CreateTextureFromSurface p_CreateTextureFromSurface; static PFN_SDL_RenderTexture p_RenderTexture; static PFN_SDL_DestroyTexture p_DestroyTexture; static PFN_SDL_GetTextureSize p_GetTextureSize;
+static PFN_SDL_CreateRenderer p_CreateRenderer; static PFN_SDL_DestroyRenderer p_DestroyRenderer; static PFN_SDL_SetRenderDrawColor p_SetRenderDrawColor; static PFN_SDL_SetRenderClipRect p_SetRenderClipRect; static PFN_SDL_RenderClear p_RenderClear; static PFN_SDL_RenderFillRect p_RenderFillRect; static PFN_SDL_RenderRect p_RenderRect; static PFN_SDL_RenderLine p_RenderLine; static PFN_SDL_RenderPresent p_RenderPresent; static PFN_SDL_RenderDebugText p_RenderDebugText; static PFN_SDL_CreateTextureFromSurface p_CreateTextureFromSurface; static PFN_SDL_RenderTexture p_RenderTexture; static PFN_SDL_DestroyTexture p_DestroyTexture; static PFN_SDL_GetTextureSize p_GetTextureSize;
 static char zsdl_error[512];
 
 static void *zttf_lib = NULL;
@@ -159,7 +161,7 @@ static bool zsdl_load(void) {
     LOAD_REQ(PollEvent); LOAD_REQ(WaitEvent); LOAD_REQ(WaitEventTimeout); LOAD_REQ(GetKeyName); LOAD_REQ(StartTextInput); LOAD_REQ(StopTextInput); LOAD_REQ(SetClipboardText); LOAD_REQ(GetClipboardText); LOAD_REQ(free);
     LOAD_OPT(IOFromFile); LOAD_OPT(LoadBMP_IO); LOAD_OPT(DestroySurface); LOAD_OPT(SetWindowIcon);
     LOAD_OPT(CreateTray); LOAD_OPT(CreateTrayMenu); LOAD_OPT(InsertTrayEntryAt); LOAD_OPT(SetTrayEntryCallback); LOAD_OPT(SetTrayTooltip); LOAD_OPT(DestroyTray);
-    LOAD_REQ(CreateRenderer); LOAD_REQ(DestroyRenderer); LOAD_REQ(SetRenderDrawColor); LOAD_REQ(RenderClear); LOAD_REQ(RenderFillRect); LOAD_REQ(RenderRect); LOAD_REQ(RenderLine); LOAD_REQ(RenderPresent); LOAD_OPT(RenderDebugText); LOAD_OPT(CreateTextureFromSurface); LOAD_OPT(RenderTexture); LOAD_OPT(DestroyTexture); LOAD_OPT(GetTextureSize);
+    LOAD_REQ(CreateRenderer); LOAD_REQ(DestroyRenderer); LOAD_REQ(SetRenderDrawColor); LOAD_OPT(SetRenderClipRect); LOAD_REQ(RenderClear); LOAD_REQ(RenderFillRect); LOAD_REQ(RenderRect); LOAD_REQ(RenderLine); LOAD_REQ(RenderPresent); LOAD_OPT(RenderDebugText); LOAD_OPT(CreateTextureFromSurface); LOAD_OPT(RenderTexture); LOAD_OPT(DestroyTexture); LOAD_OPT(GetTextureSize);
     return true;
 }
 
@@ -239,6 +241,7 @@ static bool zsdl_stop_text_input(SDL_Window*w){return w&&p_StopTextInput&&p_Stop
 static bool zsdl_set_icon(SDL_Window*w,const char*path){if(!p_IOFromFile||!p_LoadBMP_IO||!p_SetWindowIcon||!p_DestroySurface){snprintf(zsdl_error,sizeof(zsdl_error),"SDL3 BMP icon APIs are unavailable");return false;}SDL_IOStream*io=p_IOFromFile(path,"rb");if(!io)return false;SDL_Surface*s=p_LoadBMP_IO(io,true);if(!s)return false;bool ok=p_SetWindowIcon(w,s);p_DestroySurface(s);return ok;}
 static SDL_Renderer*zsdl_renderer(SDL_Window*w){return p_CreateRenderer(w,NULL);} static void zsdl_destroy_renderer(SDL_Renderer*r){if(r)p_DestroyRenderer(r);}
 static bool zsdl_color(SDL_Renderer*r,uint8_t red,uint8_t green,uint8_t blue,uint8_t alpha){return p_SetRenderDrawColor(r,red,green,blue,alpha);} static bool zsdl_clear(SDL_Renderer*r){return p_RenderClear(r);}
+static bool zsdl_clip(SDL_Renderer*r,int32_t x,int32_t y,int32_t w,int32_t h){if(!p_SetRenderClipRect)return true;SDL_Rect q={x,y,w,h};return p_SetRenderClipRect(r,&q);} static bool zsdl_clip_reset(SDL_Renderer*r){return !p_SetRenderClipRect||p_SetRenderClipRect(r,NULL);}
 static bool zsdl_fill(SDL_Renderer*r,float x,float y,float w,float h){SDL_FRect q={x,y,w,h};return p_RenderFillRect(r,&q);} static bool zsdl_stroke(SDL_Renderer*r,float x,float y,float w,float h){SDL_FRect q={x,y,w,h};return p_RenderRect(r,&q);} static bool zsdl_line(SDL_Renderer*r,float x1,float y1,float x2,float y2){return p_RenderLine(r,x1,y1,x2,y2);} static bool zsdl_present(SDL_Renderer*r){return p_RenderPresent(r);}
 static bool zsdl_bmp(SDL_Renderer*r,const char*path,float x,float y,float w,float h){if(!p_IOFromFile||!p_LoadBMP_IO||!p_DestroySurface||!p_CreateTextureFromSurface||!p_RenderTexture||!p_DestroyTexture)return false;SDL_IOStream*io=p_IOFromFile(path,"rb");if(!io)return false;SDL_Surface*s=p_LoadBMP_IO(io,true);if(!s)return false;SDL_Texture*t=p_CreateTextureFromSurface(r,s);p_DestroySurface(s);if(!t)return false;SDL_FRect d={x,y,w,h};bool ok=p_RenderTexture(r,t,NULL,&d);p_DestroyTexture(t);return ok;}
 
@@ -259,7 +262,7 @@ static bool zsdl_poll(int timeout,ZDesktopNativeEvent*out){memset(out,0,sizeof(*
     else if(c->type==0x303){ZSDL_TextInputEvent*t=(ZSDL_TextInputEvent*)&e;out->window_id=t->windowID;zsdl_copy(out->text,sizeof(out->text),t->text);}
     else if(c->type==0x400){ZSDL_MouseMotionEvent*m=(ZSDL_MouseMotionEvent*)&e;out->window_id=m->windowID;out->x=m->x;out->y=m->y;out->dx=m->xrel;out->dy=m->yrel;out->data1=m->state;}
     else if(c->type==0x401||c->type==0x402){ZSDL_MouseButtonEvent*b=(ZSDL_MouseButtonEvent*)&e;out->window_id=b->windowID;out->button=b->button;out->clicks=b->clicks;out->x=b->x;out->y=b->y;out->data1=b->down;}
-    else if(c->type==0x403){ZSDL_MouseWheelEvent*w=(ZSDL_MouseWheelEvent*)&e;out->window_id=w->windowID;out->x=w->x;out->y=w->y;out->data1=w->direction;}
+    else if(c->type==0x403){ZSDL_MouseWheelEvent*w=(ZSDL_MouseWheelEvent*)&e;out->window_id=w->windowID;out->x=w->mouse_x;out->y=w->mouse_y;out->dx=w->x;out->dy=w->y;out->data1=w->direction;}
     else if(c->type>=0x1000&&c->type<=0x1004){ZSDL_DropEvent*d=(ZSDL_DropEvent*)&e;out->window_id=d->windowID;out->x=d->x;out->y=d->y;zsdl_copy(out->text,sizeof(out->text),d->data);zsdl_copy(out->source,sizeof(out->source),d->source);}
     return true;}
 */
@@ -467,6 +470,8 @@ func sdlEvent(t int64, e *C.ZDesktopNativeEvent) (string, map[string]object.Obje
 	case 0x403:
 		d["x"] = NewFloat(float64(e.x))
 		d["y"] = NewFloat(float64(e.y))
+		d["dx"] = NewFloat(float64(e.dx))
+		d["dy"] = NewFloat(float64(e.dy))
 		return "mouse_wheel", d
 	case 0x900:
 		return "clipboard_updated", d
@@ -1221,6 +1226,22 @@ func sdlUIRenderItem(renderer *C.SDL_Renderer, item object.UIRenderItem) {
 		sdlUIFill(renderer, bounds, background)
 		sdlUIText(renderer, bounds.X+4, bounds.Y+4, sdlUIItemText(item), textColor, item.Props)
 	}
+	viewportHeight := item.ContentBounds.Height
+	if item.ScrollContentHeight > viewportHeight && viewportHeight > 0 {
+		barWidth := math.Max(4, uiFloat(item.Props, "scrollbarWidth", 8))
+		track := object.UIRect{X: item.ContentBounds.X + item.ContentBounds.Width + math.Max(2, uiFloat(item.Props, "scrollbarGutter", 4)), Y: item.ContentBounds.Y, Width: barWidth, Height: viewportHeight}
+		sdlUIFill(renderer, track, uiColor(item.Props, "scrollbarTrack", "#e1e6ef"))
+		thumbHeight := math.Max(24, track.Height*viewportHeight/item.ScrollContentHeight)
+		if thumbHeight > track.Height {
+			thumbHeight = track.Height
+		}
+		maxOffset := item.ScrollContentHeight - viewportHeight
+		thumbY := track.Y
+		if maxOffset > 0 {
+			thumbY += (track.Height - thumbHeight) * item.ScrollOffsetY / maxOffset
+		}
+		sdlUIFill(renderer, object.UIRect{X: track.X, Y: thumbY, Width: track.Width, Height: thumbHeight}, uiColor(item.Props, "scrollbarThumb", "#9aa7ba"))
+	}
 	if item.Focused {
 		sdlUIStroke(renderer, object.UIRect{X: bounds.X - 2, Y: bounds.Y - 2, Width: bounds.Width + 4, Height: bounds.Height + 4}, uiColor(item.Props, "focusColor", "#6e95ff"))
 	}
@@ -1252,6 +1273,13 @@ func sdlUIRenderCanvasCommand(renderer *C.SDL_Renderer, origin object.UIRect, co
 		}
 	}
 }
+func uiRectsEqual(a, b *object.UIRect) bool {
+	if a == nil || b == nil {
+		return a == nil && b == nil
+	}
+	return a.X == b.X && a.Y == b.Y && a.Width == b.Width && a.Height == b.Height
+}
+
 func (w *sdlWindow) RenderUI(frame *object.UIRenderFrame) error {
 	w.mu.Lock()
 	defer w.mu.Unlock()
@@ -1268,9 +1296,22 @@ func (w *sdlWindow) RenderUI(frame *object.UIRenderFrame) error {
 	if !bool(C.zsdl_clear(w.renderer)) {
 		return errors.New(C.GoString(C.zsdl_last_error()))
 	}
+	var activeClip *object.UIRect
 	for _, item := range frame.Items {
+		if !uiRectsEqual(activeClip, item.Clip) {
+			if item.Clip == nil {
+				C.zsdl_clip_reset(w.renderer)
+				activeClip = nil
+			} else {
+				clip := *item.Clip
+				C.zsdl_clip(w.renderer, C.int32_t(math.Floor(clip.X)), C.int32_t(math.Floor(clip.Y)), C.int32_t(math.Ceil(clip.Width)), C.int32_t(math.Ceil(clip.Height)))
+				copy := clip
+				activeClip = &copy
+			}
+		}
 		sdlUIRenderItem(w.renderer, item)
 	}
+	C.zsdl_clip_reset(w.renderer)
 	if !bool(C.zsdl_present(w.renderer)) {
 		return errors.New(C.GoString(C.zsdl_last_error()))
 	}

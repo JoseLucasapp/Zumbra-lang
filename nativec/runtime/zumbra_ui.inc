@@ -23,6 +23,9 @@ struct ZUINodeNative {
     ZUIContextNative *context;
     ZUIReverseBindingNative *bindings;
     ZUIRectNative bounds;
+    ZUIRectNative content_bounds;
+    double scroll_offset_y;
+    double content_height;
     bool visible;
     bool enabled;
 };
@@ -149,6 +152,10 @@ static double z_ui_number(ZValue v,double fallback){if(v.tag==ZV_FLOAT)return v.
 static double z_ui_prop_number(ZValue props,const char*key,double fallback){return z_ui_number(z_desktop_dict_get(props,key),fallback);}
 static const char*z_ui_prop_string(ZValue props,const char*key,const char*fallback){return z_desktop_opt_string(props,key,fallback);}
 static bool z_ui_prop_bool(ZValue props,const char*key,bool fallback){return z_desktop_opt_bool(props,key,fallback);}
+static bool z_ui_scrollable_y(ZUINodeNative*n){if(n==NULL)return false;if(z_ui_prop_bool(n->props,"scrollY",false))return true;const char*overflow=z_ui_prop_string(n->props,"overflowY",z_ui_prop_string(n->props,"overflow",""));return strcasecmp(overflow,"scroll")==0||strcasecmp(overflow,"auto")==0;}
+static double z_ui_clamp(double value,double minimum,double maximum){if(value<minimum)return minimum;if(value>maximum)return maximum;return value;}
+static bool z_ui_rect_intersection(ZUIRectNative a,ZUIRectNative b,ZUIRectNative*out){double x1=fmax(a.x,b.x),y1=fmax(a.y,b.y),x2=fmin(a.x+a.width,b.x+b.width),y2=fmin(a.y+a.height,b.y+b.height);if(x2<=x1||y2<=y1)return false;if(out)*out=(ZUIRectNative){x1,y1,x2-x1,y2-y1};return true;}
+static bool z_ui_point_in_rect(double x,double y,ZUIRectNative b){return x>=b.x&&y>=b.y&&x<=b.x+b.width&&y<=b.y+b.height;}
 static void z_ui_dict_set(ZValue dict,const char*key,ZValue value){z_set_index(dict,z_string(key),value);}
 static ZValue z_ui_theme_values(bool dark){
     ZValue pairs[18]={
@@ -237,20 +244,34 @@ static double z_ui_natural_width(ZUINodeNative*n,ZUIThemeNative*t){
     return width;
 }
 static void z_ui_layout(ZUINodeNative*n,ZUIRectNative available,ZUIThemeNative*t){
-    if(n==NULL||!n->visible) { return; }
+    if(n==NULL||!n->visible) return;
     ZUIEdgesNative margin=z_ui_edges(n->props,"margin",0);
     double x=available.x+margin.left,y=available.y+margin.top,width=available.width-margin.left-margin.right,height=available.height-margin.top-margin.bottom;
-    ZValue wv=z_desktop_dict_get(n->props,"width"),hv=z_desktop_dict_get(n->props,"height");if(wv.tag!=ZV_NULL)width=z_ui_number(wv,width);if(hv.tag!=ZV_NULL)height=z_ui_number(hv,height);
-    double minw=z_ui_prop_number(n->props,"minWidth",width),maxw=z_ui_prop_number(n->props,"maxWidth",width),minh=z_ui_prop_number(n->props,"minHeight",height),maxh=z_ui_prop_number(n->props,"maxHeight",height);if(width<minw)width=minw;if(width>maxw)width=maxw;if(height<minh)height=minh;if(height>maxh)height=maxh;if(width<0)width=0;if(height<0)height=0;
+    ZValue wv=z_desktop_dict_get(n->props,"width"),hv=z_desktop_dict_get(n->props,"height");
+    if(wv.tag!=ZV_NULL)width=z_ui_number(wv,width);if(hv.tag!=ZV_NULL)height=z_ui_number(hv,height);
+    double minw=z_ui_prop_number(n->props,"minWidth",width),maxw=z_ui_prop_number(n->props,"maxWidth",width),minh=z_ui_prop_number(n->props,"minHeight",height),maxh=z_ui_prop_number(n->props,"maxHeight",height);
+    if(width<minw)width=minw;if(width>maxw)width=maxw;if(height<minh)height=minh;if(height>maxh)height=maxh;if(width<0)width=0;if(height<0)height=0;
     if(hv.tag==ZV_NULL&&strcmp(n->kind,"row")!=0&&strcmp(n->kind,"column")!=0&&strcmp(n->kind,"container")!=0&&strcmp(n->kind,"modal")!=0){double natural=z_ui_natural_height(n,t);if(height>natural)height=natural;}
     if(strcmp(n->kind,"modal")==0){double mw=z_ui_prop_number(n->props,"contentWidth",480),mh=z_ui_prop_number(n->props,"contentHeight",320);if(mw>width)mw=width;if(mh>height)mh=height;x+=(width-mw)/2;y+=(height-mh)/2;width=mw;height=mh;}
-    n->bounds=(ZUIRectNative){x,y,width,height};size_t count=n->children.as.array->len;if(count==0)return;
-    ZUIEdgesNative padding=z_ui_edges(n->props,"padding",z_ui_theme_number(t,"spacing",8));double gap=z_ui_prop_number(n->props,"gap",z_ui_theme_number(t,"spacing",8));if(gap<0)gap=0;ZUIRectNative inner={x+padding.left,y+padding.top,width-padding.left-padding.right,height-padding.top-padding.bottom};if(inner.width<0)inner.width=0;if(inner.height<0)inner.height=0;
-    const char*direction=n->kind;if(strcmp(direction,"row")!=0&&strcmp(direction,"column")!=0)direction=z_ui_prop_string(n->props,"direction","column");bool row=strcmp(direction,"row")==0;double main=(row?inner.width:inner.height)-gap*(double)(count>0?count-1:0);if(main<0)main=0;double fixed=0,grow_total=0;
+    n->bounds=(ZUIRectNative){x,y,width,height};
+    ZUIEdgesNative padding=z_ui_edges(n->props,"padding",0);
+    ZUIRectNative inner={x+padding.left,y+padding.top,width-padding.left-padding.right,height-padding.top-padding.bottom};if(inner.width<0)inner.width=0;if(inner.height<0)inner.height=0;
+    n->content_bounds=inner;n->content_height=inner.height;
+    size_t count=n->children.as.array->len;if(count==0){n->scroll_offset_y=0;return;}
+    const char*direction=n->kind;if(strcmp(direction,"row")!=0&&strcmp(direction,"column")!=0)direction=z_ui_prop_string(n->props,"direction","column");if(strcmp(n->kind,"modal")==0)direction="column";bool row=strcmp(direction,"row")==0;
+    double gap=z_ui_prop_number(n->props,"gap",z_ui_theme_number(t,"spacing",8));if(gap<0)gap=0;
+    double main=(row?inner.width:inner.height)-gap*(double)(count>0?count-1:0);if(main<0)main=0;double fixed=0,grow_total=0;
     for(size_t i=0;i<count;i++){ZUINodeNative*c=z_ui_expect_node(n->children.as.array->items[i]);double grow=z_ui_prop_number(c->props,"grow",0);if(grow>0)grow_total+=grow;else fixed+=row?z_ui_prop_number(c->props,"width",z_ui_natural_width(c,t)):z_ui_prop_number(c->props,"height",z_ui_natural_height(c,t));}
-    double remaining=main-fixed;if(remaining<0)remaining=0;double cursor_x=inner.x,cursor_y=inner.y;const char*justify=z_ui_prop_string(n->props,"justify","start");if(grow_total==0&&remaining>0){if(strcmp(justify,"center")==0){if(row)cursor_x+=remaining/2;else cursor_y+=remaining/2;}else if(strcmp(justify,"end")==0){if(row)cursor_x+=remaining;else cursor_y+=remaining;}else if(strcmp(justify,"space-between")==0&&count>1)gap+=remaining/(double)(count-1);}
+    double remaining=main-fixed;if(remaining<0)remaining=0;
+    double content_height=inner.height;if(!row){double used=fixed+gap*(double)(count>0?count-1:0);if(grow_total>0)used+=remaining;if(used>content_height)content_height=used;}
+    bool scrollable=z_ui_scrollable_y(n)&&!row;
+    if(!scrollable)n->scroll_offset_y=0;else{double max_offset=fmax(0,content_height-inner.height);n->scroll_offset_y=z_ui_clamp(n->scroll_offset_y,0,max_offset);if(max_offset>0){double bar=fmax(4,z_ui_prop_number(n->props,"scrollbarWidth",8)),gutter=fmax(2,z_ui_prop_number(n->props,"scrollbarGutter",4));inner.width=fmax(0,inner.width-bar-gutter);}}
+    n->content_bounds=inner;n->content_height=content_height;
+    double cursor_x=inner.x,cursor_y=inner.y-(scrollable?n->scroll_offset_y:0);const char*justify=z_ui_prop_string(n->props,"justify","start");
+    if(grow_total==0&&remaining>0){if(strcmp(justify,"center")==0){if(row)cursor_x+=remaining/2;else cursor_y+=remaining/2;}else if(strcmp(justify,"end")==0){if(row)cursor_x+=remaining;else cursor_y+=remaining;}else if(strcmp(justify,"space-between")==0&&count>1)gap+=remaining/(double)(count-1);}
     for(size_t i=0;i<count;i++){ZUINodeNative*c=z_ui_expect_node(n->children.as.array->items[i]);double grow=z_ui_prop_number(c->props,"grow",0),cw,ch;if(row){cw=grow>0&&grow_total>0?remaining*grow/grow_total:z_ui_prop_number(c->props,"width",z_ui_natural_width(c,t));ch=inner.height;const char*align=z_ui_prop_string(n->props,"align","stretch");double natural=z_ui_natural_height(c,t);if(strcmp(align,"stretch")!=0){ch=z_ui_prop_number(c->props,"height",natural);if(ch>inner.height)ch=inner.height;}double cy=cursor_y;if(strcmp(align,"center")==0)cy=inner.y+(inner.height-ch)/2;else if(strcmp(align,"end")==0)cy=inner.y+inner.height-ch;z_ui_layout(c,(ZUIRectNative){cursor_x,cy,cw,ch},t);cursor_x+=cw+gap;}else{ch=grow>0&&grow_total>0?remaining*grow/grow_total:z_ui_prop_number(c->props,"height",z_ui_natural_height(c,t));cw=inner.width;const char*align=z_ui_prop_string(n->props,"align","stretch");double natural=z_ui_natural_width(c,t);if(strcmp(align,"stretch")!=0){cw=z_ui_prop_number(c->props,"width",natural);if(cw>inner.width)cw=inner.width;}double cx=cursor_x;if(strcmp(align,"center")==0)cx=inner.x+(inner.width-cw)/2;else if(strcmp(align,"end")==0)cx=inner.x+inner.width-cw;z_ui_layout(c,(ZUIRectNative){cx,cursor_y,cw,ch},t);cursor_y+=ch+gap;}}
 }
+
 static void z_ui_color_parse(const char*s,uint8_t*r,uint8_t*g,uint8_t*b,uint8_t*a){*r=*g=*b=0;*a=255;if(s==NULL||strcmp(s,"transparent")==0){*a=0;return;}if(*s=='#')s++;size_t n=strlen(s);unsigned long v=strtoul(s,NULL,16);if(n==6){*r=(v>>16)&255;*g=(v>>8)&255;*b=v&255;}else if(n==8){*r=(v>>24)&255;*g=(v>>16)&255;*b=(v>>8)&255;*a=v&255;}}
 #if defined(ZUMBRA_DESKTOP_SDL3)
 static void z_ui_draw_color(SDL_Renderer*r,const char*color){uint8_t red,green,blue,alpha;z_ui_color_parse(color,&red,&green,&blue,&alpha);z_desktop_sdl.SetRenderDrawColor(r,red,green,blue,alpha);}
@@ -288,7 +309,8 @@ static void z_ui_text(SDL_Renderer*r,double x,double y,const char*text,const cha
 static void z_ui_text_centered(SDL_Renderer*r,ZUIRectNative bounds,double left_padding,const char*text,const char*color,ZValue props,ZUIThemeNative*theme){double width=0,height=0;z_ui_measure_text_native(text,props,theme,z_ui_prop_number(props,"wrapWidth",0),&width,&height);(void)width;double y=bounds.y+fmax(0,(bounds.height-height)/2);z_ui_text(r,bounds.x+left_padding,y,text,color,props,theme);}
 static const char*z_ui_node_text(ZUINodeNative*n){return z_ui_props_text(n->props);}
 static const char*z_ui_value_text(ZValue value){if(value.tag==ZV_STRING)return value.as.s;ZValue converted=z_to_string_value(value);return converted.tag==ZV_STRING?converted.as.s:"";}
-static void z_ui_render_node(SDL_Renderer*r,ZUINodeNative*n,ZUIContextNative*ctx){
+static void z_ui_set_clip(SDL_Renderer*r,bool enabled,ZUIRectNative clip){if(z_desktop_sdl.SetRenderClipRect==NULL)return;if(!enabled){z_desktop_sdl.SetRenderClipRect(r,NULL);return;}ZDesktopSDLRect q={(int32_t)floor(clip.x),(int32_t)floor(clip.y),(int32_t)ceil(clip.width),(int32_t)ceil(clip.height)};z_desktop_sdl.SetRenderClipRect(r,&q);}
+static void z_ui_render_node(SDL_Renderer*r,ZUINodeNative*n,ZUIContextNative*ctx,bool has_clip,ZUIRectNative clip){z_ui_set_clip(r,has_clip,clip);
     if(n==NULL||!n->visible)return;
     const char*surface=z_ui_theme_string(ctx->theme,"surface","#ffffff");
     const char*text=z_ui_theme_string(ctx->theme,"text","#172033");
@@ -311,17 +333,21 @@ static void z_ui_render_node(SDL_Renderer*r,ZUINodeNative*n,ZUIContextNative*ctx
     else if(strcmp(n->kind,"tooltip")==0){z_ui_fill(r,b,strcmp(bg,"transparent")==0?"#202633":bg);z_ui_text(r,b.x+6,b.y+5,z_ui_node_text(n),z_ui_prop_string(n->props,"textColor","#ffffff"),n->props,ctx->theme);}
     else if(strcmp(n->kind,"canvas")==0){z_ui_fill(r,b,bg);ZValue commands=z_desktop_dict_get(n->props,"commands");if(commands.tag==ZV_ARRAY){for(size_t i=0;i<commands.as.array->len;i++){ZValue command=commands.as.array->items[i];const char*kind=z_ui_prop_string(command,"kind","");ZValue values=z_desktop_dict_get(command,"values");const char*color=z_ui_prop_string(values,"color",text);double x=b.x+z_ui_prop_number(values,"x",0),y=b.y+z_ui_prop_number(values,"y",0);if(strcmp(kind,"fillRect")==0)z_ui_fill(r,(ZUIRectNative){x,y,z_ui_prop_number(values,"width",10),z_ui_prop_number(values,"height",10)},color);else if(strcmp(kind,"rect")==0)z_ui_stroke(r,(ZUIRectNative){x,y,z_ui_prop_number(values,"width",10),z_ui_prop_number(values,"height",10)},color);else if(strcmp(kind,"line")==0){z_ui_draw_color(r,color);z_desktop_sdl.RenderLine(r,(float)x,(float)y,(float)(b.x+z_ui_prop_number(values,"x2",0)),(float)(b.y+z_ui_prop_number(values,"y2",0)));}else if(strcmp(kind,"text")==0)z_ui_text(r,x,y,z_ui_prop_string(values,"text",""),color,values,ctx->theme);}}}
     else{z_ui_fill(r,b,bg);if(z_ui_prop_bool(n->props,"border",false))z_ui_stroke(r,b,border);}
+    if(n->content_height>n->content_bounds.height&&n->content_bounds.height>0){double bar=fmax(4,z_ui_prop_number(n->props,"scrollbarWidth",8)),gutter=fmax(2,z_ui_prop_number(n->props,"scrollbarGutter",4));ZUIRectNative track={n->content_bounds.x+n->content_bounds.width+gutter,n->content_bounds.y,bar,n->content_bounds.height};z_ui_fill(r,track,z_ui_prop_string(n->props,"scrollbarTrack","#e1e6ef"));double thumb_h=fmax(24,track.height*n->content_bounds.height/n->content_height);if(thumb_h>track.height)thumb_h=track.height;double max_offset=n->content_height-n->content_bounds.height,thumb_y=track.y;if(max_offset>0)thumb_y+=(track.height-thumb_h)*n->scroll_offset_y/max_offset;z_ui_fill(r,(ZUIRectNative){track.x,thumb_y,track.width,thumb_h},z_ui_prop_string(n->props,"scrollbarThumb","#9aa7ba"));}
     if(ctx->focus_id&&strcmp(ctx->focus_id,n->id)==0)z_ui_stroke(r,(ZUIRectNative){b.x-2,b.y-2,b.width+4,b.height+4},z_ui_theme_string(ctx->theme,"focus","#6e95ff"));
-    for(size_t i=0;i<n->children.as.array->len;i++)z_ui_render_node(r,z_ui_expect_node(n->children.as.array->items[i]),ctx);
+    bool child_has_clip=has_clip;ZUIRectNative child_clip=clip;if(z_ui_scrollable_y(n)){if(has_clip){if(!z_ui_rect_intersection(clip,n->content_bounds,&child_clip))return;}else child_clip=n->content_bounds;child_has_clip=true;}
+    for(size_t i=0;i<n->children.as.array->len;i++)z_ui_render_node(r,z_ui_expect_node(n->children.as.array->items[i]),ctx,child_has_clip,child_clip);
+    z_ui_set_clip(r,has_clip,clip);
 }
 #endif
 static void z_ui_render_context(ZUIContextNative*ctx){if(ctx==NULL||ctx->closed||ctx->window==NULL||!ctx->window->open)return;z_ui_layout(ctx->root,(ZUIRectNative){0,0,(double)ctx->window->width,(double)ctx->window->height},ctx->theme);
 #if defined(ZUMBRA_DESKTOP_SDL3)
-    if(!ctx->app->headless){if(ctx->window->renderer==NULL){ctx->window->renderer=z_desktop_sdl.CreateRenderer((SDL_Window*)ctx->window->handle,NULL);if(ctx->window->renderer==NULL)z_fatal("uiRender could not create SDL3 renderer: %s",z_desktop_sdl.GetError());}SDL_Renderer*r=(SDL_Renderer*)ctx->window->renderer;z_ui_draw_color(r,z_ui_theme_string(ctx->theme,"background","#f5f7fb"));z_desktop_sdl.RenderClear(r);z_ui_render_node(r,ctx->root,ctx);z_desktop_sdl.RenderPresent(r);}
+    if(!ctx->app->headless){if(ctx->window->renderer==NULL){ctx->window->renderer=z_desktop_sdl.CreateRenderer((SDL_Window*)ctx->window->handle,NULL);if(ctx->window->renderer==NULL)z_fatal("uiRender could not create SDL3 renderer: %s",z_desktop_sdl.GetError());}SDL_Renderer*r=(SDL_Renderer*)ctx->window->renderer;z_ui_draw_color(r,z_ui_theme_string(ctx->theme,"background","#f5f7fb"));z_desktop_sdl.RenderClear(r);z_ui_render_node(r,ctx->root,ctx,false,(ZUIRectNative){0,0,0,0});z_ui_set_clip(r,false,(ZUIRectNative){0,0,0,0});z_desktop_sdl.RenderPresent(r);}
 #endif
     ctx->dirty=false;}
 static void z_ui_render_all(ZDesktopAppNative*app){if(app==NULL)return;for(ZUIContextNative*c=app->ui_contexts;c;c=c->next)if(c->dirty)z_ui_render_context(c);}
-static ZUINodeNative*z_ui_hit(ZUINodeNative*n,double x,double y){if(n==NULL||!n->visible)return NULL;for(size_t i=n->children.as.array->len;i>0;i--){ZUINodeNative*h=z_ui_hit(z_ui_expect_node(n->children.as.array->items[i-1]),x,y);if(h)return h;}ZUIRectNative b=n->bounds;if(x>=b.x&&y>=b.y&&x<=b.x+b.width&&y<=b.y+b.height)return n;return NULL;}
+static ZUINodeNative*z_ui_hit_clipped(ZUINodeNative*n,double x,double y,bool has_clip,ZUIRectNative clip){if(n==NULL||!n->visible)return NULL;if(has_clip&&!z_ui_point_in_rect(x,y,clip))return NULL;bool child_has_clip=has_clip;ZUIRectNative child_clip=clip;if(z_ui_scrollable_y(n)){if(has_clip){if(!z_ui_rect_intersection(clip,n->content_bounds,&child_clip))return NULL;}else child_clip=n->content_bounds;child_has_clip=true;}for(size_t i=n->children.as.array->len;i>0;i--){ZUINodeNative*h=z_ui_hit_clipped(z_ui_expect_node(n->children.as.array->items[i-1]),x,y,child_has_clip,child_clip);if(h)return h;}return z_ui_point_in_rect(x,y,n->bounds)?n:NULL;}
+static ZUINodeNative*z_ui_hit(ZUINodeNative*n,double x,double y){return z_ui_hit_clipped(n,x,y,false,(ZUIRectNative){0,0,0,0});}
 static bool z_ui_focusable(ZUINodeNative*n){if(!n||!n->visible||!n->enabled)return false;const char*k=n->kind;return strcmp(k,"button")==0||strcmp(k,"input")==0||strcmp(k,"textarea")==0||strcmp(k,"select")==0||strcmp(k,"checkbox")==0||strcmp(k,"radio")==0||strcmp(k,"tabs")==0||strcmp(k,"menu")==0||z_ui_prop_bool(n->props,"focusable",false);}
 static void z_ui_call_prop(ZUINodeNative*n,const char*name,ZValue event){ZValue h=z_desktop_dict_get(n->props,name);if(h.tag==ZV_FUNCTION||h.tag==ZV_BUILTIN||h.tag==ZV_BOUND_METHOD)(void)z_call(h,&event,1);}
 static ZUINodeNative*z_ui_find_node(ZUINodeNative*n,const char*id){if(n==NULL)return NULL;if(strcmp(n->id,id)==0)return n;for(size_t i=0;i<n->children.as.array->len;i++){ZUINodeNative*r=z_ui_find_node(z_ui_expect_node(n->children.as.array->items[i]),id);if(r)return r;}return NULL;}
@@ -344,9 +370,10 @@ static void z_ui_dispatch_event(ZUIContextNative*ctx,ZDesktopEventNative*event){
     if(!ctx||ctx->closed||!event)return;
     double x=z_ui_prop_number(event->data,"x",0),y=z_ui_prop_number(event->data,"y",0);
     ZUINodeNative*target=NULL;
-    bool pointer_event=strcmp(event->type,"mouse_motion")==0||strcmp(event->type,"mouse_move")==0||strcmp(event->type,"mouse_down")==0||strcmp(event->type,"mouse_button_down")==0||strcmp(event->type,"mouse_up")==0||strcmp(event->type,"mouse_button_up")==0;
+    bool pointer_event=strcmp(event->type,"mouse_motion")==0||strcmp(event->type,"mouse_move")==0||strcmp(event->type,"mouse_down")==0||strcmp(event->type,"mouse_button_down")==0||strcmp(event->type,"mouse_up")==0||strcmp(event->type,"mouse_button_up")==0||strcmp(event->type,"mouse_wheel")==0;
     if(pointer_event)target=z_ui_hit(ctx->root,x,y);
     else if(strcmp(event->type,"key_down")==0||strcmp(event->type,"text_input")==0)target=z_ui_find_node(ctx->root,ctx->focus_id?ctx->focus_id:"");
+    if(strcmp(event->type,"mouse_wheel")==0){ZUINodeNative*scroll=target;while(scroll&&!z_ui_scrollable_y(scroll))scroll=scroll->parent;if(scroll){double dy=z_ui_prop_number(event->data,"dy",z_ui_prop_number(event->data,"wheelY",0)),step=z_ui_prop_number(scroll->props,"scrollStep",48),max_offset=fmax(0,scroll->content_height-scroll->content_bounds.height);scroll->scroll_offset_y=z_ui_clamp(scroll->scroll_offset_y-dy*step,0,max_offset);ctx->dirty=true;}return;}
     const char*shortcut=z_ui_prop_string(event->data,"shortcut","");
     if(strcmp(event->type,"key_down")==0&&(strcasecmp(shortcut,"tab")==0||strcasecmp(shortcut,"shift+tab")==0)){
         ZUINodeNative*nodes[2048];size_t count=0;z_ui_collect_focusable_nodes(ctx->root,nodes,&count,2048);
@@ -370,7 +397,7 @@ static void z_ui_dispatch_event(ZUIContextNative*ctx,ZDesktopEventNative*event){
     ctx->dirty=true;
 }
 static void z_ui_dispatch_from_desktop(ZDesktopAppNative*app,ZDesktopEventNative*event){if(!app||!event)return;for(ZUIContextNative*c=app->ui_contexts;c;c=c->next)if(c->window&&c->window->id==event->window_id)z_ui_dispatch_event(c,event);}
-static ZValue z_ui_snapshot_node(ZUINodeNative*n){ZValue pairs[6]={z_pair(z_string("id"),z_string(n->id)),z_pair(z_string("kind"),z_string(n->kind)),z_pair(z_string("x"),z_float(n->bounds.x)),z_pair(z_string("y"),z_float(n->bounds.y)),z_pair(z_string("width"),z_float(n->bounds.width)),z_pair(z_string("height"),z_float(n->bounds.height))};return z_dict_from(pairs,6);}
+static ZValue z_ui_snapshot_node(ZUINodeNative*n){ZValue pairs[11]={z_pair(z_string("id"),z_string(n->id)),z_pair(z_string("kind"),z_string(n->kind)),z_pair(z_string("x"),z_float(n->bounds.x)),z_pair(z_string("y"),z_float(n->bounds.y)),z_pair(z_string("width"),z_float(n->bounds.width)),z_pair(z_string("height"),z_float(n->bounds.height)),z_pair(z_string("contentX"),z_float(n->content_bounds.x)),z_pair(z_string("contentY"),z_float(n->content_bounds.y)),z_pair(z_string("contentWidth"),z_float(n->content_bounds.width)),z_pair(z_string("contentHeight"),z_float(n->content_height)),z_pair(z_string("scrollOffsetY"),z_float(n->scroll_offset_y))};return z_dict_from(pairs,11);}
 static void z_ui_collect_snapshot(ZUINodeNative*n,ZValue*items,size_t*count,size_t cap){if(!n||*count>=cap)return;items[(*count)++]=z_ui_snapshot_node(n);for(size_t i=0;i<n->children.as.array->len;i++)z_ui_collect_snapshot(z_ui_expect_node(n->children.as.array->items[i]),items,count,cap);}
 static ZValue z_ui_snapshot(ZUIContextNative*ctx){z_ui_render_context(ctx);ZValue items[2048];size_t count=0;z_ui_collect_snapshot(ctx->root,items,&count,2048);ZValue pairs[4]={z_pair(z_string("width"),z_float(ctx->window->width)),z_pair(z_string("height"),z_float(ctx->window->height)),z_pair(z_string("background"),z_string(z_ui_theme_string(ctx->theme,"background","#f5f7fb"))),z_pair(z_string("items"),z_array_from(items,count))};return z_dict_from(pairs,4);}
 static void z_ui_collect_accessibility(ZUINodeNative*n,ZValue*items,size_t*count,size_t cap){if(!n||*count>=cap)return;const char*label=z_ui_prop_string(n->props,"accessibilityLabel",z_ui_prop_string(n->props,"text",z_ui_prop_string(n->props,"label","")));ZValue pairs[5]={z_pair(z_string("id"),z_string(n->id)),z_pair(z_string("role"),z_string(z_ui_prop_string(n->props,"role",n->kind))),z_pair(z_string("label"),z_string(label)),z_pair(z_string("enabled"),z_bool(n->enabled)),z_pair(z_string("focusable"),z_bool(z_ui_focusable(n)))};items[(*count)++]=z_dict_from(pairs,5);for(size_t i=0;i<n->children.as.array->len;i++)z_ui_collect_accessibility(z_ui_expect_node(n->children.as.array->items[i]),items,count,cap);}

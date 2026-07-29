@@ -201,3 +201,60 @@ func TestZ16PointOneTextInputLifecycleFollowsFocus(t *testing.T) {
 		t.Fatal("text input remained enabled after UI unmount")
 	}
 }
+
+func TestZ16PointTwoRowsAndColumnsDoNotAddImplicitPadding(t *testing.T) {
+	app := DesktopAppBuiltin().Fn(desktopTestDict(map[string]object.Object{"backend": NewString("headless")})).(*object.DesktopApp)
+	window := DesktopWindowBuiltin().Fn(app, desktopTestDict(map[string]object.Object{"title": NewString("Layout"), "width": NewInteger(300), "height": NewInteger(160)})).(*object.DesktopWindow)
+	input := uiTestNode("input", map[string]object.Object{"id": NewString("aligned"), "width": NewInteger(180), "height": NewInteger(40)})
+	root := uiTestNode("column", map[string]object.Object{"gap": NewInteger(8)}, input)
+	ctx := UIMountBuiltin().Fn(app, window, root, desktopTestDict(map[string]object.Object{})).(*object.UIContext)
+	if got := ctx.LastFrame.Items[1].Bounds.X; got != 0 {
+		t.Fatalf("implicit horizontal padding=%v", got)
+	}
+	if got := ctx.LastFrame.Items[1].Bounds.Y; got != 0 {
+		t.Fatalf("implicit vertical padding=%v", got)
+	}
+}
+
+func TestZ16PointTwoVerticalOverflowScrollsAndClipsChildren(t *testing.T) {
+	app := DesktopAppBuiltin().Fn(desktopTestDict(map[string]object.Object{"backend": NewString("headless")})).(*object.DesktopApp)
+	window := DesktopWindowBuiltin().Fn(app, desktopTestDict(map[string]object.Object{"title": NewString("Scroll"), "width": NewInteger(320), "height": NewInteger(180)})).(*object.DesktopWindow)
+	first := uiTestNode("container", map[string]object.Object{"id": NewString("first"), "height": NewInteger(80), "minHeight": NewInteger(80)})
+	second := uiTestNode("container", map[string]object.Object{"id": NewString("second"), "height": NewInteger(80), "minHeight": NewInteger(80)})
+	third := uiTestNode("container", map[string]object.Object{"id": NewString("third"), "height": NewInteger(80), "minHeight": NewInteger(80)})
+	root := uiTestNode("column", map[string]object.Object{
+		"height": NewInteger(120), "maxHeight": NewInteger(120), "gap": NewInteger(8),
+		"overflowY": NewString("auto"), "scrollStep": NewInteger(40),
+	}, first, second, third)
+	ctx := UIMountBuiltin().Fn(app, window, root, desktopTestDict(map[string]object.Object{})).(*object.UIContext)
+	if root.ContentHeight != 256 {
+		t.Fatalf("content height=%v", root.ContentHeight)
+	}
+	if root.ScrollOffsetY != 0 {
+		t.Fatalf("initial scroll offset=%v", root.ScrollOffsetY)
+	}
+	UIDispatchBuiltin().Fn(ctx, desktopTestDict(map[string]object.Object{
+		"type": NewString("mouse_wheel"), "x": NewInteger(20), "y": NewInteger(20), "dy": NewInteger(-1),
+	}))
+	if root.ScrollOffsetY != 40 {
+		t.Fatalf("scroll offset=%v", root.ScrollOffsetY)
+	}
+	if got := first.Bounds.Y; got != -40 {
+		t.Fatalf("first row y=%v", got)
+	}
+	if len(ctx.LastFrame.Items) < 2 || ctx.LastFrame.Items[1].Clip == nil {
+		t.Fatal("scroll descendants were not clipped")
+	}
+	clip := *ctx.LastFrame.Items[1].Clip
+	if clip.Y != 0 || clip.Height != 120 {
+		t.Fatalf("clip=%+v", clip)
+	}
+	for i := 0; i < 10; i++ {
+		UIDispatchBuiltin().Fn(ctx, desktopTestDict(map[string]object.Object{
+			"type": NewString("mouse_wheel"), "x": NewInteger(20), "y": NewInteger(20), "dy": NewInteger(-1),
+		}))
+	}
+	if root.ScrollOffsetY != 136 {
+		t.Fatalf("clamped scroll offset=%v", root.ScrollOffsetY)
+	}
+}

@@ -19,7 +19,7 @@ import (
 	"zumbra/vm"
 )
 
-const version = "0.11.1"
+const version = "0.11.2"
 
 func main() {
 	currentUser, err := user.Current()

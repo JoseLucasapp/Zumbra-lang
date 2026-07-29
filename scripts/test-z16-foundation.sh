@@ -10,6 +10,7 @@ go test ./mir ./nativec ./conformance ./object/builtins
 
 go build -o "$TMP/zumbra" .
 "$TMP/zumbra" check code_examples/core/ui_event_target.zum
+"$TMP/zumbra" check code_examples/core/ui_scroll.zum
 
 VM_OUTPUT="$(ZUMBRA_DESKTOP_HEADLESS=1 "$TMP/zumbra" run code_examples/core/ui_event_target.zum)"
 EXPECTED=$'edit-42\nbutton'
@@ -22,6 +23,20 @@ fi
 NATIVE_OUTPUT="$(ZUMBRA_DESKTOP_HEADLESS=1 "$TMP/ui-event-target")"
 if [[ "$NATIVE_OUTPUT" != "$EXPECTED" ]]; then
   printf 'Unexpected native output:\n%s\n' "$NATIVE_OUTPUT" >&2
+  exit 1
+fi
+
+SCROLL_VM_OUTPUT="$(ZUMBRA_DESKTOP_HEADLESS=1 "$TMP/zumbra" run code_examples/core/ui_scroll.zum)"
+SCROLL_EXPECTED=$'256\n40\n-40\ntrue'
+if [[ "$SCROLL_VM_OUTPUT" != "$SCROLL_EXPECTED" ]]; then
+  printf 'Unexpected scroll VM output:\n%s\n' "$SCROLL_VM_OUTPUT" >&2
+  exit 1
+fi
+
+"$TMP/zumbra" build --release -o "$TMP/ui-scroll" code_examples/core/ui_scroll.zum
+SCROLL_NATIVE_OUTPUT="$(ZUMBRA_DESKTOP_HEADLESS=1 "$TMP/ui-scroll")"
+if [[ "$SCROLL_NATIVE_OUTPUT" != "$SCROLL_EXPECTED" ]]; then
+  printf 'Unexpected scroll native output:\n%s\n' "$SCROLL_NATIVE_OUTPUT" >&2
   exit 1
 fi
 

@@ -13,6 +13,7 @@ import (
 	"unicode"
 
 	"zumbra/builtinspec"
+	"zumbra/hir"
 	"zumbra/mir"
 	"zumbra/types"
 )
@@ -831,6 +832,10 @@ func (g *generator) emitInstruction(instruction *mir.Instruction, rootEntry bool
 			g.indent--
 		}
 		g.line("}")
+		// Some control-flow expressions are used only for side effects. Keeping an
+		// explicit read prevents -Wunused-but-set-variable under release -Werror,
+		// while preserving the value for expressions that are consumed later.
+		g.line("(void)%s;", result)
 	case mir.OpMatch:
 		g.emitMatch(instruction)
 	case mir.OpWhile:
@@ -916,6 +921,7 @@ func (g *generator) emitMatch(instruction *mir.Instruction) {
 		g.indent--
 		g.line("}")
 	}
+	g.line("(void)%s;", result)
 }
 
 func (g *generator) emitFor(instruction *mir.Instruction) {
@@ -1086,6 +1092,21 @@ func constExpression(instruction *mir.Instruction) string {
 	kind := types.Unknown
 	if instruction.Type != nil {
 		kind = instruction.Type.Kind
+	}
+	// The literal's source category is more precise than an unknown contextual
+	// type. This commonly occurs inside loops over dynamically shaped rows.
+	// Preserve string/bool/float emission rather than falling through to int.
+	if kind == types.Unknown && instruction.Meta != nil {
+		switch instruction.Meta["literal_kind"] {
+		case string(hir.StringKind):
+			kind = types.String
+		case string(hir.BooleanKind):
+			kind = types.Bool
+		case string(hir.FloatKind):
+			kind = types.Float
+		case string(hir.IntegerKind):
+			kind = types.Int
+		}
 	}
 	switch kind {
 	case types.String:

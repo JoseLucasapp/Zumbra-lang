@@ -32,7 +32,7 @@ func renderUIContext(ctx *object.UIContext) error {
 	}
 	layoutUINode(root, object.UIRect{X: 0, Y: 0, Width: float64(width), Height: float64(height)}, theme, measurer)
 	frame := &object.UIRenderFrame{Width: float64(width), Height: float64(height), Background: uiThemeString(theme, "background", "#f5f7fb")}
-	flattenUIRender(root, theme, focusID, hoverID, &frame.Items)
+	flattenUIRender(root, theme, focusID, hoverID, nil, &frame.Items)
 	if renderer, ok := ctx.Window.Runtime.(object.DesktopUIRenderer); ok {
 		if err := renderer.RenderUI(frame); err != nil {
 			return err
@@ -54,10 +54,13 @@ func layoutUINode(node *object.UINode, available object.UIRect, theme *object.UI
 	kind := node.Kind
 	visible := node.Visible
 	children := append([]*object.UINode{}, node.Children...)
+	scrollOffsetY := node.ScrollOffsetY
 	node.Mu.RUnlock()
 	if !visible {
 		node.Mu.Lock()
 		node.Bounds = object.UIRect{}
+		node.ContentBounds = object.UIRect{}
+		node.ContentHeight = 0
 		node.Mu.Unlock()
 		return
 	}
@@ -101,14 +104,18 @@ func layoutUINode(node *object.UINode, available object.UIRect, theme *object.UI
 		bounds = object.UIRect{X: x + (width-modalWidth)/2, Y: y + (height-modalHeight)/2, Width: modalWidth, Height: modalHeight}
 		x, y, width, height = bounds.X, bounds.Y, bounds.Width, bounds.Height
 	}
+	padding := uiBox(props, "padding", 0)
+	inner := object.UIRect{X: x + padding.left, Y: y + padding.top, Width: math.Max(0, width-padding.left-padding.right), Height: math.Max(0, height-padding.top-padding.bottom)}
+
 	node.Mu.Lock()
 	node.Bounds = bounds
+	node.ContentBounds = inner
+	node.ContentHeight = inner.Height
 	node.Mu.Unlock()
 	if len(children) == 0 {
 		return
 	}
-	padding := uiBox(props, "padding", uiThemeNumber(theme, "spacing", 8))
-	inner := object.UIRect{X: x + padding.left, Y: y + padding.top, Width: math.Max(0, width-padding.left-padding.right), Height: math.Max(0, height-padding.top-padding.bottom)}
+
 	direction := kind
 	if direction != "row" && direction != "column" {
 		direction = optionString(props, "direction", "column")
@@ -149,7 +156,38 @@ func layoutUINode(node *object.UINode, available object.UIRect, theme *object.UI
 		fixed += size
 	}
 	remaining := math.Max(0, mainAvailable-fixed)
+	contentHeight := inner.Height
+	if direction == "column" {
+		used := fixed + gap*float64(maxInt(0, len(children)-1))
+		if totalGrow > 0 {
+			used += remaining
+		}
+		contentHeight = math.Max(inner.Height, used)
+	}
+
+	scrollableY := uiScrollableY(props) && direction == "column"
+	if !scrollableY {
+		scrollOffsetY = 0
+	} else {
+		maxOffset := math.Max(0, contentHeight-inner.Height)
+		scrollOffsetY = uiClamp(scrollOffsetY, 0, maxOffset)
+		if maxOffset > 0 {
+			scrollbarWidth := math.Max(4, uiPropNumber(props, "scrollbarWidth", 8))
+			gutter := math.Max(2, uiPropNumber(props, "scrollbarGutter", 4))
+			inner.Width = math.Max(0, inner.Width-scrollbarWidth-gutter)
+		}
+	}
+
+	node.Mu.Lock()
+	node.ContentBounds = inner
+	node.ContentHeight = contentHeight
+	node.ScrollOffsetY = scrollOffsetY
+	node.Mu.Unlock()
+
 	cursorX, cursorY := inner.X, inner.Y
+	if scrollableY {
+		cursorY -= scrollOffsetY
+	}
 	justify := optionString(props, "justify", "start")
 	if totalGrow == 0 && remaining > 0 {
 		switch justify {
@@ -218,6 +256,14 @@ func layoutUINode(node *object.UINode, available object.UIRect, theme *object.UI
 			cursorY += ch + gap
 		}
 	}
+}
+
+func uiScrollableY(props map[string]object.Object) bool {
+	if optionBool(props, "scrollY", false) {
+		return true
+	}
+	overflow := strings.ToLower(strings.TrimSpace(optionString(props, "overflowY", optionString(props, "overflow", ""))))
+	return overflow == "scroll" || overflow == "auto"
 }
 
 type uiEdges struct{ left, top, right, bottom float64 }
@@ -437,13 +483,16 @@ func maxInt(a, b int) int {
 	return b
 }
 
-func flattenUIRender(node *object.UINode, theme *object.UITheme, focusID, hoverID string, items *[]object.UIRenderItem) {
+func flattenUIRender(node *object.UINode, theme *object.UITheme, focusID, hoverID string, inheritedClip *object.UIRect, items *[]object.UIRenderItem) {
 	if node == nil {
 		return
 	}
 	node.Mu.RLock()
 	visible := node.Visible
 	id, kind, bounds := node.ID, node.Kind, node.Bounds
+	contentBounds := node.ContentBounds
+	scrollOffsetY := node.ScrollOffsetY
+	contentHeight := node.ContentHeight
 	props := cloneUIProps(node.Props)
 	children := append([]*object.UINode{}, node.Children...)
 	node.Mu.RUnlock()
@@ -455,11 +504,44 @@ func flattenUIRender(node *object.UINode, theme *object.UITheme, focusID, hoverI
 	if kind == "canvas" {
 		commands = parseCanvasCommands(props["commands"])
 	}
-	*items = append(*items, object.UIRenderItem{ID: id, Kind: kind, Bounds: bounds, Props: props, Focused: id == focusID, Hovered: id == hoverID, Commands: commands})
+	var itemClip *object.UIRect
+	if inheritedClip != nil {
+		copy := *inheritedClip
+		itemClip = &copy
+	}
+	*items = append(*items, object.UIRenderItem{
+		ID: id, Kind: kind, Bounds: bounds, ContentBounds: contentBounds, Clip: itemClip,
+		Props: props, Focused: id == focusID, Hovered: id == hoverID, Commands: commands,
+		ScrollOffsetY: scrollOffsetY, ScrollContentHeight: contentHeight,
+	})
+	childClip := inheritedClip
+	if uiScrollableY(props) {
+		viewport := contentBounds
+		if inheritedClip != nil {
+			intersection, ok := uiRectIntersection(*inheritedClip, viewport)
+			if !ok {
+				return
+			}
+			viewport = intersection
+		}
+		childClip = &viewport
+	}
 	for _, child := range children {
-		flattenUIRender(child, theme, focusID, hoverID, items)
+		flattenUIRender(child, theme, focusID, hoverID, childClip, items)
 	}
 }
+
+func uiRectIntersection(a, b object.UIRect) (object.UIRect, bool) {
+	x1 := math.Max(a.X, b.X)
+	y1 := math.Max(a.Y, b.Y)
+	x2 := math.Min(a.X+a.Width, b.X+b.Width)
+	y2 := math.Min(a.Y+a.Height, b.Y+b.Height)
+	if x2 <= x1 || y2 <= y1 {
+		return object.UIRect{}, false
+	}
+	return object.UIRect{X: x1, Y: y1, Width: x2 - x1, Height: y2 - y1}, true
+}
+
 func cloneUIProps(source map[string]object.Object) map[string]object.Object {
 	result := make(map[string]object.Object, len(source))
 	for k, v := range source {

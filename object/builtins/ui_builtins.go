@@ -873,7 +873,7 @@ func uiFrameObject(frame *object.UIRenderFrame) object.Object {
 	}
 	items := make([]object.Object, 0, len(frame.Items))
 	for _, item := range frame.Items {
-		items = append(items, objectMapDict(map[string]object.Object{"id": NewString(item.ID), "kind": NewString(item.Kind), "x": NewFloat(item.Bounds.X), "y": NewFloat(item.Bounds.Y), "width": NewFloat(item.Bounds.Width), "height": NewFloat(item.Bounds.Height), "focused": NewBoolean(item.Focused), "hovered": NewBoolean(item.Hovered), "props": objectMapDict(item.Props)}))
+		items = append(items, objectMapDict(map[string]object.Object{"id": NewString(item.ID), "kind": NewString(item.Kind), "x": NewFloat(item.Bounds.X), "y": NewFloat(item.Bounds.Y), "width": NewFloat(item.Bounds.Width), "height": NewFloat(item.Bounds.Height), "contentX": NewFloat(item.ContentBounds.X), "contentY": NewFloat(item.ContentBounds.Y), "contentWidth": NewFloat(item.ContentBounds.Width), "contentHeight": NewFloat(item.ScrollContentHeight), "scrollOffsetY": NewFloat(item.ScrollOffsetY), "focused": NewBoolean(item.Focused), "hovered": NewBoolean(item.Hovered), "props": objectMapDict(item.Props)}))
 	}
 	return objectMapDict(map[string]object.Object{"width": NewFloat(frame.Width), "height": NewFloat(frame.Height), "background": NewString(frame.Background), "items": &object.Array{Elements: items}})
 }
@@ -947,7 +947,7 @@ func dispatchUIEvent(ctx *object.UIContext, event *object.DesktopEvent) *object.
 	y := uiEventNumber(event.Data, "y")
 	var target *object.UINode
 	switch event.Type {
-	case "mouse_motion", "mouse_down", "mouse_up", "mouse_button_down", "mouse_button_up":
+	case "mouse_motion", "mouse_down", "mouse_up", "mouse_button_down", "mouse_button_up", "mouse_wheel":
 		target = hitTestUI(root, x, y)
 		if event.Type == "mouse_motion" {
 			ctx.Mu.Lock()
@@ -973,6 +973,32 @@ func dispatchUIEvent(ctx *object.UIContext, event *object.DesktopEvent) *object.
 			focusNextUI(ctx, shortcut == "shift+tab")
 			return nil
 		}
+	}
+	if event.Type == "mouse_wheel" {
+		scrollNode := target
+		for scrollNode != nil {
+			scrollNode.Mu.RLock()
+			props := cloneUIProps(scrollNode.Props)
+			parent := scrollNode.Parent
+			scrollNode.Mu.RUnlock()
+			if uiScrollableY(props) {
+				dy := uiEventNumber(event.Data, "dy")
+				if dy == 0 {
+					dy = uiEventNumber(event.Data, "wheelY")
+				}
+				step := uiPropNumber(props, "scrollStep", 48)
+				scrollNode.Mu.Lock()
+				maxOffset := math.Max(0, scrollNode.ContentHeight-scrollNode.ContentBounds.Height)
+				scrollNode.ScrollOffsetY = uiClamp(scrollNode.ScrollOffsetY-dy*step, 0, maxOffset)
+				scrollNode.Mu.Unlock()
+				ctx.Mu.Lock()
+				ctx.Dirty = true
+				ctx.Mu.Unlock()
+				return nil
+			}
+			scrollNode = parent
+		}
+		return nil
 	}
 	down := event.Type == "mouse_down" || event.Type == "mouse_button_down"
 	if target == nil {
@@ -1172,27 +1198,53 @@ func uiEventNumber(values map[string]object.Object, key string) float64 {
 	return 0
 }
 func hitTestUI(node *object.UINode, x, y float64) *object.UINode {
+	return hitTestUIClipped(node, x, y, nil)
+}
+
+func hitTestUIClipped(node *object.UINode, x, y float64, inheritedClip *object.UIRect) *object.UINode {
 	if node == nil {
 		return nil
 	}
 	node.Mu.RLock()
 	visible := node.Visible
 	bounds := node.Bounds
+	contentBounds := node.ContentBounds
+	props := cloneUIProps(node.Props)
 	children := append([]*object.UINode{}, node.Children...)
 	node.Mu.RUnlock()
 	if !visible {
 		return nil
 	}
+	if inheritedClip != nil && !uiPointInRect(x, y, *inheritedClip) {
+		return nil
+	}
+	childClip := inheritedClip
+	if uiScrollableY(props) {
+		viewport := contentBounds
+		if inheritedClip != nil {
+			intersection, ok := uiRectIntersection(*inheritedClip, viewport)
+			if !ok {
+				return nil
+			}
+			viewport = intersection
+		}
+		childClip = &viewport
+	}
 	for i := len(children) - 1; i >= 0; i-- {
-		if hit := hitTestUI(children[i], x, y); hit != nil {
+		if hit := hitTestUIClipped(children[i], x, y, childClip); hit != nil {
 			return hit
 		}
 	}
-	if x >= bounds.X && y >= bounds.Y && x <= bounds.X+bounds.Width && y <= bounds.Y+bounds.Height {
+	if uiPointInRect(x, y, bounds) {
 		return node
 	}
 	return nil
 }
+
+func uiPointInRect(x, y float64, bounds object.UIRect) bool {
+	return x >= bounds.X && y >= bounds.Y && x <= bounds.X+bounds.Width && y <= bounds.Y+bounds.Height
+}
+
 func uiArrayStrings(value object.Object) []string {
 	a, ok := value.(*object.Array)
 	if !ok {
