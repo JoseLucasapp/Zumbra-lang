@@ -1,6 +1,6 @@
 {
   "schema_version": 2,
-  "zumbra_version": "0.10.0",
+  "zumbra_version": "0.10.1",
   "app": {
     "name": "Zumbra Packaged App",
     "version": "1.0.0",

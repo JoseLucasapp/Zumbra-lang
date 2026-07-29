@@ -1,3 +1,4 @@
-06c0c7c9baf2dc9efe87110d23e87b87258ea5fe79a1899375a2f0a9fde70ece  zumbra-packaged-app-1.0.0-linux-amd64.tar.gz
-11d798eeabf3edb4631552e8741bb5fd58e782027d0a095ff06799df96ffcce0  zumbra-packaged-app-1.0.0-linux-amd64-update.json
-56ea350572f714fc4f8212a717362da08f0004a666963a7a219bd9d59c9cdc3b  zumbra-packaged-app_1.0.0_amd64.deb
+07928e2e13e62d3fcc5b663444069b8fc8b940f34a7102e0962e8386712fb0b8  zumbra-packaged-app_1.0.0_amd64.deb
+10f5811db244db0b3e898213ffbb1e2510545031faab7e29ebf6a60efa4109ee  zumbra-packaged-app-1.0.0-linux-amd64.AppImage
+185fe2772c6de694bbc11e4840ac00240610d795a96a23d3ab4a12c45e7cf27e  zumbra-packaged-app-1.0.0-linux-amd64.tar.gz
+4f9abfd2ce1f0fcecc7317b65db84ac9d140ce68632f54ae1136edf827811514  zumbra-packaged-app-1.0.0-linux-amd64-update.json

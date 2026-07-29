@@ -10,7 +10,7 @@
     "icon_macos": "assets/icon.icns"
   },
   "arch": "amd64",
-  "build_id": "0af020dfd7b0c6303f024a49",
+  "build_id": "5571615f36c5ef436a6a03ab",
   "package": {
     "description": "A small packaged application written in Zumbra.",
     "publisher": "Zumbra",
@@ -26,5 +26,5 @@
     "url": "https://example.com/zumbra/releases",
     "channel": "stable"
   },
-  "zumbra_version": "0.10.0"
+  "zumbra_version": "0.10.1"
 }
