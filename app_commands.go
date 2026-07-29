@@ -18,6 +18,14 @@ import (
 	"zumbra/pipeline"
 )
 
+type appUsageError struct{ message string }
+
+func (e appUsageError) Error() string { return e.message }
+func appUsageErrorf(format string, args ...any) error {
+	return appUsageError{message: fmt.Sprintf(format, args...)}
+}
+func isAppUsageError(err error) bool { _, ok := err.(appUsageError); return ok }
+
 type appCLIOptions struct {
 	Manifest        string
 	Compiler        string
@@ -29,6 +37,7 @@ type appCLIOptions struct {
 	Format          string
 	Binary          string
 	AppImageTool    string
+	AppImageRuntime string
 	NSISTool        string
 	SignIdentity    string
 	Symbols         bool
@@ -38,7 +47,7 @@ type appCLIOptions struct {
 
 func handleAppCommand(arguments []string) error {
 	if len(arguments) == 0 {
-		return fmt.Errorf("missing app command; use inspect, run, build, package or doctor")
+		return appUsageErrorf("missing app command; use inspect, run, build, package or doctor")
 	}
 	command := arguments[0]
 	options, err := parseAppOptions(arguments[1:])
@@ -61,7 +70,7 @@ func handleAppCommand(arguments []string) error {
 	case "doctor":
 		return doctorApp(manifest, options)
 	default:
-		return fmt.Errorf("unknown app command %q; use inspect, run, build, package or doctor", command)
+		return appUsageErrorf("unknown app command %q; use inspect, run, build, package or doctor", command)
 	}
 }
 
@@ -126,9 +135,15 @@ func parseAppOptions(arguments []string) (appCLIOptions, error) {
 		case "--appimagetool":
 			index++
 			if index >= len(arguments) {
-				return options, fmt.Errorf("--appimagetool requires a path")
+				return options, appUsageErrorf("--appimagetool requires a path")
 			}
 			options.AppImageTool = arguments[index]
+		case "--appimage-runtime":
+			index++
+			if index >= len(arguments) {
+				return options, appUsageErrorf("--appimage-runtime requires a path")
+			}
+			options.AppImageRuntime = arguments[index]
 		case "--makensis":
 			index++
 			if index >= len(arguments) {
@@ -156,7 +171,7 @@ func parseAppOptions(arguments []string) (appCLIOptions, error) {
 			}
 			options.SourceDateEpoch = value
 		default:
-			return options, fmt.Errorf("unknown app option %s", argument)
+			return options, appUsageErrorf("unknown app option %s", argument)
 		}
 	}
 	return options, nil
@@ -361,7 +376,7 @@ func packageApp(manifest *appmanifest.Manifest, cli appCLIOptions) error {
 	if outputDir == "" && cli.Output != "" {
 		outputDir = cli.Output
 	}
-	result, err := appdist.Package(appdist.Options{Manifest: manifest, ZumbraVersion: version, Binary: binary, Target: cli.Target, Arch: cli.Arch, Format: cli.Format, OutputDir: outputDir, AppImageTool: cli.AppImageTool, NSISTool: cli.NSISTool, SignIdentity: cli.SignIdentity, Symbols: cli.Symbols, SourceDateEpoch: cli.SourceDateEpoch})
+	result, err := appdist.Package(appdist.Options{Manifest: manifest, ZumbraVersion: version, Binary: binary, Target: cli.Target, Arch: cli.Arch, Format: cli.Format, OutputDir: outputDir, AppImageTool: cli.AppImageTool, AppImageRuntime: cli.AppImageRuntime, NSISTool: cli.NSISTool, SignIdentity: cli.SignIdentity, Symbols: cli.Symbols, SourceDateEpoch: cli.SourceDateEpoch})
 	if err != nil {
 		return err
 	}
@@ -415,8 +430,11 @@ func doctorApp(manifest *appmanifest.Manifest, cli appCLIOptions) error {
 	add := func(name string, required bool, checkErr error, detail string) {
 		status := "ok"
 		if checkErr != nil {
-			status = "missing"
-			report.Ready = false
+			status = "warning"
+			if required {
+				status = "missing"
+				report.Ready = false
+			}
 			detail = checkErr.Error()
 		}
 		report.Checks = append(report.Checks, appDoctorCheck{Name: name, Status: status, Required: required, Detail: detail})
@@ -442,10 +460,10 @@ func doctorApp(manifest *appmanifest.Manifest, cli appCLIOptions) error {
 			add("application pipeline", true, fmt.Errorf("pipeline failed:\n%s", pipeline.FormatDiagnostics(diagnostics)), "")
 		} else {
 			add("application pipeline", true, nil, manifest.EntryPath())
-			if target != "linux" && (nativec.UsesDesktop(result.MIR) || nativec.UsesUI(result.MIR)) {
-				add("desktop runtime backend", true, fmt.Errorf("Z13/Z14 graphical runtime is currently Linux-only; provide a native %s/%s binary with --binary until that backend is implemented", target, arch), "")
+			if nativec.UsesDesktop(result.MIR) || nativec.UsesUI(result.MIR) {
+				add("desktop runtime backend", true, nil, "SDL3 dynamic backend for "+target+"/"+arch)
 			} else {
-				add("desktop runtime backend", true, nil, target+"/"+arch)
+				add("desktop runtime backend", true, nil, "not required")
 			}
 		}
 		compilerName := strings.TrimSpace(cli.Compiler)
@@ -464,9 +482,14 @@ func doctorApp(manifest *appmanifest.Manifest, cli appCLIOptions) error {
 	if target == "linux" && wants("appimage") {
 		tool, toolErr := appdist.FindAppImageTool(cli.AppImageTool, manifest.Root, arch)
 		if toolErr != nil {
-			toolErr = fmt.Errorf("%s", appdist.AppImageInstallHint(arch))
+			toolErr = fmt.Errorf("%s; searched: %s", appdist.AppImageInstallHint(arch), appdist.FormatToolSearch(appdist.AppImageToolCandidates(cli.AppImageTool, manifest.Root, arch)))
 		}
 		add("appimagetool", true, toolErr, tool)
+		runtimePath, runtimeErr := appdist.FindAppImageRuntime(cli.AppImageRuntime, manifest.Root, arch)
+		if runtimeErr != nil {
+			runtimeErr = fmt.Errorf("%s; searched: %s", appdist.AppImageRuntimeHint(arch), appdist.FormatToolSearch(appdist.AppImageRuntimeCandidates(cli.AppImageRuntime, manifest.Root, arch)))
+		}
+		add("AppImage runtime", false, runtimeErr, runtimePath)
 	}
 	if target == "windows" && wants("installer") && manifest.Windows.Installer != "none" {
 		tool, toolErr := appdist.FindNSISTool(cli.NSISTool)
@@ -489,10 +512,7 @@ func doctorApp(manifest *appmanifest.Manifest, cli appCLIOptions) error {
 	} else {
 		fmt.Printf("Zumbra application doctor: %s/%s (%s)\n", target, arch, formatLabel)
 		for _, check := range report.Checks {
-			marker := "ok"
-			if check.Status != "ok" {
-				marker = "missing"
-			}
+			marker := check.Status
 			fmt.Printf("[%s] %-28s %s\n", marker, check.Name, check.Detail)
 		}
 	}

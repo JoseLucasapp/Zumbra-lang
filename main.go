@@ -19,7 +19,7 @@ import (
 	"zumbra/vm"
 )
 
-const version = "0.10.1"
+const version = "0.10.2"
 
 func main() {
 	currentUser, err := user.Current()
@@ -47,7 +47,9 @@ func main() {
 		case "app":
 			if err := handleAppCommand(args[1:]); err != nil {
 				fmt.Printf("Application error: %s\n", err)
-				printUsage()
+				if isAppUsageError(err) {
+					printUsage()
+				}
 				os.Exit(1)
 			}
 			return
@@ -129,8 +131,8 @@ func printUsage() {
 	fmt.Println("  zumbra app inspect [--manifest <zumbra.toml>]")
 	fmt.Println("  zumbra app run [--manifest <zumbra.toml>]")
 	fmt.Println("  zumbra app build [--manifest <zumbra.toml>] [--target <os>] [--arch <arch>] [--release|--debug] [--compiler <name>] [-o <path>]")
-	fmt.Println("  zumbra app package [--manifest <zumbra.toml>] [--target <linux|windows|macos>] [--arch <amd64|arm64>] [--format <format>] [--binary <path>] [--output-dir <dir>] [--symbols] [--sign <identity>]")
-	fmt.Println("  zumbra app doctor [--manifest <zumbra.toml>] [--target <os>] [--arch <arch>] [--format <format>] [--binary <path>] [--json]")
+	fmt.Println("  zumbra app package [--manifest <zumbra.toml>] [--target <linux|windows|macos>] [--arch <amd64|arm64>] [--format <format>] [--binary <path>] [--output-dir <dir>] [--appimagetool <path>] [--appimage-runtime <path>] [--makensis <path>] [--symbols] [--sign <identity>]")
+	fmt.Println("  zumbra app doctor [--manifest <zumbra.toml>] [--target <os>] [--arch <arch>] [--format <format>] [--binary <path>] [--appimagetool <path>] [--appimage-runtime <path>] [--makensis <path>] [--json]")
 	fmt.Println("  zumbra check <file.zum>")
 	fmt.Println("  zumbra modules <file.zum>")
 	fmt.Println("  zumbra ir <file.zum> [hir|mir|optimized]")

@@ -253,7 +253,7 @@ context.close();
 app.close();
 ```
 
-Z14 provides a retained component tree, deterministic row/column layout, controls, collections, overlays, canvas drawing, themes, reactive state, bidirectional binding, custom components, focus navigation and accessibility. The headless backend supports deterministic CI tests; the Linux graphical backend renders through dynamically loaded SDL3. See [`docs/pt-BR/toolkit-interface-grafica-z14.md`](./docs/pt-BR/toolkit-interface-grafica-z14.md).
+Z14 provides a retained component tree, deterministic row/column layout, controls, collections, overlays, canvas drawing, themes, reactive state, bidirectional binding, custom components, focus navigation and accessibility. The headless backend supports deterministic CI tests; the graphical backend renders through dynamically loaded SDL3 on Linux, Windows and macOS. See [`docs/pt-BR/toolkit-interface-grafica-z14.md`](./docs/pt-BR/toolkit-interface-grafica-z14.md).
 
 Zumbra 0.8.1 completes Z14 and establishes the baseline for Z15 desktop distribution. See [`docs/releases/0.8.1.md`](./docs/releases/0.8.1.md).
 
@@ -271,5 +271,5 @@ zumbra app package --manifest zumbra.toml
 
 Z15 adds one target-aware packaging command for Linux, Windows and macOS. It creates Linux bundles, `.deb`, AppDir/AppImage, Windows portable ZIP/NSIS installers, and macOS `.app`/ZIP bundles. Packages include platform metadata, icons, embedded assets, dependency audits, deterministic timestamps, SHA-256 checksums, update descriptors, optional signatures and optional debug symbols. See [`docs/pt-BR/distribuicao-desktop-z15.md`](./docs/pt-BR/distribuicao-desktop-z15.md).
 
-Zumbra 0.10.1 hardens Z15 with target-correct binary validation and a preflight doctor. The stable baseline remains 0.9.0 until real AppImage, Windows and macOS acceptance gates are completed. See [`docs/releases/0.10.1.md`](./docs/releases/0.10.1.md).
+Zumbra 0.10.2 completes the Z15 implementation with Linux, Windows and macOS desktop/GUI runtime paths, target runtime libraries, real AppImage hardening and a three-system acceptance workflow. See [`docs/releases/0.10.2.md`](./docs/releases/0.10.2.md).
 

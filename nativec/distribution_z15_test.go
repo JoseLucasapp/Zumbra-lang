@@ -47,3 +47,36 @@ func TestDetectTargetCompilerFromEnvironment(t *testing.T) {
 		t.Fatalf("expected %s, got %s", tool, found)
 	}
 }
+
+func TestDesktopRuntimeContainsWindowsAndMacOSBackends(t *testing.T) {
+	desktop, err := os.ReadFile(filepath.Join("runtime", "zumbra_desktop.inc"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	ui, err := os.ReadFile(filepath.Join("runtime", "zumbra_ui.inc"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	joined := string(desktop) + "\n" + string(ui)
+	for _, expected := range []string{
+		"LoadLibraryA",
+		"GetOpenFileNameA",
+		"SHBrowseForFolderA",
+		"CreateProcessA",
+		"ShellExecuteA",
+		"SDL3.dll",
+		"SDL3_ttf.dll",
+		"__APPLE__",
+		"osascript",
+		"_NSGetExecutablePath",
+		"@executable_path/../Frameworks/libSDL3",
+		"@executable_path/../Frameworks/libSDL3_ttf",
+	} {
+		if !strings.Contains(joined, expected) {
+			t.Fatalf("desktop runtime does not contain %q", expected)
+		}
+	}
+	if strings.Contains(joined, "app->headless=true;\n#endif") {
+		t.Fatal("desktop runtime still forces non-Linux targets into headless mode")
+	}
+}

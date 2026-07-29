@@ -48,7 +48,7 @@ static double z_ui_prop_number(ZValue props,const char*key,double fallback);
 static const char*z_ui_prop_string(ZValue props,const char*key,const char*fallback);
 static double z_ui_theme_number(ZUIThemeNative*t,const char*key,double fallback);
 static const char*z_ui_theme_string(ZUIThemeNative*t,const char*key,const char*fallback);
-#if defined(__linux__)
+#if defined(ZUMBRA_DESKTOP_SDL3)
 typedef struct TTF_Font TTF_Font;
 typedef struct { uint8_t r,g,b,a; } ZUITTFColor;
 typedef bool (*ZUI_TTF_Init)(void);
@@ -70,7 +70,7 @@ typedef struct {
 } ZUITTFRuntime;
 static ZUITTFRuntime z_ui_ttf;
 static bool z_ui_contains_ci(const char*text,const char*needle){if(text==NULL||needle==NULL||*needle=='\0')return false;size_t n=strlen(needle);for(const char*p=text;*p;p++){size_t i=0;while(i<n&&p[i]&&tolower((unsigned char)p[i])==tolower((unsigned char)needle[i]))i++;if(i==n)return true;}return false;}
-static bool z_ui_file_exists(const char*path){return path!=NULL&&*path!='\0'&&access(path,R_OK)==0;}
+static bool z_ui_file_exists(const char*path){return path!=NULL&&*path!='\0'&&z_desktop_access(path,4)==0;}
 static bool z_ui_font_bold(const char*weight){if(weight==NULL)return false;if(strcasecmp(weight,"bold")==0||strcasecmp(weight,"semibold")==0)return true;char*end=NULL;long v=strtol(weight,&end,10);return end!=weight&&v>=600;}
 static bool z_ui_font_italic(const char*style){return style!=NULL&&(strcasecmp(style,"italic")==0||strcasecmp(style,"oblique")==0);}
 static const char*z_ui_resolve_font(const char*family,const char*explicit_path,const char*weight,const char*style){
@@ -79,10 +79,18 @@ static const char*z_ui_resolve_font(const char*family,const char*explicit_path,c
     if(family&&strchr(family,'/')&&z_ui_file_exists(family)){snprintf(selected,sizeof(selected),"%s",family);return selected;}
     if(z_ui_file_exists(env)){snprintf(selected,sizeof(selected),"%s",env);return selected;}
     bool mono=family&&(z_ui_contains_ci(family,"mono")||z_ui_contains_ci(family,"code"));bool serif=family&&z_ui_contains_ci(family,"serif")&&!mono;bool bold=z_ui_font_bold(weight),italic=z_ui_font_italic(style);
-    const char*candidates[24];size_t n=0;
+    const char*candidates[32];size_t n=0;
+#if defined(_WIN32)
+    static char win_fonts[PATH_MAX];const char*windir=getenv("WINDIR");if(windir==NULL)windir="C:/Windows";snprintf(win_fonts,sizeof(win_fonts),"%s/Fonts",windir);
+    static char win_paths[8][PATH_MAX];const char*files[8]={mono?"consola.ttf":serif?"times.ttf":"segoeui.ttf",mono?"cour.ttf":serif?"timesbd.ttf":"segoeuib.ttf","arial.ttf","arialbd.ttf","calibri.ttf","calibrib.ttf",NULL,NULL};
+    for(size_t i=0;i<8&&files[i];i++){snprintf(win_paths[i],sizeof(win_paths[i]),"%s/%s",win_fonts,files[i]);candidates[n++]=win_paths[i];}
+#elif defined(__APPLE__)
+    if(mono){candidates[n++]="/System/Library/Fonts/SFNSMono.ttf";candidates[n++]="/System/Library/Fonts/Monaco.ttf";}else if(serif){candidates[n++]="/System/Library/Fonts/NewYork.ttf";candidates[n++]="/System/Library/Fonts/Supplemental/Times New Roman.ttf";}else{candidates[n++]="/System/Library/Fonts/SFNS.ttf";candidates[n++]="/System/Library/Fonts/Supplemental/Arial.ttf";}
+#else
     if(mono){if(bold&&italic)candidates[n++]="/usr/share/fonts/truetype/dejavu/DejaVuSansMono-BoldOblique.ttf";else if(bold)candidates[n++]="/usr/share/fonts/truetype/dejavu/DejaVuSansMono-Bold.ttf";else if(italic)candidates[n++]="/usr/share/fonts/truetype/dejavu/DejaVuSansMono-Oblique.ttf";candidates[n++]="/usr/share/fonts/truetype/dejavu/DejaVuSansMono.ttf";candidates[n++]="/usr/share/fonts/truetype/liberation2/LiberationMono-Regular.ttf";}
     else if(serif){if(bold&&italic)candidates[n++]="/usr/share/fonts/truetype/dejavu/DejaVuSerif-BoldItalic.ttf";else if(bold)candidates[n++]="/usr/share/fonts/truetype/dejavu/DejaVuSerif-Bold.ttf";else if(italic)candidates[n++]="/usr/share/fonts/truetype/dejavu/DejaVuSerif-Italic.ttf";candidates[n++]="/usr/share/fonts/truetype/dejavu/DejaVuSerif.ttf";candidates[n++]="/usr/share/fonts/truetype/liberation2/LiberationSerif-Regular.ttf";}
     else {if(bold&&italic)candidates[n++]="/usr/share/fonts/truetype/dejavu/DejaVuSans-BoldOblique.ttf";else if(bold)candidates[n++]="/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf";else if(italic)candidates[n++]="/usr/share/fonts/truetype/dejavu/DejaVuSans-Oblique.ttf";candidates[n++]="/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf";candidates[n++]="/usr/share/fonts/truetype/liberation2/LiberationSans-Regular.ttf";candidates[n++]="/usr/share/fonts/opentype/noto/NotoSans-Regular.ttf";}
+#endif
     for(size_t i=0;i<n;i++) {
         if(z_ui_file_exists(candidates[i])) {
             snprintf(selected,sizeof(selected),"%s",candidates[i]);
@@ -94,15 +102,21 @@ static const char*z_ui_resolve_font(const char*family,const char*explicit_path,c
 static bool z_ui_ttf_load(void){
     if(z_ui_ttf.initialized) return true;
     if(z_ui_ttf.lib==NULL) {
+#if defined(_WIN32)
+        const char*names[]={"SDL3_ttf.dll","libSDL3_ttf.dll",NULL};
+#elif defined(__APPLE__)
+        const char*names[]={"@executable_path/../Frameworks/libSDL3_ttf.0.dylib","@executable_path/../Frameworks/libSDL3_ttf.dylib","libSDL3_ttf.0.dylib","libSDL3_ttf.dylib",NULL};
+#else
         const char*names[]={"libSDL3_ttf.so.0","libSDL3_ttf.so",NULL};
+#endif
         for(size_t i=0;names[i];i++) {
-            z_ui_ttf.lib=dlopen(names[i],RTLD_NOW|RTLD_LOCAL);
+            z_ui_ttf.lib=z_desktop_library_open(names[i]);
             if(z_ui_ttf.lib) break;
         }
     }
     if(z_ui_ttf.lib==NULL) return false;
-#define ZUI_TTF_REQ(field,symbol,type) do{z_ui_ttf.field=(type)dlsym(z_ui_ttf.lib,symbol);if(z_ui_ttf.field==NULL)return false;}while(0)
-#define ZUI_TTF_OPT(field,symbol,type) do{z_ui_ttf.field=(type)dlsym(z_ui_ttf.lib,symbol);}while(0)
+#define ZUI_TTF_REQ(field,symbol,type) do{z_ui_ttf.field=(type)z_desktop_library_symbol(z_ui_ttf.lib,symbol);if(z_ui_ttf.field==NULL)return false;}while(0)
+#define ZUI_TTF_OPT(field,symbol,type) do{z_ui_ttf.field=(type)z_desktop_library_symbol(z_ui_ttf.lib,symbol);}while(0)
     ZUI_TTF_REQ(Init,"TTF_Init",ZUI_TTF_Init);ZUI_TTF_REQ(Quit,"TTF_Quit",ZUI_TTF_Quit);ZUI_TTF_REQ(OpenFont,"TTF_OpenFont",ZUI_TTF_OpenFont);ZUI_TTF_REQ(CloseFont,"TTF_CloseFont",ZUI_TTF_CloseFont);ZUI_TTF_OPT(SetFontStyle,"TTF_SetFontStyle",ZUI_TTF_SetFontStyle);ZUI_TTF_REQ(GetStringSize,"TTF_GetStringSize",ZUI_TTF_GetStringSize);ZUI_TTF_OPT(GetStringSizeWrapped,"TTF_GetStringSizeWrapped",ZUI_TTF_GetStringSizeWrapped);ZUI_TTF_REQ(RenderTextBlended,"TTF_RenderText_Blended",ZUI_TTF_RenderText_Blended);ZUI_TTF_OPT(RenderTextBlendedWrapped,"TTF_RenderText_Blended_Wrapped",ZUI_TTF_RenderText_Blended_Wrapped);
 #undef ZUI_TTF_REQ
 #undef ZUI_TTF_OPT
@@ -114,14 +128,14 @@ static uint32_t z_ui_font_flags(const char*weight,const char*style){uint32_t fla
 static TTF_Font*z_ui_font(const char*family,const char*path,double size,const char*weight,const char*style){if(size<1)size=14;if(!z_ui_ttf_load())return NULL;const char*resolved=z_ui_resolve_font(family,path,weight,style);if(resolved==NULL)return NULL;uint32_t flags=z_ui_font_flags(weight,style);for(ZUIFontCacheNative*c=z_ui_ttf.fonts;c;c=c->next)if(c->size==(float)size&&c->style==flags&&strcmp(c->path,resolved)==0)return c->font;TTF_Font*font=z_ui_ttf.OpenFont(resolved,(float)size);if(font==NULL)return NULL;if(z_ui_ttf.SetFontStyle)z_ui_ttf.SetFontStyle(font,flags);ZUIFontCacheNative*c=(ZUIFontCacheNative*)calloc(1,sizeof(*c));if(c==NULL){z_ui_ttf.CloseFont(font);return NULL;}snprintf(c->path,sizeof(c->path),"%s",resolved);c->size=(float)size;c->style=flags;c->font=font;c->next=z_ui_ttf.fonts;z_ui_ttf.fonts=c;return font;}
 static size_t z_ui_utf8_count(const char*text){size_t count=0;if(text==NULL)return 0;for(const unsigned char*p=(const unsigned char*)text;*p;p++)if((*p&0xC0u)!=0x80u)count++;return count;}
 static void z_ui_measure_text_native(const char*text,ZValue props,ZUIThemeNative*t,double wrap,double*out_w,double*out_h){if(text==NULL)text="";double size=z_ui_prop_number(props,"fontSize",z_ui_theme_number(t,"fontSize",14));const char*family=z_ui_prop_string(props,"fontFamily",z_ui_theme_string(t,"fontFamily","sans"));const char*path=z_ui_prop_string(props,"fontPath",z_ui_theme_string(t,"fontPath",""));const char*weight=z_ui_prop_string(props,"fontWeight",z_ui_theme_string(t,"fontWeight","normal"));const char*style=z_ui_prop_string(props,"fontStyle",z_ui_theme_string(t,"fontStyle","normal"));TTF_Font*font=z_ui_font(family,path,size,weight,style);int w=0,h=0;bool ok=false;if(font){if(wrap>0&&z_ui_ttf.GetStringSizeWrapped)ok=z_ui_ttf.GetStringSizeWrapped(font,text,0,(int)wrap,&w,&h);else ok=z_ui_ttf.GetStringSize(font,text,0,&w,&h);}if(!ok){w=(int)((double)z_ui_utf8_count(text)*size*0.58);h=(int)(size*z_ui_prop_number(props,"lineHeight",z_ui_theme_number(t,"lineHeight",1.25)));if(wrap>0&&w>(int)wrap){int lines=(w+(int)wrap-1)/(int)wrap;w=(int)wrap;h*=lines;}}if(out_w)*out_w=w;if(out_h)*out_h=h;}
-static void z_ui_ttf_shutdown(void){ZUIFontCacheNative*c=z_ui_ttf.fonts;while(c){ZUIFontCacheNative*n=c->next;if(c->font&&z_ui_ttf.CloseFont)z_ui_ttf.CloseFont(c->font);free(c);c=n;}z_ui_ttf.fonts=NULL;if(z_ui_ttf.initialized&&z_ui_ttf.Quit)z_ui_ttf.Quit();z_ui_ttf.initialized=false;if(z_ui_ttf.lib){dlclose(z_ui_ttf.lib);z_ui_ttf.lib=NULL;}}
+static void z_ui_ttf_shutdown(void){ZUIFontCacheNative*c=z_ui_ttf.fonts;while(c){ZUIFontCacheNative*n=c->next;if(c->font&&z_ui_ttf.CloseFont)z_ui_ttf.CloseFont(c->font);free(c);c=n;}z_ui_ttf.fonts=NULL;if(z_ui_ttf.initialized&&z_ui_ttf.Quit)z_ui_ttf.Quit();z_ui_ttf.initialized=false;if(z_ui_ttf.lib){z_desktop_library_close(z_ui_ttf.lib);z_ui_ttf.lib=NULL;}}
 #else
 static void z_ui_measure_text_native(const char*text,ZValue props,ZUIThemeNative*t,double wrap,double*out_w,double*out_h){double size=z_ui_prop_number(props,"fontSize",z_ui_theme_number(t,"fontSize",14));size_t count=text?strlen(text):0;double w=(double)count*size*0.58,h=size*1.25;if(wrap>0&&w>wrap){double lines=ceil(w/wrap);w=wrap;h*=lines;}if(out_w)*out_w=w;if(out_h)*out_h=h;}
 static void z_ui_ttf_shutdown(void){}
 #endif
 static void z_ui_runtime_init(void){
     z_ui_next_id=1;
-#if defined(__linux__)
+#if defined(ZUMBRA_DESKTOP_SDL3)
     memset(&z_ui_ttf,0,sizeof(z_ui_ttf));
 #endif
 }
@@ -238,7 +252,7 @@ static void z_ui_layout(ZUINodeNative*n,ZUIRectNative available,ZUIThemeNative*t
     for(size_t i=0;i<count;i++){ZUINodeNative*c=z_ui_expect_node(n->children.as.array->items[i]);double grow=z_ui_prop_number(c->props,"grow",0),cw,ch;if(row){cw=grow>0&&grow_total>0?remaining*grow/grow_total:z_ui_prop_number(c->props,"width",z_ui_natural_width(c,t));ch=inner.height;const char*align=z_ui_prop_string(n->props,"align","stretch");double natural=z_ui_natural_height(c,t);if(strcmp(align,"stretch")!=0){ch=z_ui_prop_number(c->props,"height",natural);if(ch>inner.height)ch=inner.height;}double cy=cursor_y;if(strcmp(align,"center")==0)cy=inner.y+(inner.height-ch)/2;else if(strcmp(align,"end")==0)cy=inner.y+inner.height-ch;z_ui_layout(c,(ZUIRectNative){cursor_x,cy,cw,ch},t);cursor_x+=cw+gap;}else{ch=grow>0&&grow_total>0?remaining*grow/grow_total:z_ui_prop_number(c->props,"height",z_ui_natural_height(c,t));cw=inner.width;const char*align=z_ui_prop_string(n->props,"align","stretch");double natural=z_ui_natural_width(c,t);if(strcmp(align,"stretch")!=0){cw=z_ui_prop_number(c->props,"width",natural);if(cw>inner.width)cw=inner.width;}double cx=cursor_x;if(strcmp(align,"center")==0)cx=inner.x+(inner.width-cw)/2;else if(strcmp(align,"end")==0)cx=inner.x+inner.width-cw;z_ui_layout(c,(ZUIRectNative){cx,cursor_y,cw,ch},t);cursor_y+=ch+gap;}}
 }
 static void z_ui_color_parse(const char*s,uint8_t*r,uint8_t*g,uint8_t*b,uint8_t*a){*r=*g=*b=0;*a=255;if(s==NULL||strcmp(s,"transparent")==0){*a=0;return;}if(*s=='#')s++;size_t n=strlen(s);unsigned long v=strtoul(s,NULL,16);if(n==6){*r=(v>>16)&255;*g=(v>>8)&255;*b=v&255;}else if(n==8){*r=(v>>24)&255;*g=(v>>16)&255;*b=(v>>8)&255;*a=v&255;}}
-#if defined(__linux__)
+#if defined(ZUMBRA_DESKTOP_SDL3)
 static void z_ui_draw_color(SDL_Renderer*r,const char*color){uint8_t red,green,blue,alpha;z_ui_color_parse(color,&red,&green,&blue,&alpha);z_desktop_sdl.SetRenderDrawColor(r,red,green,blue,alpha);}
 static void z_ui_fill(SDL_Renderer*r,ZUIRectNative q,const char*color){uint8_t a,b,c,d;z_ui_color_parse(color,&a,&b,&c,&d);if(d==0)return;z_desktop_sdl.SetRenderDrawColor(r,a,b,c,d);ZDesktopSDLFRect f={(float)q.x,(float)q.y,(float)q.width,(float)q.height};z_desktop_sdl.RenderFillRect(r,&f);}
 static void z_ui_stroke(SDL_Renderer*r,ZUIRectNative q,const char*color){z_ui_draw_color(r,color);ZDesktopSDLFRect f={(float)q.x,(float)q.y,(float)q.width,(float)q.height};z_desktop_sdl.RenderRect(r,&f);}
@@ -302,7 +316,7 @@ static void z_ui_render_node(SDL_Renderer*r,ZUINodeNative*n,ZUIContextNative*ctx
 }
 #endif
 static void z_ui_render_context(ZUIContextNative*ctx){if(ctx==NULL||ctx->closed||ctx->window==NULL||!ctx->window->open)return;z_ui_layout(ctx->root,(ZUIRectNative){0,0,(double)ctx->window->width,(double)ctx->window->height},ctx->theme);
-#if defined(__linux__)
+#if defined(ZUMBRA_DESKTOP_SDL3)
     if(!ctx->app->headless){if(ctx->window->renderer==NULL){ctx->window->renderer=z_desktop_sdl.CreateRenderer((SDL_Window*)ctx->window->handle,NULL);if(ctx->window->renderer==NULL)z_fatal("uiRender could not create SDL3 renderer: %s",z_desktop_sdl.GetError());}SDL_Renderer*r=(SDL_Renderer*)ctx->window->renderer;z_ui_draw_color(r,z_ui_theme_string(ctx->theme,"background","#f5f7fb"));z_desktop_sdl.RenderClear(r);z_ui_render_node(r,ctx->root,ctx);z_desktop_sdl.RenderPresent(r);}
 #endif
     ctx->dirty=false;}

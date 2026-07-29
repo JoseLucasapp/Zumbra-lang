@@ -1,4 +1,0 @@
-	linux-vdso.so.1 (0xADDR)
-	libm.so.6 => /lib/x86_64-linux-gnu/libm.so.6 (0xADDR)
-	libc.so.6 => /lib/x86_64-linux-gnu/libc.so.6 (0xADDR)
-	/lib64/ld-linux-x86-64.so.2 (0xADDR)

@@ -43,7 +43,11 @@ func (c *packageContext) populateMacApp(appPath string) error {
 	contents := filepath.Join(appPath, "Contents")
 	macOSDir := filepath.Join(contents, "MacOS")
 	resources := filepath.Join(contents, "Resources")
+	frameworks := filepath.Join(contents, "Frameworks")
 	if err := copyFile(c.options.Binary, filepath.Join(macOSDir, slug), 0o755, c.epoch); err != nil {
+		return err
+	}
+	if err := c.copyRuntimeFiles("macos", frameworks); err != nil {
 		return err
 	}
 	iconName := ""

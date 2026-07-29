@@ -61,6 +61,9 @@ func (c *packageContext) populateWindowsPortable(root string) error {
 	if err := copyFile(c.options.Binary, filepath.Join(root, executable), 0o755, c.epoch); err != nil {
 		return err
 	}
+	if err := c.copyRuntimeFiles("windows", root); err != nil {
+		return err
+	}
 	if err := c.writeMetadata(filepath.Join(root, "package.json")); err != nil {
 		return err
 	}

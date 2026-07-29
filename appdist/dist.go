@@ -30,6 +30,7 @@ type Options struct {
 	Format          string
 	OutputDir       string
 	AppImageTool    string
+	AppImageRuntime string
 	NSISTool        string
 	SignIdentity    string
 	Symbols         bool
@@ -44,16 +45,17 @@ type Artifact struct {
 }
 
 type Result struct {
-	SchemaVersion int        `json:"schema_version"`
-	App           string     `json:"app"`
-	Version       string     `json:"version"`
-	Target        string     `json:"target"`
-	Arch          string     `json:"arch"`
-	Binary        BinaryInfo `json:"binary"`
-	BuildID       string     `json:"build_id"`
-	Artifacts     []Artifact `json:"artifacts"`
-	Warnings      []string   `json:"warnings,omitempty"`
-	ReportPath    string     `json:"report_path"`
+	SchemaVersion int               `json:"schema_version"`
+	App           string            `json:"app"`
+	Version       string            `json:"version"`
+	Target        string            `json:"target"`
+	Arch          string            `json:"arch"`
+	Binary        BinaryInfo        `json:"binary"`
+	BuildID       string            `json:"build_id"`
+	Artifacts     []Artifact        `json:"artifacts"`
+	Warnings      []string          `json:"warnings,omitempty"`
+	Tools         map[string]string `json:"tools,omitempty"`
+	ReportPath    string            `json:"report_path"`
 }
 
 type packageContext struct {
@@ -102,6 +104,9 @@ func Package(options Options) (*Result, error) {
 			return nil, fmt.Errorf("AppImage requested but appimagetool is unavailable: %s", AppImageInstallHint(options.Arch))
 		}
 		options.AppImageTool = tool
+		if runtimePath, runtimeErr := FindAppImageRuntime(options.AppImageRuntime, options.Manifest.Root, options.Arch); runtimeErr == nil {
+			options.AppImageRuntime = runtimePath
+		}
 	}
 	if options.Target == "windows" && wants("installer") && options.Manifest.Windows.Installer != "none" {
 		tool, findErr := FindNSISTool(options.NSISTool)
@@ -129,7 +134,7 @@ func Package(options Options) (*Result, error) {
 	}
 	ctx := &packageContext{
 		options: options,
-		result:  Result{SchemaVersion: 2, App: options.Manifest.App.Name, Version: options.Manifest.App.Version, Target: options.Target, Arch: options.Arch, Binary: binaryInfo, BuildID: buildID},
+		result:  Result{SchemaVersion: 2, Tools: map[string]string{}, App: options.Manifest.App.Name, Version: options.Manifest.App.Version, Target: options.Target, Arch: options.Arch, Binary: binaryInfo, BuildID: buildID},
 		outDir:  options.OutputDir,
 		epoch:   epoch,
 		formats: formats,

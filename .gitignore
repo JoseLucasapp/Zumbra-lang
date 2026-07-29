@@ -8,3 +8,8 @@ index.html
 .env
 /build/
 /dist/
+# Generated desktop application artifacts
+/code_examples/desktop_package/build/
+/code_examples/desktop_package/dist/
+/tools/appimagetool*.AppImage
+/tools/runtime-*

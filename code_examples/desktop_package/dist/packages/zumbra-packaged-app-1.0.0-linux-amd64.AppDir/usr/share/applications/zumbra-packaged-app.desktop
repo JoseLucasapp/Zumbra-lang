@@ -1,9 +1,0 @@
-[Desktop Entry]
-Type=Application
-Name=Zumbra Packaged App
-Comment=A small packaged application written in Zumbra.
-Exec=zumbra-packaged-app
-Icon=zumbra-packaged-app
-Terminal=false
-Categories=Development;
-StartupNotify=true

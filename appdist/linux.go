@@ -48,12 +48,30 @@ func (c *packageContext) packageLinux() error {
 			if findErr != nil {
 				return fmt.Errorf("AppImage requested but appimagetool is unavailable: %s", AppImageInstallHint(c.options.Arch))
 			}
+			c.result.Tools["appimagetool"] = tool
 			output := filepath.Join(c.outDir, base+".AppImage")
-			cmd := exec.Command(tool, appDir, output)
+			args := []string{}
+			runtimePath := strings.TrimSpace(c.options.AppImageRuntime)
+			if runtimePath != "" {
+				args = append(args, "--runtime-file", runtimePath)
+				c.result.Tools["appimage_runtime"] = runtimePath
+			} else {
+				c.result.Warnings = append(c.result.Warnings, "no pinned AppImage runtime was found; appimagetool may use network once and Zumbra will cache the generated runtime")
+			}
+			args = append(args, appDir, output)
+			cmd := exec.Command(tool, args...)
 			cmd.Env = append(os.Environ(), "ARCH="+appImageArch(c.options.Arch), fmt.Sprintf("SOURCE_DATE_EPOCH=%d", c.epoch.Unix()))
 			cmd.Stdout, cmd.Stderr = os.Stdout, os.Stderr
 			if err := cmd.Run(); err != nil {
 				return fmt.Errorf("appimagetool failed: %w", err)
+			}
+			if runtimePath == "" {
+				if cached, cacheErr := cacheAppImageRuntime(output, c.options.Arch); cacheErr == nil {
+					c.result.Tools["appimage_runtime"] = cached
+					c.result.Warnings = append(c.result.Warnings, "cached AppImage runtime for future offline builds at "+cached)
+				} else {
+					c.result.Warnings = append(c.result.Warnings, "could not cache generated AppImage runtime: "+cacheErr.Error())
+				}
 			}
 			if err := os.Chtimes(output, c.epoch, c.epoch); err != nil {
 				return err
@@ -78,11 +96,34 @@ func (c *packageContext) populateLinuxTree(root string, debLayout bool) error {
 		binDir = filepath.Join(root, "bin")
 		shareDir = filepath.Join(root, "share")
 	}
-	if err := copyFile(c.options.Binary, filepath.Join(binDir, slug), 0o755, c.epoch); err != nil {
+	runtimeFiles, err := c.runtimeFiles("linux")
+	if err != nil {
 		return err
+	}
+	installedBinary := filepath.Join(binDir, slug)
+	if len(runtimeFiles) == 0 {
+		if err := copyFile(c.options.Binary, installedBinary, 0o755, c.epoch); err != nil {
+			return err
+		}
+	} else {
+		libDir := filepath.Join(prefix, "lib", slug)
+		installedBinary = filepath.Join(libDir, slug+".bin")
+		if err := copyFile(c.options.Binary, installedBinary, 0o755, c.epoch); err != nil {
+			return err
+		}
+		if err := c.copyRuntimeFiles("linux", libDir); err != nil {
+			return err
+		}
+		launcher := "#!/bin/sh\nset -eu\nBIN_DIR=$(CDPATH= cd -- \"$(dirname -- \"$0\")\" && pwd)\nPREFIX=$(CDPATH= cd -- \"$BIN_DIR/..\" && pwd)\nAPP_LIB=\"$PREFIX/lib/" + slug + "\"\nexport LD_LIBRARY_PATH=\"$APP_LIB${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}\"\nexec \"$APP_LIB/" + slug + ".bin\" \"$@\"\n"
+		if err := writeFile(filepath.Join(binDir, slug), []byte(launcher), 0o755, c.epoch); err != nil {
+			return err
+		}
 	}
 	desktop := c.linuxDesktopEntry()
 	if err := writeFile(filepath.Join(shareDir, "applications", slug+".desktop"), []byte(desktop), 0o644, c.epoch); err != nil {
+		return err
+	}
+	if err := writeFile(filepath.Join(shareDir, "metainfo", slug+".appdata.xml"), []byte(c.linuxAppStream()), 0o644, c.epoch); err != nil {
 		return err
 	}
 	if icon := c.options.Manifest.IconPathForTarget("linux"); icon != "" {
@@ -98,7 +139,7 @@ func (c *packageContext) populateLinuxTree(root string, debLayout bool) error {
 	if err := c.writeMetadata(filepath.Join(metaDir, "package.json")); err != nil {
 		return err
 	}
-	c.auditDependencies(c.options.Binary, filepath.Join(metaDir, "dependencies.txt"))
+	c.auditDependencies(installedBinary, filepath.Join(metaDir, "dependencies.txt"))
 	if license := strings.TrimSpace(c.options.Manifest.Package.License); license != "" {
 		_ = writeFile(filepath.Join(shareDir, "doc", slug, "license.txt"), []byte(license+"\n"), 0o644, c.epoch)
 	}
@@ -114,6 +155,26 @@ func (c *packageContext) linuxDesktopEntry() string {
 	return fmt.Sprintf("[Desktop Entry]\nType=Application\nName=%s\nComment=%s\nExec=%s\nIcon=%s\nTerminal=false\nCategories=%s;\nStartupNotify=true\n", escapeDesktop(m.App.Name), escapeDesktop(m.Package.Description), m.Slug(), m.Slug(), category)
 }
 
+func (c *packageContext) linuxAppStream() string {
+	m := c.options.Manifest
+	description := firstNonEmpty(m.Package.Description, m.App.Name)
+	homepage := ""
+	if strings.TrimSpace(m.Package.Homepage) != "" {
+		homepage = fmt.Sprintf("  <url type=\"homepage\">%s</url>\n", xmlEscape(m.Package.Homepage))
+	}
+	return fmt.Sprintf(`<?xml version="1.0" encoding="UTF-8"?>
+<component type="desktop-application">
+  <id>%s</id>
+  <name>%s</name>
+  <summary>%s</summary>
+  <metadata_license>CC0-1.0</metadata_license>
+  <project_license>%s</project_license>
+  <launchable type="desktop-id">%s.desktop</launchable>
+%s  <releases><release version="%s" date="%s"/></releases>
+</component>
+`, xmlEscape(m.App.Identifier), xmlEscape(m.App.Name), xmlEscape(description), xmlEscape(firstNonEmpty(m.Package.License, "LicenseRef-proprietary")), m.Slug(), homepage, xmlEscape(m.App.Version), c.epoch.Format("2006-01-02"))
+}
+
 func escapeDesktop(value string) string {
 	value = strings.ReplaceAll(value, "\\", "\\\\")
 	value = strings.ReplaceAll(value, "\n", "\\n")
@@ -125,7 +186,7 @@ func (c *packageContext) populateAppDir(root string) error {
 		return err
 	}
 	slug := c.options.Manifest.Slug()
-	appRun := "#!/bin/sh\nset -eu\nHERE=$(CDPATH= cd -- \"$(dirname -- \"$0\")\" && pwd)\nexec \"$HERE/usr/bin/" + slug + "\" \"$@\"\n"
+	appRun := "#!/bin/sh\nset -eu\nHERE=$(CDPATH= cd -- \"$(dirname -- \"$0\")\" && pwd)\nexport LD_LIBRARY_PATH=\"$HERE/usr/lib/" + slug + "${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}\"\nexec \"$HERE/usr/bin/" + slug + "\" \"$@\"\n"
 	if err := writeFile(filepath.Join(root, "AppRun"), []byte(appRun), 0o755, c.epoch); err != nil {
 		return err
 	}

@@ -287,6 +287,9 @@ func Build(module *mir.Module, options BuildOptions) (*BuildResult, []Diagnostic
 	if UsesDesktop(module) && targetOS == "linux" {
 		args = append(args, "-ldl")
 	}
+	if UsesDesktop(module) && targetOS == "windows" {
+		args = append(args, "-lcomdlg32", "-lshell32", "-lole32", "-luser32")
+	}
 	if UsesTLS(module) || UsesHTTP(module) {
 		args = append(args, "-lssl", "-lcrypto")
 	}

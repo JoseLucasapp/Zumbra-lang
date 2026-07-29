@@ -22,14 +22,17 @@ category = "Development"
 copyright = "Copyright Zumbra contributors"
 
 [linux]
+# runtime_files = ["runtime/libSDL3.so.0", "runtime/libSDL3_ttf.so.0"]
 dependencies = ["libc6"]
 recommends = ["libsdl3-0", "libsdl3-ttf0"]
 
 [windows]
+# runtime_files = ["runtime/SDL3.dll", "runtime/SDL3_ttf.dll"]
 console = true
 installer = "nsis"
 
 [macos]
+# runtime_files = ["runtime/libSDL3.dylib", "runtime/libSDL3_ttf.dylib"]
 minimum_version = "12.0"
 category = "public.app-category.developer-tools"
 

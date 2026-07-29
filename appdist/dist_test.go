@@ -119,8 +119,9 @@ func TestAppImageToolIsInvoked(t *testing.T) {
 	tool := filepath.Join(t.TempDir(), "appimagetool")
 	script := `#!/bin/sh
 set -eu
-printf 'APPIMAGE' > "$2"
-chmod +x "$2"
+for last do :; done
+printf 'APPIMAGE' > "$last"
+chmod +x "$last"
 `
 	if err := os.WriteFile(tool, []byte(script), 0o755); err != nil {
 		t.Fatal(err)
@@ -336,5 +337,151 @@ func TestPackageRejectsArchitectureMismatch(t *testing.T) {
 	_, err := Package(Options{Manifest: manifest, Binary: binary, Target: "linux", Arch: "amd64", Format: "bundle", OutputDir: t.TempDir(), SourceDateEpoch: 1700000000})
 	if err == nil || !strings.Contains(err.Error(), "binary architecture mismatch") {
 		t.Fatalf("expected architecture mismatch, got %v", err)
+	}
+}
+
+func TestCurrentWorkingDirectoryAppImageToolIsDiscovered(t *testing.T) {
+	manifest, _ := testFixture(t)
+	cwd := t.TempDir()
+	tool := filepath.Join(cwd, "tools", "appimagetool-x86_64.AppImage")
+	mustWrite(t, tool, "#!/bin/sh\nexit 0\n")
+	if err := os.Chmod(tool, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	original, err := os.Getwd()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Chdir(cwd); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = os.Chdir(original) })
+	found, err := FindAppImageTool("", manifest.Root, "amd64")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if found != tool {
+		t.Fatalf("expected cwd tool %s, got %s", tool, found)
+	}
+}
+
+func TestPackagesPlatformRuntimeFiles(t *testing.T) {
+	manifest, linuxBinary := testFixture(t)
+	runtimeRoot := filepath.Join(manifest.Root, "runtime")
+	mustWrite(t, filepath.Join(runtimeRoot, "libSDL3.so"), "linux runtime")
+	mustWrite(t, filepath.Join(runtimeRoot, "SDL3.dll"), "windows runtime")
+	mustWrite(t, filepath.Join(runtimeRoot, "libSDL3.dylib"), "mac runtime")
+	manifest.Linux.RuntimeFiles = []string{"runtime/libSDL3.so"}
+	manifest.Windows.RuntimeFiles = []string{"runtime/SDL3.dll"}
+	manifest.MacOS.RuntimeFiles = []string{"runtime/libSDL3.dylib"}
+
+	linux, err := Package(Options{Manifest: manifest, Binary: linuxBinary, Target: "linux", Arch: "amd64", Format: "appdir", OutputDir: t.TempDir(), SourceDateEpoch: 1700000000})
+	if err != nil {
+		t.Fatal(err)
+	}
+	appDir := findArtifact(t, linux, "appdir")
+	for _, path := range []string{
+		filepath.Join(appDir, "usr", "lib", manifest.Slug(), manifest.Slug()+".bin"),
+		filepath.Join(appDir, "usr", "lib", manifest.Slug(), "libSDL3.so"),
+		filepath.Join(appDir, "usr", "bin", manifest.Slug()),
+		filepath.Join(appDir, "usr", "share", "metainfo", manifest.Slug()+".appdata.xml"),
+	} {
+		if _, err := os.Stat(path); err != nil {
+			t.Fatalf("missing Linux packaged runtime file %s: %v", path, err)
+		}
+	}
+
+	windowsBinary := filepath.Join(t.TempDir(), "app.exe")
+	writePEFixture(t, windowsBinary, "amd64")
+	windows, err := Package(Options{Manifest: manifest, Binary: windowsBinary, Target: "windows", Arch: "amd64", Format: "portable", OutputDir: t.TempDir(), SourceDateEpoch: 1700000000})
+	if err != nil {
+		t.Fatal(err)
+	}
+	portable := findArtifact(t, windows, "windows-portable")
+	zipReader, err := zip.OpenReader(portable)
+	if err != nil {
+		t.Fatal(err)
+	}
+	foundDLL := false
+	for _, file := range zipReader.File {
+		if strings.HasSuffix(file.Name, "/SDL3.dll") {
+			foundDLL = true
+		}
+	}
+	_ = zipReader.Close()
+	if !foundDLL {
+		t.Fatal("Windows portable package does not contain runtime DLL")
+	}
+
+	macBinary := filepath.Join(t.TempDir(), "app-macos")
+	writeMachOFixture(t, macBinary, "arm64")
+	mac, err := Package(Options{Manifest: manifest, Binary: macBinary, Target: "macos", Arch: "arm64", Format: "app", OutputDir: t.TempDir(), SourceDateEpoch: 1700000000})
+	if err != nil {
+		t.Fatal(err)
+	}
+	app := findArtifact(t, mac, "macos-app")
+	if _, err := os.Stat(filepath.Join(app, "Contents", "Frameworks", "libSDL3.dylib")); err != nil {
+		t.Fatalf("macOS bundle does not contain runtime dylib: %v", err)
+	}
+}
+
+func TestAppImageUsesPinnedRuntime(t *testing.T) {
+	manifest, binary := testFixture(t)
+	toolDir := t.TempDir()
+	tool := filepath.Join(toolDir, "appimagetool")
+	logPath := filepath.Join(toolDir, "args.txt")
+	runtimePath := filepath.Join(toolDir, "runtime-x86_64")
+	mustWrite(t, runtimePath, "runtime")
+	script := `#!/bin/sh
+set -eu
+printf '%s\n' "$@" > "$ZUMBRA_TEST_ARGS"
+for output do :; done
+printf 'APPIMAGE' > "$output"
+chmod +x "$output"
+`
+	if err := os.WriteFile(tool, []byte(script), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("ZUMBRA_TEST_ARGS", logPath)
+	result, err := Package(Options{Manifest: manifest, Binary: binary, Target: "linux", Arch: "amd64", Format: "appimage", OutputDir: t.TempDir(), AppImageTool: tool, AppImageRuntime: runtimePath, SourceDateEpoch: 1700000000})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if result.Tools["appimage_runtime"] != runtimePath {
+		t.Fatalf("runtime tool was not reported: %#v", result.Tools)
+	}
+	arguments, err := os.ReadFile(logPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(arguments), "--runtime-file\n"+runtimePath) {
+		t.Fatalf("appimagetool did not receive pinned runtime: %s", arguments)
+	}
+}
+
+func TestCacheAppImageRuntimeFromGeneratedELF(t *testing.T) {
+	if _, err := os.Stat("/bin/true"); err != nil {
+		t.Skip("/bin/true is unavailable")
+	}
+	original, err := os.ReadFile("/bin/true")
+	if err != nil {
+		t.Fatal(err)
+	}
+	path := filepath.Join(t.TempDir(), "test.AppImage")
+	payload := append(append([]byte{}, original...), []byte("hsqsfixture")...)
+	if err := os.WriteFile(path, payload, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("XDG_CACHE_HOME", t.TempDir())
+	cached, err := cacheAppImageRuntime(path, "amd64")
+	if err != nil {
+		t.Fatal(err)
+	}
+	data, err := os.ReadFile(cached)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !bytes.Equal(data, original) {
+		t.Fatalf("cached runtime has %d bytes, expected %d", len(data), len(original))
 	}
 }

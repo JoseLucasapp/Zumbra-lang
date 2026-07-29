@@ -1,0 +1,33 @@
+import "../../std/desktop.zum" as desktop;
+import "../../std/ui.zum" as ui;
+
+var application << desktop.app({
+    "backend": "auto",
+    "name": "Zumbra Multiplatform Smoke",
+    "version": "0.10.2",
+    "identifier": "dev.zumbra.multiplatform-smoke",
+    "quitOnLastWindow": true
+});
+
+var window << application.window({
+    "title": "Zumbra Multiplatform Smoke",
+    "width": 480,
+    "height": 240,
+    "hidden": true,
+    "resizable": true,
+    "highDPI": true
+});
+
+var root << ui.columnWith({"padding": 16, "gap": 8}, [
+    ui.textWith("Zumbra Desktop", {"fontSize": 20, "fontWeight": "bold"}),
+    ui.text("SDL3 + SDL3_ttf + UTF-8: ação, café, São João"),
+    ui.button("OK", fct(event) { event; application.quit(); })
+]);
+
+var context << ui.mount(application, window, root, {"theme": ui.theme("dark")});
+ui.render(context);
+show(application.backend());
+show(sizeOf(ui.accessibility(context)) > 0);
+ui.unmount(context);
+window.close();
+application.close();

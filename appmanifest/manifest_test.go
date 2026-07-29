@@ -150,3 +150,62 @@ include = ["assets/**"]
 		t.Fatalf("expected three icons, got %d", len(assets))
 	}
 }
+
+func TestRuntimeFilesAreResolvedPerTarget(t *testing.T) {
+	root := t.TempDir()
+	mustWrite(t, filepath.Join(root, "src", "main.zum"), []byte("show(1);"))
+	for _, name := range []string{"libSDL3.so", "SDL3.dll", "libSDL3.dylib"} {
+		mustWrite(t, filepath.Join(root, "runtime", name), []byte(name))
+	}
+	mustWrite(t, filepath.Join(root, DefaultManifestName), []byte(`[app]
+name = "Runtime Files"
+version = "1.0.0"
+identifier = "dev.zumbra.runtimefiles"
+entry = "src/main.zum"
+
+[linux]
+runtime_files = ["runtime/libSDL3.so"]
+
+[windows]
+runtime_files = ["runtime/SDL3.dll"]
+
+[macos]
+runtime_files = ["runtime/libSDL3.dylib"]
+`))
+	manifest, err := Load(filepath.Join(root, DefaultManifestName))
+	if err != nil {
+		t.Fatal(err)
+	}
+	cases := map[string]string{
+		"linux":   "libSDL3.so",
+		"windows": "SDL3.dll",
+		"macos":   "libSDL3.dylib",
+	}
+	for target, expected := range cases {
+		files, err := manifest.RuntimeFilesForTarget(target)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if len(files) != 1 || filepath.Base(files[0]) != expected {
+			t.Fatalf("unexpected %s runtime files: %#v", target, files)
+		}
+	}
+}
+
+func TestRuntimeFilesRejectSymlinksAndDuplicateNames(t *testing.T) {
+	root := t.TempDir()
+	mustWrite(t, filepath.Join(root, "main.zum"), []byte("show(1);"))
+	mustWrite(t, filepath.Join(root, "one", "SDL3.dll"), []byte("one"))
+	mustWrite(t, filepath.Join(root, "two", "SDL3.dll"), []byte("two"))
+	mustWrite(t, filepath.Join(root, DefaultManifestName), []byte(`[app]
+name = "Duplicate"
+version = "1.0.0"
+identifier = "dev.zumbra.duplicate"
+entry = "main.zum"
+[windows]
+runtime_files = ["one/SDL3.dll", "two/SDL3.dll"]
+`))
+	if _, err := Load(filepath.Join(root, DefaultManifestName)); err == nil {
+		t.Fatal("expected duplicate runtime filename error")
+	}
+}

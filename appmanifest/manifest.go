@@ -49,16 +49,19 @@ type Package struct {
 type Linux struct {
 	Dependencies []string `json:"dependencies,omitempty"`
 	Recommends   []string `json:"recommends,omitempty"`
+	RuntimeFiles []string `json:"runtime_files,omitempty"`
 }
 
 type Windows struct {
-	Console   bool   `json:"console"`
-	Installer string `json:"installer,omitempty"`
+	Console      bool     `json:"console"`
+	Installer    string   `json:"installer,omitempty"`
+	RuntimeFiles []string `json:"runtime_files,omitempty"`
 }
 
 type MacOS struct {
-	MinimumVersion string `json:"minimum_version,omitempty"`
-	Category       string `json:"category,omitempty"`
+	MinimumVersion string   `json:"minimum_version,omitempty"`
+	Category       string   `json:"category,omitempty"`
+	RuntimeFiles   []string `json:"runtime_files,omitempty"`
 }
 
 type Updates struct {
@@ -197,6 +200,27 @@ func (m *Manifest) Validate() error {
 	if m.Windows.Installer != "" && m.Windows.Installer != "nsis" && m.Windows.Installer != "none" {
 		return fmt.Errorf("manifest [windows].installer must be nsis or none")
 	}
+	for target, files := range map[string][]string{"linux": m.Linux.RuntimeFiles, "windows": m.Windows.RuntimeFiles, "macos": m.MacOS.RuntimeFiles} {
+		seen := map[string]bool{}
+		for _, value := range files {
+			path, err := m.Resolve(value)
+			if err != nil {
+				return fmt.Errorf("manifest [%s].runtime_files: %w", target, err)
+			}
+			info, err := os.Lstat(path)
+			if err != nil {
+				return fmt.Errorf("manifest [%s].runtime_files %s: %w", target, path, err)
+			}
+			if info.IsDir() || info.Mode()&os.ModeSymlink != 0 || !info.Mode().IsRegular() {
+				return fmt.Errorf("manifest [%s].runtime_files entry %q must be a regular non-symlink file", target, value)
+			}
+			name := strings.ToLower(filepath.Base(path))
+			if seen[name] {
+				return fmt.Errorf("manifest [%s].runtime_files contains duplicate filename %q", target, filepath.Base(path))
+			}
+			seen[name] = true
+		}
+	}
 	if m.Assets.MaxFileBytes <= 0 || m.Assets.MaxTotalBytes <= 0 {
 		return fmt.Errorf("asset size limits must be positive")
 	}
@@ -245,6 +269,29 @@ func (m *Manifest) IconForTarget(target string) string {
 	}
 	return m.App.Icon
 }
+func (m *Manifest) RuntimeFilesForTarget(target string) ([]string, error) {
+	var values []string
+	switch strings.ToLower(strings.TrimSpace(target)) {
+	case "linux":
+		values = m.Linux.RuntimeFiles
+	case "windows":
+		values = m.Windows.RuntimeFiles
+	case "macos", "darwin":
+		values = m.MacOS.RuntimeFiles
+	default:
+		return nil, fmt.Errorf("unsupported runtime target %q", target)
+	}
+	result := make([]string, 0, len(values))
+	for _, value := range values {
+		path, err := m.Resolve(value)
+		if err != nil {
+			return nil, err
+		}
+		result = append(result, path)
+	}
+	return result, nil
+}
+
 func (m *Manifest) IconPathForTarget(target string) string {
 	value := m.IconForTarget(target)
 	if value == "" {
@@ -423,14 +470,26 @@ func assign(m *Manifest, section, key, raw string) error {
 		values, err := parseStringArray(raw)
 		m.Linux.Recommends = values
 		return err
+	case "linux.runtime_files":
+		values, err := parseStringArray(raw)
+		m.Linux.RuntimeFiles = values
+		return err
 	case "windows.console":
 		return setBool(raw, &m.Windows.Console)
 	case "windows.installer":
 		return setString(raw, &m.Windows.Installer)
+	case "windows.runtime_files":
+		values, err := parseStringArray(raw)
+		m.Windows.RuntimeFiles = values
+		return err
 	case "macos.minimum_version":
 		return setString(raw, &m.MacOS.MinimumVersion)
 	case "macos.category":
 		return setString(raw, &m.MacOS.Category)
+	case "macos.runtime_files":
+		values, err := parseStringArray(raw)
+		m.MacOS.RuntimeFiles = values
+		return err
 	case "updates.url":
 		return setString(raw, &m.Updates.URL)
 	case "updates.channel":
