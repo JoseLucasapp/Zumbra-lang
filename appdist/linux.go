@@ -170,6 +170,7 @@ func (c *packageContext) appStreamFileName() string {
 func (c *packageContext) linuxAppStream() string {
 	m := c.options.Manifest
 	description := firstNonEmpty(m.Package.Description, m.App.Name)
+	paragraph := appStreamDescription(m.App.Name, description)
 	summary := strings.TrimSpace(description)
 	summary = strings.TrimRight(summary, ".!?")
 	if summary == "" {
@@ -197,7 +198,19 @@ func (c *packageContext) linuxAppStream() string {
 %s%s  <content_rating type="oars-1.1"/>
   <releases><release version="%s" date="%s"/></releases>
 </component>
-`, xmlEscape(m.App.Identifier), xmlEscape(m.App.Name), xmlEscape(summary), xmlEscape(firstNonEmpty(m.Package.License, "LicenseRef-proprietary")), xmlEscape(description), c.linuxDesktopFileName(), developer, homepage, xmlEscape(m.App.Version), c.epoch.Format("2006-01-02"))
+`, xmlEscape(m.App.Identifier), xmlEscape(m.App.Name), xmlEscape(summary), xmlEscape(firstNonEmpty(m.Package.License, "LicenseRef-proprietary")), xmlEscape(paragraph), c.linuxDesktopFileName(), developer, homepage, xmlEscape(m.App.Version), c.epoch.Format("2006-01-02"))
+}
+
+func appStreamDescription(appName, description string) string {
+	description = strings.TrimSpace(description)
+	if description == "" {
+		description = appName + " is a desktop application built with Zumbra."
+	}
+	paragraph := fmt.Sprintf("%s provides a native desktop experience packaged with the metadata, application assets, and runtime integration required for installation and portable distribution.", description)
+	if len([]rune(paragraph)) < 100 {
+		paragraph += " It is designed to run consistently across supported desktop environments."
+	}
+	return paragraph
 }
 
 func escapeDesktop(value string) string {

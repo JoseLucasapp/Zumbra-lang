@@ -11,6 +11,11 @@ BINARY="$TOOLS/zumbra-packaged-app"
 PACKAGES="$TOOLS/linux-packages"
 EXPECTED=$'Olá do asset incorporado!\n\ntrue\n5'
 
+printf 'Cleaning generated files before Z15 validation...\n'
+scripts/clean-generated.sh
+printf 'Checking repository hygiene...\n'
+scripts/check-repository-hygiene.sh
+
 printf 'Running complete Z15 tests...\n'
 go test ./appmanifest ./appdist
 go test ./nativec -run 'Test(WindowsResourceContainsApplicationMetadata|ExecutableNameUsesTarget|DetectTargetCompilerFromEnvironment|DesktopRuntimeContainsWindowsAndMacOSBackends|Z15AssetRuntimeIsConditionallyEnabled|Z15BuildWritesEmbeddedAssetSource|Z15EmbeddedAssetRunsNatively)$'
@@ -47,7 +52,7 @@ if [[ "$GUI_OUTPUT" != $'headless\ntrue' ]]; then
 fi
 
 printf 'Checking that operational doctor errors do not print global usage...\n'
-if "$CLI" app doctor --manifest "$MANIFEST" --target linux --arch amd64 --format appimage --appimagetool /definitely/missing > "$TOOLS/doctor-error.log" 2>&1; then
+if "$CLI" app doctor --manifest "$MANIFEST" --target linux --arch amd64 --format appimage --appimagetool "$TOOLS/definitely-missing-appimagetool" > "$TOOLS/doctor-error.log" 2>&1; then
   printf 'Doctor unexpectedly accepted a missing appimagetool.\n' >&2
   exit 1
 fi
@@ -92,6 +97,8 @@ test -x "$PACKAGES/zumbra-packaged-app-1.0.0-linux-amd64.AppDir/AppRun"
 test -f "$PACKAGES/zumbra-packaged-app-1.0.0-linux-amd64.AppDir/dev.zumbra.packaged.desktop"
 APPSTREAM_METADATA="$PACKAGES/zumbra-packaged-app-1.0.0-linux-amd64.AppDir/usr/share/metainfo/dev.zumbra.packaged.appdata.xml"
 test -f "$APPSTREAM_METADATA"
+grep -q '<url type="homepage">https://github.com/JoseLucasapp/Zumbra-lang</url>' "$APPSTREAM_METADATA"
+grep -q 'native desktop experience packaged with the metadata' "$APPSTREAM_METADATA"
 if command -v appstreamcli >/dev/null 2>&1; then
   printf 'Validating AppStream metadata without network access...\n'
   AS_VALIDATE_NONET=1 appstreamcli validate "$APPSTREAM_METADATA"
@@ -108,6 +115,13 @@ test ! -e "$PACKAGES/zumbra-packaged-app-1.0.0-linux-amd64.AppImage"
 if command -v dpkg-deb >/dev/null 2>&1; then
   dpkg-deb --info "$PACKAGES/zumbra-packaged-app_1.0.0_amd64.deb" >/dev/null
 fi
+
+printf 'Checking that implicit package builds do not pollute the project tree...\n'
+rm -rf code_examples/desktop_package/build
+SOURCE_DATE_EPOCH=1700000000 "$CLI" app package \
+  --manifest "$MANIFEST" --target linux --arch amd64 \
+  --format appdir --output-dir "$TOOLS/implicit-build-packages" >/dev/null
+test ! -e code_examples/desktop_package/build
 
 printf 'Creating target-correct Windows and macOS package fixtures...\n'
 PE_BINARY="$TOOLS/zumbra-packaged-app.exe"
@@ -164,4 +178,6 @@ grep -q 'zumbra-packaged-app-1.0.0' "$PACKAGES/zumbra-packaged-app-1.0.0-linux-a
 grep -q 'stable' "$PACKAGES/zumbra-packaged-app-1.0.0-linux-amd64-update.json"
 grep -q '"binary"' "$PACKAGES/zumbra-packaged-app-1.0.0-linux-amd64-package-report.json"
 
+scripts/clean-generated.sh >/dev/null
+scripts/check-repository-hygiene.sh
 printf 'Z15 desktop distribution tests passed.\n'

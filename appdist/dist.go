@@ -99,6 +99,9 @@ func Package(options Options) (*Result, error) {
 	}
 	wants := func(name string) bool { return formats["all"] || formats[name] }
 	if options.Target == "linux" && wants("appimage") {
+		if strings.TrimSpace(options.Manifest.Package.Homepage) == "" {
+			return nil, fmt.Errorf("AppImage requires package.homepage for valid AppStream metadata")
+		}
 		tool, findErr := FindAppImageTool(options.AppImageTool, options.Manifest.Root, options.Arch)
 		if findErr != nil {
 			return nil, fmt.Errorf("AppImage requested but appimagetool is unavailable: %s", AppImageInstallHint(options.Arch))

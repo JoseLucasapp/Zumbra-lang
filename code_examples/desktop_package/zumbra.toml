@@ -14,8 +14,9 @@ compiler = "auto"
 release = true
 
 [package]
-description = "A small packaged application written in Zumbra."
+description = "A native desktop packaging example written in Zumbra"
 publisher = "Zumbra"
+homepage = "https://github.com/JoseLucasapp/Zumbra-lang"
 license = "Apache-2.0"
 category = "Development"
 copyright = "Copyright Zumbra contributors"

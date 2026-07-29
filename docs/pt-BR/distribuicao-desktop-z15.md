@@ -33,7 +33,7 @@ release = true
 [package]
 description = "Aplicativo desktop escrito em Zumbra."
 publisher = "Minha Empresa"
-# homepage = "https://seu-dominio.example"
+homepage = "https://seu-dominio.example"
 license = "Apache-2.0"
 category = "Utility"
 
@@ -62,6 +62,8 @@ exclude = ["**/*.tmp"]
 ```
 
 `icon` é o fallback. Os ícones específicos substituem esse valor apenas no alvo correspondente.
+
+`package.homepage` é obrigatório quando o formato AppImage é solicitado. O valor é incorporado à metadata AppStream e evita que a validação oficial do `appimagetool` rejeite o pacote por falta de homepage.
 
 `runtime_files` inclui bibliotecas dinâmicas não pertencentes ao sistema operacional. Os arquivos precisam estar dentro do projeto, não podem ser symlinks e não podem gerar nomes de destino duplicados.
 
@@ -126,7 +128,9 @@ Artefatos:
 - AppDir;
 - AppImage real.
 
-O AppDir inclui arquivo `.desktop`, ícone e metadata AppStream completa em `usr/share/metainfo/<identificador>.appdata.xml`.
+O AppDir inclui arquivo `.desktop`, ícone e metadata AppStream completa em `usr/share/metainfo/<identificador>.appdata.xml`. A descrição AppStream é expandida para um parágrafo informativo quando a descrição curta do manifesto não é suficiente para o validador.
+
+Quando `app package` precisa compilar o executável automaticamente, o código C intermediário e o binário de trabalho são criados em um diretório temporário. Apenas os artefatos finais permanecem no diretório de saída.
 
 ### Descoberta do appimagetool
 

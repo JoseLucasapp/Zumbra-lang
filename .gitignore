@@ -39,3 +39,21 @@ build.bat
 build.sh
 test.zum
 index.html
+
+# Generated directories anywhere in the repository
+**/build/
+**/dist/
+**/out/
+**/release/
+**/.cache/
+**/tmp/
+
+# Desktop distribution artifacts
+*.AppImage
+*.deb
+*.dmg
+*.pkg
+*-setup.exe
+*-installer.exe
+*-portable.zip
+*-macos-*.zip

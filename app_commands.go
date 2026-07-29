@@ -43,6 +43,7 @@ type appCLIOptions struct {
 	Symbols         bool
 	JSON            bool
 	SourceDateEpoch int64
+	BuildDir        string // internal native build directory override
 }
 
 func handleAppCommand(arguments []string) error {
@@ -308,9 +309,13 @@ func buildAppBinary(manifest *appmanifest.Manifest, cli appCLIOptions) (string, 
 	if buildArch == "" || buildArch == "host" {
 		buildArch = runtime.GOARCH
 	}
+	buildDir := strings.TrimSpace(cli.BuildDir)
+	if buildDir == "" {
+		buildDir = filepath.Join(manifest.Root, "build", "native", baseName, buildTarget, buildArch)
+	}
 	buildResult, nativeDiagnostics, err := nativec.Build(result.MIR, nativec.BuildOptions{
 		Release: release, Compiler: compilerName, Output: output,
-		BuildDir: filepath.Join(manifest.Root, "build", "native", baseName, buildTarget, buildArch), EmbeddedAssets: nativeAssets,
+		BuildDir: buildDir, EmbeddedAssets: nativeAssets,
 		TargetOS: cli.Target, TargetArch: cli.Arch, Reproducible: true, ProjectRoot: manifest.Root, SourceDateEpoch: cli.SourceDateEpoch,
 		ApplicationName: manifest.App.Name, ApplicationVersion: manifest.App.Version, ApplicationIdentifier: manifest.App.Identifier,
 		WindowsIcon: manifest.IconPathForTarget("windows"), WindowsConsole: manifest.Windows.Console,
@@ -361,9 +366,14 @@ func packageApp(manifest *appmanifest.Manifest, cli appCLIOptions) error {
 		if target == "windows" {
 			name += ".exe"
 		}
-		buildOutput := filepath.Join(manifest.Root, "build", "package", target, arch, name)
+		temporaryBuild, err := os.MkdirTemp("", "zumbra-package-build-")
+		if err != nil {
+			return fmt.Errorf("create temporary package build directory: %w", err)
+		}
+		defer os.RemoveAll(temporaryBuild)
 		buildCLI := cli
-		buildCLI.Output = buildOutput
+		buildCLI.Output = filepath.Join(temporaryBuild, name)
+		buildCLI.BuildDir = filepath.Join(temporaryBuild, "native")
 		built, _, _, _, _, err := buildAppBinary(manifest, buildCLI)
 		if err != nil {
 			return err
@@ -480,6 +490,12 @@ func doctorApp(manifest *appmanifest.Manifest, cli appCLIOptions) error {
 
 	wants := func(name string) bool { return formats["all"] || formats[name] }
 	if target == "linux" && wants("appimage") {
+		homepage := strings.TrimSpace(manifest.Package.Homepage)
+		homepageErr := error(nil)
+		if homepage == "" {
+			homepageErr = fmt.Errorf("package.homepage is required for AppImage AppStream metadata")
+		}
+		add("AppStream homepage", true, homepageErr, homepage)
 		tool, toolErr := appdist.FindAppImageTool(cli.AppImageTool, manifest.Root, arch)
 		if toolErr != nil {
 			toolErr = fmt.Errorf("%s; searched: %s", appdist.AppImageInstallHint(arch), appdist.FormatToolSearch(appdist.AppImageToolCandidates(cli.AppImageTool, manifest.Root, arch)))

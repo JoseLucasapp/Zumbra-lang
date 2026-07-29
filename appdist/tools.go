@@ -138,7 +138,8 @@ func uniqueCandidates(values []string) []string {
 }
 
 func findExecutable(candidates []string, label string) (string, error) {
-	for _, candidate := range uniqueCandidates(candidates) {
+	values := uniqueCandidates(candidates)
+	for _, candidate := range values {
 		if strings.ContainsRune(candidate, filepath.Separator) || filepath.IsAbs(candidate) {
 			absolute, err := filepath.Abs(candidate)
 			if err != nil {
@@ -154,11 +155,20 @@ func findExecutable(candidates []string, label string) (string, error) {
 			return path, nil
 		}
 	}
+	if len(values) == 1 {
+		candidate := values[0]
+		if strings.ContainsRune(candidate, filepath.Separator) || filepath.IsAbs(candidate) {
+			if absolute, err := filepath.Abs(candidate); err == nil {
+				return "", fmt.Errorf("%s %q does not exist or is not executable", label, absolute)
+			}
+		}
+	}
 	return "", fmt.Errorf("%s was not found", label)
 }
 
 func findReadableFile(candidates []string, label string) (string, error) {
-	for _, candidate := range uniqueCandidates(candidates) {
+	values := uniqueCandidates(candidates)
+	for _, candidate := range values {
 		absolute, err := filepath.Abs(candidate)
 		if err != nil {
 			continue
@@ -166,6 +176,11 @@ func findReadableFile(candidates []string, label string) (string, error) {
 		info, err := os.Stat(absolute)
 		if err == nil && !info.IsDir() && info.Mode().IsRegular() {
 			return absolute, nil
+		}
+	}
+	if len(values) == 1 {
+		if absolute, err := filepath.Abs(values[0]); err == nil {
+			return "", fmt.Errorf("%s %q does not exist or is not a readable regular file", label, absolute)
 		}
 	}
 	return "", fmt.Errorf("%s was not found", label)

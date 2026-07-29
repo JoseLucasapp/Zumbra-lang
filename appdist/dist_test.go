@@ -565,6 +565,7 @@ func TestLinuxAppStreamMetadataIsCompleteAndNamedByComponentID(t *testing.T) {
 		Description   string `xml:"description>p"`
 		Launchable    string `xml:"launchable"`
 		DeveloperName string `xml:"developer>name"`
+		Homepage      string `xml:"url"`
 		ContentRating struct {
 			Type string `xml:"type,attr"`
 		} `xml:"content_rating"`
@@ -578,8 +579,8 @@ func TestLinuxAppStreamMetadataIsCompleteAndNamedByComponentID(t *testing.T) {
 	if strings.HasSuffix(document.Summary, ".") {
 		t.Fatalf("AppStream summary must not end in a period: %q", document.Summary)
 	}
-	if document.Description != manifest.Package.Description {
-		t.Fatalf("missing AppStream description: %q", document.Description)
+	if !strings.Contains(document.Description, manifest.Package.Description) || len([]rune(document.Description)) < 100 {
+		t.Fatalf("AppStream description is incomplete or too short: %q", document.Description)
 	}
 	if document.Launchable != manifest.App.Identifier+".desktop" {
 		t.Fatalf("unexpected launchable %q", document.Launchable)
@@ -587,7 +588,32 @@ func TestLinuxAppStreamMetadataIsCompleteAndNamedByComponentID(t *testing.T) {
 	if document.DeveloperName != manifest.Package.Publisher {
 		t.Fatalf("missing developer name: %q", document.DeveloperName)
 	}
+	if document.Homepage != manifest.Package.Homepage {
+		t.Fatalf("missing homepage: %q", document.Homepage)
+	}
 	if document.ContentRating.Type != "oars-1.1" {
 		t.Fatalf("missing content rating: %#v", document.ContentRating)
+	}
+}
+
+func TestAppImageRequiresHomepage(t *testing.T) {
+	manifest, binary := testFixture(t)
+	manifest.Package.Homepage = ""
+	tool := filepath.Join(t.TempDir(), "appimagetool")
+	mustWrite(t, tool, "#!/bin/sh\nexit 0\n")
+	if err := os.Chmod(tool, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	_, err := Package(Options{Manifest: manifest, Binary: binary, Target: "linux", Arch: "amd64", Format: "appimage", OutputDir: t.TempDir(), AppImageTool: tool})
+	if err == nil || !strings.Contains(err.Error(), "package.homepage") {
+		t.Fatalf("expected homepage requirement, got %v", err)
+	}
+}
+
+func TestExplicitMissingExecutableReportsPath(t *testing.T) {
+	missing := filepath.Join(t.TempDir(), "missing-tool")
+	_, err := findExecutable([]string{missing}, "test tool")
+	if err == nil || !strings.Contains(err.Error(), missing) || !strings.Contains(err.Error(), "not executable") {
+		t.Fatalf("unexpected explicit tool error: %v", err)
 	}
 }

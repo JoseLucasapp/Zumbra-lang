@@ -49,3 +49,21 @@ O script instala uma versão fixada no cache do usuário. O executável não é 
 ## Histórico Git
 
 Remover arquivos do diretório atual reduz clones e ZIPs futuros, mas não remove objetos já existentes no histórico Git. Uma reescrita de histórico deve ser feita separadamente, com backup e coordenação com todos os clones, somente quando o tamanho de `.git` continuar alto.
+
+
+## Verificação automática
+
+```bash
+scripts/check-repository-hygiene.sh
+```
+
+O comando falha quando encontra diretórios gerados (`build`, `dist`, `out`, `release`, `delivery` ou `tools`) ou arquivos individuais maiores que 5 MB fora de `.git`.
+
+## Diagnóstico do histórico Git
+
+```bash
+du -sh . .git 2>/dev/null
+git count-objects -vH
+```
+
+Se o diretório de trabalho estiver pequeno, mas `.git` continuar grande, o peso está no histórico. `.gitignore` e a remoção dos arquivos atuais não apagam commits antigos. Uma reescrita com `git filter-repo` só deve ser feita com backup e coordenação, pois altera os hashes dos commits e exige atualizar todos os clones.

@@ -72,4 +72,4 @@
 
 ## Estado
 
-A implementação e o hardening do Z15 estão encerrados na versão 0.10.3. A suíte local Linux e a matriz real de CI continuam sendo gates de release, mas não há item de implementação do Z15 pendente antes do Z16.
+A implementação e o hardening do Z15 estão encerrados na versão 0.10.4. A suíte local Linux e a matriz real de CI continuam sendo gates de release, mas não há item de implementação do Z15 pendente antes do Z16.

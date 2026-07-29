@@ -271,7 +271,7 @@ zumbra app package --manifest zumbra.toml
 
 Z15 adds one target-aware packaging command for Linux, Windows and macOS. It creates Linux bundles, `.deb`, AppDir/AppImage, Windows portable ZIP/NSIS installers, and macOS `.app`/ZIP bundles. Packages include platform metadata, icons, embedded assets, dependency audits, deterministic timestamps, SHA-256 checksums, update descriptors, optional signatures and optional debug symbols. See [`docs/pt-BR/distribuicao-desktop-z15.md`](./docs/pt-BR/distribuicao-desktop-z15.md).
 
-Zumbra 0.10.3 completes the Z15 implementation and maintenance pass with Linux, Windows and macOS desktop/GUI runtime paths, valid AppStream metadata, strict external-tool precedence, reproducible packages, and repository cleanup. See [`docs/releases/0.10.3.md`](./docs/releases/0.10.3.md).
+Zumbra 0.10.4 completes the Z15 implementation and maintenance pass with Linux, Windows and macOS desktop/GUI runtime paths, valid AppStream metadata, strict external-tool precedence, reproducible packages, and repository cleanup. See [`docs/releases/0.10.4.md`](./docs/releases/0.10.4.md).
 
 AppImage tooling is external and is never stored in the repository. Install it in the Zumbra cache with:
 
@@ -288,6 +288,7 @@ Generated binaries, native C output, package directories, AppImages, installers,
 ```bash
 scripts/clean-generated.sh
 scripts/clean-generated.sh --local-tools
+scripts/check-repository-hygiene.sh
 ```
 
 Release packages belong in the release service or CI artifacts, not in the Git tree. The source archive should contain only language sources, tests, documentation, examples, and small public assets. See [`docs/pt-BR/higiene-do-repositorio.md`](./docs/pt-BR/higiene-do-repositorio.md).
