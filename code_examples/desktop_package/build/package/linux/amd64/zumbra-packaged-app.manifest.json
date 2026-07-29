@@ -1,6 +1,6 @@
 {
   "schema_version": 2,
-  "zumbra_version": "0.10.1",
+  "zumbra_version": "0.10.3",
   "app": {
     "name": "Zumbra Packaged App",
     "version": "1.0.0",
@@ -14,13 +14,12 @@
   "package": {
     "description": "A small packaged application written in Zumbra.",
     "publisher": "Zumbra",
-    "homepage": "https://example.com/zumbra",
     "license": "Apache-2.0",
     "category": "Development",
     "copyright": "Copyright Zumbra contributors"
   },
   "updates": {
-    "url": "https://example.com/zumbra/releases",
+    "url": "https://updates.example.invalid/zumbra",
     "channel": "stable"
   },
   "assets": [

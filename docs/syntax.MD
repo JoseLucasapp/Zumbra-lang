@@ -1044,5 +1044,5 @@ zumbra app package --target windows --format installer
 zumbra app package --target macos --format app,zip
 ```
 
-`app doctor` verifica compilador, runtime, formato do binário e ferramentas externas antes de criar artefatos. O empacotador rejeita binários cujo sistema ou arquitetura não correspondam ao alvo. Consulte `docs/pt-BR/distribuicao-desktop-z15.md` e `docs/pt-BR/fechamento-z15-0.10.2.md`.
+`app doctor` verifica compilador, runtime, formato do binário e ferramentas externas antes de criar artefatos. O empacotador rejeita binários cujo sistema ou arquitetura não correspondam ao alvo. Consulte `docs/pt-BR/distribuicao-desktop-z15.md` e `docs/releases/0.10.3.md`.
 

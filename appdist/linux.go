@@ -120,10 +120,10 @@ func (c *packageContext) populateLinuxTree(root string, debLayout bool) error {
 		}
 	}
 	desktop := c.linuxDesktopEntry()
-	if err := writeFile(filepath.Join(shareDir, "applications", slug+".desktop"), []byte(desktop), 0o644, c.epoch); err != nil {
+	if err := writeFile(filepath.Join(shareDir, "applications", c.linuxDesktopFileName()), []byte(desktop), 0o644, c.epoch); err != nil {
 		return err
 	}
-	if err := writeFile(filepath.Join(shareDir, "metainfo", slug+".appdata.xml"), []byte(c.linuxAppStream()), 0o644, c.epoch); err != nil {
+	if err := writeFile(filepath.Join(shareDir, "metainfo", c.appStreamFileName()), []byte(c.linuxAppStream()), 0o644, c.epoch); err != nil {
 		return err
 	}
 	if icon := c.options.Manifest.IconPathForTarget("linux"); icon != "" {
@@ -131,7 +131,7 @@ func (c *packageContext) populateLinuxTree(root string, debLayout bool) error {
 		if ext == "" {
 			ext = ".png"
 		}
-		if err := copyFile(icon, filepath.Join(shareDir, "icons", "hicolor", "256x256", "apps", slug+ext), 0o644, c.epoch); err != nil {
+		if err := copyFile(icon, filepath.Join(shareDir, "icons", "hicolor", "256x256", "apps", c.linuxIconName()+ext), 0o644, c.epoch); err != nil {
 			return err
 		}
 	}
@@ -152,15 +152,36 @@ func (c *packageContext) linuxDesktopEntry() string {
 	if category == "" {
 		category = "Utility"
 	}
-	return fmt.Sprintf("[Desktop Entry]\nType=Application\nName=%s\nComment=%s\nExec=%s\nIcon=%s\nTerminal=false\nCategories=%s;\nStartupNotify=true\n", escapeDesktop(m.App.Name), escapeDesktop(m.Package.Description), m.Slug(), m.Slug(), category)
+	return fmt.Sprintf("[Desktop Entry]\nType=Application\nName=%s\nComment=%s\nExec=%s\nIcon=%s\nTerminal=false\nCategories=%s;\nStartupNotify=true\n", escapeDesktop(m.App.Name), escapeDesktop(m.Package.Description), m.Slug(), c.linuxIconName(), category)
+}
+
+func (c *packageContext) linuxDesktopFileName() string {
+	return c.options.Manifest.App.Identifier + ".desktop"
+}
+
+func (c *packageContext) linuxIconName() string {
+	return c.options.Manifest.App.Identifier
+}
+
+func (c *packageContext) appStreamFileName() string {
+	return c.options.Manifest.App.Identifier + ".appdata.xml"
 }
 
 func (c *packageContext) linuxAppStream() string {
 	m := c.options.Manifest
 	description := firstNonEmpty(m.Package.Description, m.App.Name)
+	summary := strings.TrimSpace(description)
+	summary = strings.TrimRight(summary, ".!?")
+	if summary == "" {
+		summary = m.App.Name
+	}
 	homepage := ""
 	if strings.TrimSpace(m.Package.Homepage) != "" {
 		homepage = fmt.Sprintf("  <url type=\"homepage\">%s</url>\n", xmlEscape(m.Package.Homepage))
+	}
+	developer := ""
+	if publisher := strings.TrimSpace(m.Package.Publisher); publisher != "" {
+		developer = fmt.Sprintf("  <developer id=\"%s\"><name>%s</name></developer>\n", xmlEscape(m.App.Identifier), xmlEscape(publisher))
 	}
 	return fmt.Sprintf(`<?xml version="1.0" encoding="UTF-8"?>
 <component type="desktop-application">
@@ -169,10 +190,14 @@ func (c *packageContext) linuxAppStream() string {
   <summary>%s</summary>
   <metadata_license>CC0-1.0</metadata_license>
   <project_license>%s</project_license>
-  <launchable type="desktop-id">%s.desktop</launchable>
-%s  <releases><release version="%s" date="%s"/></releases>
+  <description>
+    <p>%s</p>
+  </description>
+  <launchable type="desktop-id">%s</launchable>
+%s%s  <content_rating type="oars-1.1"/>
+  <releases><release version="%s" date="%s"/></releases>
 </component>
-`, xmlEscape(m.App.Identifier), xmlEscape(m.App.Name), xmlEscape(description), xmlEscape(firstNonEmpty(m.Package.License, "LicenseRef-proprietary")), m.Slug(), homepage, xmlEscape(m.App.Version), c.epoch.Format("2006-01-02"))
+`, xmlEscape(m.App.Identifier), xmlEscape(m.App.Name), xmlEscape(summary), xmlEscape(firstNonEmpty(m.Package.License, "LicenseRef-proprietary")), xmlEscape(description), c.linuxDesktopFileName(), developer, homepage, xmlEscape(m.App.Version), c.epoch.Format("2006-01-02"))
 }
 
 func escapeDesktop(value string) string {
@@ -190,7 +215,7 @@ func (c *packageContext) populateAppDir(root string) error {
 	if err := writeFile(filepath.Join(root, "AppRun"), []byte(appRun), 0o755, c.epoch); err != nil {
 		return err
 	}
-	if err := writeFile(filepath.Join(root, slug+".desktop"), []byte(c.linuxDesktopEntry()), 0o644, c.epoch); err != nil {
+	if err := writeFile(filepath.Join(root, c.linuxDesktopFileName()), []byte(c.linuxDesktopEntry()), 0o644, c.epoch); err != nil {
 		return err
 	}
 	if icon := c.options.Manifest.IconPathForTarget("linux"); icon != "" {
@@ -198,7 +223,7 @@ func (c *packageContext) populateAppDir(root string) error {
 		if ext == "" {
 			ext = ".png"
 		}
-		if err := copyFile(icon, filepath.Join(root, slug+ext), 0o644, c.epoch); err != nil {
+		if err := copyFile(icon, filepath.Join(root, c.linuxIconName()+ext), 0o644, c.epoch); err != nil {
 			return err
 		}
 	}

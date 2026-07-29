@@ -3,6 +3,7 @@ package appdist
 import (
 	"archive/zip"
 	"bytes"
+	"encoding/xml"
 	"os"
 	"path/filepath"
 	"strings"
@@ -384,7 +385,7 @@ func TestPackagesPlatformRuntimeFiles(t *testing.T) {
 		filepath.Join(appDir, "usr", "lib", manifest.Slug(), manifest.Slug()+".bin"),
 		filepath.Join(appDir, "usr", "lib", manifest.Slug(), "libSDL3.so"),
 		filepath.Join(appDir, "usr", "bin", manifest.Slug()),
-		filepath.Join(appDir, "usr", "share", "metainfo", manifest.Slug()+".appdata.xml"),
+		filepath.Join(appDir, "usr", "share", "metainfo", manifest.App.Identifier+".appdata.xml"),
 	} {
 		if _, err := os.Stat(path); err != nil {
 			t.Fatalf("missing Linux packaged runtime file %s: %v", path, err)
@@ -483,5 +484,110 @@ func TestCacheAppImageRuntimeFromGeneratedELF(t *testing.T) {
 	}
 	if !bytes.Equal(data, original) {
 		t.Fatalf("cached runtime has %d bytes, expected %d", len(data), len(original))
+	}
+}
+
+func TestExplicitAppImageToolIsAuthoritative(t *testing.T) {
+	manifest, _ := testFixture(t)
+	fallbackRoot := t.TempDir()
+	fallback := filepath.Join(fallbackRoot, "tools", "appimagetool-x86_64.AppImage")
+	mustWrite(t, fallback, "#!/bin/sh\nexit 0\n")
+	if err := os.Chmod(fallback, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	original, err := os.Getwd()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Chdir(fallbackRoot); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = os.Chdir(original) })
+
+	missing := filepath.Join(t.TempDir(), "missing-appimagetool")
+	if found, err := FindAppImageTool(missing, manifest.Root, "amd64"); err == nil {
+		t.Fatalf("explicit missing appimagetool unexpectedly fell back to %s", found)
+	}
+	candidates := AppImageToolCandidates(missing, manifest.Root, "amd64")
+	if len(candidates) != 1 || candidates[0] != missing {
+		t.Fatalf("explicit tool candidates must contain only the explicit value: %#v", candidates)
+	}
+}
+
+func TestExplicitAppImageRuntimeIsAuthoritative(t *testing.T) {
+	manifest, _ := testFixture(t)
+	fallbackRoot := t.TempDir()
+	fallback := filepath.Join(fallbackRoot, "tools", "runtime-x86_64")
+	mustWrite(t, fallback, "runtime")
+	original, err := os.Getwd()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Chdir(fallbackRoot); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = os.Chdir(original) })
+
+	missing := filepath.Join(t.TempDir(), "missing-runtime")
+	if found, err := FindAppImageRuntime(missing, manifest.Root, "amd64"); err == nil {
+		t.Fatalf("explicit missing runtime unexpectedly fell back to %s", found)
+	}
+}
+
+func TestExplicitNSISToolIsAuthoritative(t *testing.T) {
+	t.Setenv("PATH", t.TempDir())
+	missing := filepath.Join(t.TempDir(), "missing-makensis")
+	if found, err := FindNSISTool(missing); err == nil {
+		t.Fatalf("explicit missing makensis unexpectedly resolved to %s", found)
+	}
+}
+
+func TestLinuxAppStreamMetadataIsCompleteAndNamedByComponentID(t *testing.T) {
+	manifest, binary := testFixture(t)
+	manifest.Package.Description = "A complete test application."
+	output := t.TempDir()
+	result, err := Package(Options{
+		Manifest: manifest, Binary: binary, Target: "linux", Arch: "amd64",
+		Format: "appdir", OutputDir: output, SourceDateEpoch: 1700000000,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	appDir := findArtifact(t, result, "appdir")
+	path := filepath.Join(appDir, "usr", "share", "metainfo", manifest.App.Identifier+".appdata.xml")
+	data, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var document struct {
+		ID            string `xml:"id"`
+		Summary       string `xml:"summary"`
+		Description   string `xml:"description>p"`
+		Launchable    string `xml:"launchable"`
+		DeveloperName string `xml:"developer>name"`
+		ContentRating struct {
+			Type string `xml:"type,attr"`
+		} `xml:"content_rating"`
+	}
+	if err := xml.Unmarshal(data, &document); err != nil {
+		t.Fatalf("invalid AppStream XML: %v\n%s", err, data)
+	}
+	if document.ID != manifest.App.Identifier {
+		t.Fatalf("unexpected AppStream ID %q", document.ID)
+	}
+	if strings.HasSuffix(document.Summary, ".") {
+		t.Fatalf("AppStream summary must not end in a period: %q", document.Summary)
+	}
+	if document.Description != manifest.Package.Description {
+		t.Fatalf("missing AppStream description: %q", document.Description)
+	}
+	if document.Launchable != manifest.App.Identifier+".desktop" {
+		t.Fatalf("unexpected launchable %q", document.Launchable)
+	}
+	if document.DeveloperName != manifest.Package.Publisher {
+		t.Fatalf("missing developer name: %q", document.DeveloperName)
+	}
+	if document.ContentRating.Type != "oars-1.1" {
+		t.Fatalf("missing content rating: %#v", document.ContentRating)
 	}
 }

@@ -13,26 +13,27 @@ import (
 // appimagetool. Both the manifest root and the caller's working directory are
 // considered so monorepos and examples behave consistently.
 func AppImageToolCandidates(explicit, projectRoot, arch string) []string {
+	if value := strings.TrimSpace(explicit); value != "" {
+		return []string{value}
+	}
+	if value := strings.TrimSpace(os.Getenv("APPIMAGETOOL")); value != "" {
+		return []string{value}
+	}
 	appImageName := "appimagetool-" + appImageArch(arch) + ".AppImage"
 	candidates := []string{}
-	appendCandidate := func(value string) {
-		value = strings.TrimSpace(value)
-		if value != "" {
-			candidates = append(candidates, value)
-		}
-	}
-	appendCandidate(explicit)
-	appendCandidate(os.Getenv("APPIMAGETOOL"))
 	for _, root := range toolRoots(projectRoot) {
-		appendCandidate(filepath.Join(root, "tools", "appimagetool"))
-		appendCandidate(filepath.Join(root, "tools", appImageName))
+		candidates = append(candidates,
+			filepath.Join(root, "tools", "appimagetool"),
+			filepath.Join(root, "tools", appImageName),
+		)
 	}
 	if cache, err := os.UserCacheDir(); err == nil && cache != "" {
-		appendCandidate(filepath.Join(cache, "zumbra", "tools", "appimagetool"))
-		appendCandidate(filepath.Join(cache, "zumbra", "tools", appImageName))
+		candidates = append(candidates,
+			filepath.Join(cache, "zumbra", "tools", "appimagetool"),
+			filepath.Join(cache, "zumbra", "tools", appImageName),
+		)
 	}
-	appendCandidate("appimagetool")
-	appendCandidate(appImageName)
+	candidates = append(candidates, "appimagetool", appImageName)
 	return uniqueCandidates(candidates)
 }
 
@@ -44,23 +45,25 @@ func FindAppImageTool(explicit, projectRoot, arch string) (string, error) {
 // runtime is optional on the first online build because recent appimagetool
 // versions can fetch one, but once cached it is reused through --runtime-file.
 func AppImageRuntimeCandidates(explicit, projectRoot, arch string) []string {
+	if value := strings.TrimSpace(explicit); value != "" {
+		return []string{value}
+	}
+	if value := strings.TrimSpace(os.Getenv("APPIMAGE_RUNTIME")); value != "" {
+		return []string{value}
+	}
 	name := "runtime-" + appImageArch(arch)
 	candidates := []string{}
-	appendCandidate := func(value string) {
-		value = strings.TrimSpace(value)
-		if value != "" {
-			candidates = append(candidates, value)
-		}
-	}
-	appendCandidate(explicit)
-	appendCandidate(os.Getenv("APPIMAGE_RUNTIME"))
 	for _, root := range toolRoots(projectRoot) {
-		appendCandidate(filepath.Join(root, "tools", name))
-		appendCandidate(filepath.Join(root, "tools", name+".bin"))
+		candidates = append(candidates,
+			filepath.Join(root, "tools", name),
+			filepath.Join(root, "tools", name+".bin"),
+		)
 	}
 	if cache, err := os.UserCacheDir(); err == nil && cache != "" {
-		appendCandidate(filepath.Join(cache, "zumbra", "tools", name))
-		appendCandidate(filepath.Join(cache, "zumbra", "tools", name+".bin"))
+		candidates = append(candidates,
+			filepath.Join(cache, "zumbra", "tools", name),
+			filepath.Join(cache, "zumbra", "tools", name+".bin"),
+		)
 	}
 	return uniqueCandidates(candidates)
 }
@@ -78,15 +81,13 @@ func AppImageRuntimeCachePath(arch string) (string, error) {
 }
 
 func FindNSISTool(explicit string) (string, error) {
-	names := []string{}
 	if value := strings.TrimSpace(explicit); value != "" {
-		names = append(names, value)
+		return findExecutable([]string{value}, "makensis")
 	}
 	if value := strings.TrimSpace(os.Getenv("MAKENSIS")); value != "" {
-		names = append(names, value)
+		return findExecutable([]string{value}, "makensis")
 	}
-	names = append(names, "makensis", "makensis.exe")
-	return findExecutable(names, "makensis")
+	return findExecutable([]string{"makensis", "makensis.exe"}, "makensis")
 }
 
 func FindCodeSignTool() (string, error) {

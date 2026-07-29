@@ -89,8 +89,13 @@ SOURCE_DATE_EPOCH=1700000000 "$CLI" app package \
 test -f "$PACKAGES/zumbra-packaged-app-1.0.0-linux-amd64.tar.gz"
 test -f "$PACKAGES/zumbra-packaged-app_1.0.0_amd64.deb"
 test -x "$PACKAGES/zumbra-packaged-app-1.0.0-linux-amd64.AppDir/AppRun"
-test -f "$PACKAGES/zumbra-packaged-app-1.0.0-linux-amd64.AppDir/zumbra-packaged-app.desktop"
-test -f "$PACKAGES/zumbra-packaged-app-1.0.0-linux-amd64.AppDir/usr/share/metainfo/zumbra-packaged-app.appdata.xml"
+test -f "$PACKAGES/zumbra-packaged-app-1.0.0-linux-amd64.AppDir/dev.zumbra.packaged.desktop"
+APPSTREAM_METADATA="$PACKAGES/zumbra-packaged-app-1.0.0-linux-amd64.AppDir/usr/share/metainfo/dev.zumbra.packaged.appdata.xml"
+test -f "$APPSTREAM_METADATA"
+if command -v appstreamcli >/dev/null 2>&1; then
+  printf 'Validating AppStream metadata without network access...\n'
+  AS_VALIDATE_NONET=1 appstreamcli validate "$APPSTREAM_METADATA"
+fi
 
 printf 'Testing AppImage integration in an isolated output directory...\n'
 APPIMAGE_PACKAGES="$TOOLS/appimage-packages"

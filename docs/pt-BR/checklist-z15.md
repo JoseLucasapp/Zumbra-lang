@@ -16,7 +16,7 @@
 - [x] AppDir.
 - [x] AppImage real.
 - [x] Arquivo `.desktop` e ícone.
-- [x] Metadata AppStream.
+- [x] Metadata AppStream completa, validável e nomeada pelo identificador.
 - [x] Bibliotecas locais por `runtime_files`.
 - [x] Launcher com `LD_LIBRARY_PATH` local.
 - [x] Runtime AppImage explícito/cacheado.
@@ -58,16 +58,18 @@
 - [x] Rejeição de binário estrangeiro.
 - [x] `--format all` estrito.
 - [x] Descoberta de ferramentas na raiz do manifesto, diretório atual, cache e PATH.
+- [x] Caminhos explícitos e variáveis de ferramenta são autoritativos, sem fallback silencioso.
 - [x] Falhas operacionais sem impressão do uso global.
 - [x] Checksums SHA-256 e relatório JSON.
 - [x] Metadata de atualização.
 - [x] Assinatura opcional.
 - [x] Símbolos separados.
 - [x] Testes determinísticos isolados de `dist/`.
-- [x] Artefatos gerados removidos do controle de versão.
+- [x] Artefatos gerados, ferramentas baixadas e entregas antigas removidos do controle de versão.
+- [x] Scripts leves de limpeza e instalação de ferramentas no cache.
 - [x] Matriz CI Linux/Windows/macOS.
 - [x] Documentação pública e release notes.
 
 ## Estado
 
-A implementação do Z15 está encerrada na versão 0.10.2. A matriz real de CI é o gate operacional de promoção da candidata para baseline estável; não há item de implementação do Z15 pendente antes do Z16.
+A implementação e o hardening do Z15 estão encerrados na versão 0.10.3. A suíte local Linux e a matriz real de CI continuam sendo gates de release, mas não há item de implementação do Z15 pendente antes do Z16.

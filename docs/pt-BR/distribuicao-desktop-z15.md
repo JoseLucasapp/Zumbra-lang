@@ -9,8 +9,7 @@ meu-app/
 ├── zumbra.toml
 ├── src/
 │   └── main.zum
-├── assets/
-└── tools/                 # opcional
+└── assets/
 ```
 
 ## Manifesto
@@ -34,7 +33,7 @@ release = true
 [package]
 description = "Aplicativo desktop escrito em Zumbra."
 publisher = "Minha Empresa"
-homepage = "https://example.com"
+# homepage = "https://seu-dominio.example"
 license = "Apache-2.0"
 category = "Utility"
 
@@ -54,7 +53,7 @@ category = "public.app-category.utilities"
 # runtime_files = ["runtime/libSDL3.dylib", "runtime/libSDL3_ttf.dylib"]
 
 [updates]
-url = "https://example.com/releases"
+# url = "https://seu-dominio.example/releases"
 channel = "stable"
 
 [assets]
@@ -127,7 +126,7 @@ Artefatos:
 - AppDir;
 - AppImage real.
 
-O AppDir inclui arquivo `.desktop`, ícone e metadata AppStream em `usr/share/metainfo`.
+O AppDir inclui arquivo `.desktop`, ícone e metadata AppStream completa em `usr/share/metainfo/<identificador>.appdata.xml`.
 
 ### Descoberta do appimagetool
 
@@ -140,14 +139,22 @@ O Zumbra pesquisa, na ordem:
 5. cache do usuário;
 6. `PATH`.
 
+Instalação leve no cache do usuário:
+
+```bash
+scripts/setup-appimage-tools.sh
+```
+
 Exemplo explícito:
 
 ```bash
 zumbra app package \
   --target linux \
   --format all \
-  --appimagetool "$PWD/tools/appimagetool-x86_64.AppImage"
+  --appimagetool "$HOME/.cache/zumbra/tools/appimagetool-x86_64.AppImage"
 ```
+
+Um caminho fornecido por `--appimagetool` ou `APPIMAGETOOL` é autoritativo. Se estiver incorreto, o comando falha em vez de usar silenciosamente outra ferramenta encontrada.
 
 ### Runtime AppImage fixado
 
@@ -157,10 +164,10 @@ Para não depender de download durante o empacotamento:
 zumbra app package \
   --target linux \
   --format appimage \
-  --appimage-runtime "$PWD/tools/runtime-x86_64"
+  --appimage-runtime "$HOME/.cache/zumbra/tools/runtime-x86_64"
 ```
 
-Também são aceitos `APPIMAGE_RUNTIME`, `tools/runtime-x86_64` e o cache do Zumbra. Quando o primeiro build online gera um AppImage válido, o runtime é extraído e armazenado para os próximos builds.
+Também são aceitos `APPIMAGE_RUNTIME`, uma ferramenta local em `tools/runtime-x86_64` e o cache do Zumbra. Quando o primeiro build online gera um AppImage válido, o runtime é extraído e armazenado para os próximos builds.
 
 ## Windows
 
