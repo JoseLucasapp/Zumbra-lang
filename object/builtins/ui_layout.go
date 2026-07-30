@@ -82,11 +82,16 @@ func layoutUINode(node *object.UINode, available object.UIRect, theme *object.UI
 	y := available.Y + margin.top
 	width := available.Width - margin.left - margin.right
 	height := available.Height - margin.top - margin.bottom
-	if v, ok := uiNumber(props["width"]); ok {
-		width = v
-	}
-	if v, ok := uiNumber(props["height"]); ok {
-		height = v
+	// Modal width/height describe the dialog card, not an intermediate box.
+	// Keeping the viewport dimensions here is what allows the dialog to be
+	// centered correctly regardless of its requested size.
+	if kind != "modal" {
+		if v, ok := uiNumber(props["width"]); ok {
+			width = v
+		}
+		if v, ok := uiNumber(props["height"]); ok {
+			height = v
+		}
 	}
 	if v, ok := uiNumber(props["minWidth"]); ok {
 		width = math.Max(width, v)
@@ -112,8 +117,11 @@ func layoutUINode(node *object.UINode, available object.UIRect, theme *object.UI
 	}
 	bounds := object.UIRect{X: x, Y: y, Width: width, Height: height}
 	if kind == "modal" {
-		modalWidth := math.Min(width, uiPropNumber(props, "contentWidth", 480))
-		modalHeight := math.Min(height, uiPropNumber(props, "contentHeight", 320))
+		modalMargin := math.Max(0, uiPropNumber(props, "viewportMargin", 24))
+		requestedWidth := uiPropNumber(props, "contentWidth", uiPropNumber(props, "width", 480))
+		requestedHeight := uiPropNumber(props, "contentHeight", uiPropNumber(props, "height", 320))
+		modalWidth := math.Min(math.Max(0, width-modalMargin*2), requestedWidth)
+		modalHeight := math.Min(math.Max(0, height-modalMargin*2), requestedHeight)
 		bounds = object.UIRect{X: x + (width-modalWidth)/2, Y: y + (height-modalHeight)/2, Width: modalWidth, Height: modalHeight}
 		x, y, width, height = bounds.X, bounds.Y, bounds.Width, bounds.Height
 	}
@@ -297,6 +305,14 @@ func uiScrollableY(props map[string]object.Object) bool {
 	}
 	overflow := strings.ToLower(strings.TrimSpace(optionString(props, "overflowY", optionString(props, "overflow", ""))))
 	return overflow == "scroll" || overflow == "auto"
+}
+
+func uiClipsChildren(props map[string]object.Object) bool {
+	if uiScrollableY(props) || optionBool(props, "clipChildren", false) {
+		return true
+	}
+	overflow := strings.ToLower(strings.TrimSpace(optionString(props, "overflowY", optionString(props, "overflow", ""))))
+	return overflow == "hidden" || overflow == "clip"
 }
 
 type uiEdges struct{ left, top, right, bottom float64 }
@@ -548,7 +564,7 @@ func flattenUIRender(node *object.UINode, theme *object.UITheme, focusID, hoverI
 		ScrollOffsetY: scrollOffsetY, ScrollContentHeight: contentHeight,
 	})
 	childClip := inheritedClip
-	if uiScrollableY(props) {
+	if uiClipsChildren(props) {
 		viewport := contentBounds
 		if inheritedClip != nil {
 			intersection, ok := uiRectIntersection(*inheritedClip, viewport)
@@ -605,11 +621,18 @@ func applyUIStyleDefaults(kind string, props map[string]object.Object, theme *ob
 	case "button":
 		set("background", NewString(uiThemeString(theme, "primary", "#3867e8")))
 		set("textColor", NewString(uiThemeString(theme, "primaryText", "#ffffff")))
-	case "input", "textarea", "select", "checkbox", "radio":
+	case "input", "textarea", "checkbox", "radio":
 		set("background", NewString(uiThemeString(theme, "surface", "#ffffff")))
+	case "select":
+		set("background", NewString(uiThemeString(theme, "surface", "#ffffff")))
+		set("dropdownBackground", NewString(uiThemeString(theme, "surface", "#ffffff")))
+		set("selectedOptionBackground", NewString(uiThemeString(theme, "surfaceAlt", "#eef2f7")))
+		set("dropdownBorderColor", NewString(uiThemeString(theme, "border", "#cfd6e2")))
 	case "modal":
 		set("background", NewString(uiThemeString(theme, "surface", "#ffffff")))
-		set("overlay", NewString("#00000080"))
+		set("overlay", NewString("#00000055"))
+		set("backdropBlur", NewFloat(6))
+		set("modalShadow", NewString("#00000040"))
 	case "tooltip":
 		set("background", NewString("#202633"))
 		set("textColor", NewString("#ffffff"))

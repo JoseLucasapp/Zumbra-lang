@@ -11,7 +11,7 @@ O Z14 fornece:
 - checkboxes e radios;
 - tabelas, listas, árvores, tabs e menus;
 - modais, tooltips e barras de progresso;
-- imagens BMP e canvas 2D;
+- imagens PNG, JPEG e BMP, além de canvas 2D;
 - temas light, dark e customizados;
 - estado reativo e data binding bidirecional;
 - componentes personalizados;
@@ -225,7 +225,7 @@ text
 image
 ```
 
-Imagens usam BMP no backend SDL3 atual.
+Imagens usam `fit: "contain"` para preservar a proporção. O backend SDL3 tenta SDL3_image e, no Linux, usa GdkPixbuf como fallback para PNG e JPEG; BMP permanece disponível pelo carregador básico do SDL3.
 
 ## Componentes personalizados
 
@@ -376,10 +376,26 @@ var list << ui.columnWith({
 }, items);
 ```
 
-Valores aceitos para `overflowY` são `"auto"` e `"scroll"`. A forma booleana equivalente é `scrollY: true`. A roda do mouse procura o ancestral rolável sob o ponteiro, limita o deslocamento ao conteúdo e recorta os descendentes ao viewport.
+Valores aceitos para `overflowY` são `"auto"` e `"scroll"`. A forma booleana equivalente é `scrollY: true`. A roda do mouse procura o ancestral rolável sob o ponteiro, limita o deslocamento ao conteúdo e recorta os descendentes ao viewport. Para apenas recortar os filhos, sem habilitar rolagem, use `overflow: "hidden"` ou `clipChildren: true`.
 
 O snapshot headless inclui `contentX`, `contentY`, `contentWidth`, `contentHeight` e `scrollOffsetY`, permitindo testar overflow sem abrir uma janela gráfica.
 
+## Selects com dropdown
+
+`ui.select` abre uma lista real sobre o layout, sem alterar o valor apenas por abrir o controle. A opção muda somente após seleção por mouse ou teclado.
+
+```zumbra
+var platform << ui.stringState("Todas");
+var picker << ui.select({
+    "value": "Todas",
+    "options": ["Todas", "PlayStation", "Nintendo"],
+    "maxVisibleOptions": 6,
+    "optionHeight": 36
+});
+ui.bind(picker, "value", platform);
+```
+
+A lista fecha ao escolher uma opção, pressionar `Escape`, avançar com `Tab` ou clicar fora. `ArrowUp` e `ArrowDown` navegam pelas opções. Quando a lista excede `maxVisibleOptions`, a roda do mouse controla `popupOffset`.
 
 ## Modais reais
 
@@ -389,11 +405,22 @@ O snapshot headless inclui `contentX`, `contentY`, `contentWidth`, `contentHeigh
 - a interface de fundo não recebe mouse ou teclado;
 - somente a árvore modal ativa é exposta pela acessibilidade;
 - filhos de modais ocultos não podem receber foco;
-- bindings das propriedades `visible` e `enabled` são aplicados imediatamente.
+- bindings das propriedades `visible` e `enabled` são aplicados imediatamente;
+- `width` e `height` representam o card, que é centralizado e limitado ao viewport;
+- `backdropBlur` desfoca a interface já renderizada atrás do card;
+- alpha blending mantém overlay e sombra translúcidos;
+- `overflow: "hidden"` impede que filhos ultrapassem o conteúdo do diálogo.
 
 ```zumbra
 var visible << ui.boolState(false);
-var dialog << ui.modal({"id": "confirm", "visible": false}, [
+var dialog << ui.modal({
+    "id": "confirm",
+    "visible": false,
+    "width": 480,
+    "height": 280,
+    "backdropBlur": 6,
+    "overflow": "hidden"
+}, [
     ui.buttonWith({"id": "confirm-action", "text": "Confirmar"})
 ]);
 ui.bind(dialog, "visible", visible);

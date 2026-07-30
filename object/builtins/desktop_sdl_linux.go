@@ -13,6 +13,7 @@ package builtins
 #include <unistd.h>
 #include <ctype.h>
 #include <stdio.h>
+#include <math.h>
 
 typedef struct SDL_Window SDL_Window;
 typedef struct SDL_Surface SDL_Surface;
@@ -101,6 +102,7 @@ typedef void (*PFN_SDL_DestroyTray)(SDL_Tray*);
 typedef SDL_Renderer *(*PFN_SDL_CreateRenderer)(SDL_Window*,const char*);
 typedef void (*PFN_SDL_DestroyRenderer)(SDL_Renderer*);
 typedef bool (*PFN_SDL_SetRenderDrawColor)(SDL_Renderer*,uint8_t,uint8_t,uint8_t,uint8_t);
+typedef bool (*PFN_SDL_SetRenderDrawBlendMode)(SDL_Renderer*,uint32_t);
 typedef bool (*PFN_SDL_SetRenderClipRect)(SDL_Renderer*,const SDL_Rect*);
 typedef bool (*PFN_SDL_RenderClear)(SDL_Renderer*);
 typedef bool (*PFN_SDL_RenderFillRect)(SDL_Renderer*,const SDL_FRect*);
@@ -109,6 +111,9 @@ typedef bool (*PFN_SDL_RenderLine)(SDL_Renderer*,float,float,float,float);
 typedef bool (*PFN_SDL_RenderPresent)(SDL_Renderer*);
 typedef bool (*PFN_SDL_RenderDebugText)(SDL_Renderer*,float,float,const char*);
 typedef SDL_Texture *(*PFN_SDL_CreateTextureFromSurface)(SDL_Renderer*,SDL_Surface*);
+typedef SDL_Surface *(*PFN_SDL_CreateSurfaceFrom)(int,int,uint32_t,void*,int);
+typedef SDL_Surface *(*PFN_SDL_RenderReadPixels)(SDL_Renderer*,const SDL_Rect*);
+typedef SDL_Surface *(*PFN_SDL_ConvertSurface)(SDL_Surface*,uint32_t);
 typedef bool (*PFN_SDL_RenderTexture)(SDL_Renderer*,SDL_Texture*,const SDL_FRect*,const SDL_FRect*);
 typedef void (*PFN_SDL_DestroyTexture)(SDL_Texture*);
 typedef bool (*PFN_SDL_GetTextureSize)(SDL_Texture*,float*,float*);
@@ -137,7 +142,7 @@ static PFN_SDL_StartTextInput p_StartTextInput; static PFN_SDL_StopTextInput p_S
 static PFN_SDL_SetClipboardText p_SetClipboardText; static PFN_SDL_GetClipboardText p_GetClipboardText; static PFN_SDL_free p_free;
 static PFN_SDL_IOFromFile p_IOFromFile; static PFN_SDL_LoadBMP_IO p_LoadBMP_IO; static PFN_SDL_DestroySurface p_DestroySurface; static PFN_SDL_SetWindowIcon p_SetWindowIcon;
 static PFN_SDL_CreateTray p_CreateTray; static PFN_SDL_CreateTrayMenu p_CreateTrayMenu; static PFN_SDL_InsertTrayEntryAt p_InsertTrayEntryAt; static PFN_SDL_SetTrayEntryCallback p_SetTrayEntryCallback; static PFN_SDL_SetTrayTooltip p_SetTrayTooltip; static PFN_SDL_DestroyTray p_DestroyTray;
-static PFN_SDL_CreateRenderer p_CreateRenderer; static PFN_SDL_DestroyRenderer p_DestroyRenderer; static PFN_SDL_SetRenderDrawColor p_SetRenderDrawColor; static PFN_SDL_SetRenderClipRect p_SetRenderClipRect; static PFN_SDL_RenderClear p_RenderClear; static PFN_SDL_RenderFillRect p_RenderFillRect; static PFN_SDL_RenderRect p_RenderRect; static PFN_SDL_RenderLine p_RenderLine; static PFN_SDL_RenderPresent p_RenderPresent; static PFN_SDL_RenderDebugText p_RenderDebugText; static PFN_SDL_CreateTextureFromSurface p_CreateTextureFromSurface; static PFN_SDL_RenderTexture p_RenderTexture; static PFN_SDL_DestroyTexture p_DestroyTexture; static PFN_SDL_GetTextureSize p_GetTextureSize;
+static PFN_SDL_CreateRenderer p_CreateRenderer; static PFN_SDL_DestroyRenderer p_DestroyRenderer; static PFN_SDL_SetRenderDrawColor p_SetRenderDrawColor; static PFN_SDL_SetRenderDrawBlendMode p_SetRenderDrawBlendMode; static PFN_SDL_SetRenderClipRect p_SetRenderClipRect; static PFN_SDL_RenderClear p_RenderClear; static PFN_SDL_RenderFillRect p_RenderFillRect; static PFN_SDL_RenderRect p_RenderRect; static PFN_SDL_RenderLine p_RenderLine; static PFN_SDL_RenderPresent p_RenderPresent; static PFN_SDL_RenderDebugText p_RenderDebugText; static PFN_SDL_CreateTextureFromSurface p_CreateTextureFromSurface; static PFN_SDL_CreateSurfaceFrom p_CreateSurfaceFrom; static PFN_SDL_RenderReadPixels p_RenderReadPixels; static PFN_SDL_ConvertSurface p_ConvertSurface; static PFN_SDL_RenderTexture p_RenderTexture; static PFN_SDL_DestroyTexture p_DestroyTexture; static PFN_SDL_GetTextureSize p_GetTextureSize;
 static char zsdl_error[512];
 
 static void *zttf_lib = NULL;
@@ -161,7 +166,7 @@ static bool zsdl_load(void) {
     LOAD_REQ(PollEvent); LOAD_REQ(WaitEvent); LOAD_REQ(WaitEventTimeout); LOAD_REQ(GetKeyName); LOAD_REQ(StartTextInput); LOAD_REQ(StopTextInput); LOAD_REQ(SetClipboardText); LOAD_REQ(GetClipboardText); LOAD_REQ(free);
     LOAD_OPT(IOFromFile); LOAD_OPT(LoadBMP_IO); LOAD_OPT(DestroySurface); LOAD_OPT(SetWindowIcon);
     LOAD_OPT(CreateTray); LOAD_OPT(CreateTrayMenu); LOAD_OPT(InsertTrayEntryAt); LOAD_OPT(SetTrayEntryCallback); LOAD_OPT(SetTrayTooltip); LOAD_OPT(DestroyTray);
-    LOAD_REQ(CreateRenderer); LOAD_REQ(DestroyRenderer); LOAD_REQ(SetRenderDrawColor); LOAD_OPT(SetRenderClipRect); LOAD_REQ(RenderClear); LOAD_REQ(RenderFillRect); LOAD_REQ(RenderRect); LOAD_REQ(RenderLine); LOAD_REQ(RenderPresent); LOAD_OPT(RenderDebugText); LOAD_OPT(CreateTextureFromSurface); LOAD_OPT(RenderTexture); LOAD_OPT(DestroyTexture); LOAD_OPT(GetTextureSize);
+    LOAD_REQ(CreateRenderer); LOAD_REQ(DestroyRenderer); LOAD_REQ(SetRenderDrawColor); LOAD_OPT(SetRenderDrawBlendMode); LOAD_OPT(SetRenderClipRect); LOAD_REQ(RenderClear); LOAD_REQ(RenderFillRect); LOAD_REQ(RenderRect); LOAD_REQ(RenderLine); LOAD_REQ(RenderPresent); LOAD_OPT(RenderDebugText); LOAD_OPT(CreateTextureFromSurface); LOAD_OPT(CreateSurfaceFrom); LOAD_OPT(RenderReadPixels); LOAD_OPT(ConvertSurface); LOAD_OPT(RenderTexture); LOAD_OPT(DestroyTexture); LOAD_OPT(GetTextureSize);
     return true;
 }
 
@@ -239,11 +244,29 @@ static bool zsdl_set_clipboard(const char*t){return p_SetClipboardText(t);} stat
 static bool zsdl_start_text_input(SDL_Window*w){return w&&p_StartTextInput&&p_StartTextInput(w);}
 static bool zsdl_stop_text_input(SDL_Window*w){return w&&p_StopTextInput&&p_StopTextInput(w);}
 static bool zsdl_set_icon(SDL_Window*w,const char*path){if(!p_IOFromFile||!p_LoadBMP_IO||!p_SetWindowIcon||!p_DestroySurface){snprintf(zsdl_error,sizeof(zsdl_error),"SDL3 BMP icon APIs are unavailable");return false;}SDL_IOStream*io=p_IOFromFile(path,"rb");if(!io)return false;SDL_Surface*s=p_LoadBMP_IO(io,true);if(!s)return false;bool ok=p_SetWindowIcon(w,s);p_DestroySurface(s);return ok;}
-static SDL_Renderer*zsdl_renderer(SDL_Window*w){return p_CreateRenderer(w,NULL);} static void zsdl_destroy_renderer(SDL_Renderer*r){if(r)p_DestroyRenderer(r);}
+static SDL_Renderer*zsdl_renderer(SDL_Window*w){SDL_Renderer*r=p_CreateRenderer(w,NULL);if(r&&p_SetRenderDrawBlendMode)p_SetRenderDrawBlendMode(r,1u);return r;} static void zsdl_destroy_renderer(SDL_Renderer*r){if(r)p_DestroyRenderer(r);}
 static bool zsdl_color(SDL_Renderer*r,uint8_t red,uint8_t green,uint8_t blue,uint8_t alpha){return p_SetRenderDrawColor(r,red,green,blue,alpha);} static bool zsdl_clear(SDL_Renderer*r){return p_RenderClear(r);}
 static bool zsdl_clip(SDL_Renderer*r,int32_t x,int32_t y,int32_t w,int32_t h){if(!p_SetRenderClipRect)return true;SDL_Rect q={x,y,w,h};return p_SetRenderClipRect(r,&q);} static bool zsdl_clip_reset(SDL_Renderer*r){return !p_SetRenderClipRect||p_SetRenderClipRect(r,NULL);}
 static bool zsdl_fill(SDL_Renderer*r,float x,float y,float w,float h){SDL_FRect q={x,y,w,h};return p_RenderFillRect(r,&q);} static bool zsdl_stroke(SDL_Renderer*r,float x,float y,float w,float h){SDL_FRect q={x,y,w,h};return p_RenderRect(r,&q);} static bool zsdl_line(SDL_Renderer*r,float x1,float y1,float x2,float y2){return p_RenderLine(r,x1,y1,x2,y2);} static bool zsdl_present(SDL_Renderer*r){return p_RenderPresent(r);}
-static bool zsdl_bmp(SDL_Renderer*r,const char*path,float x,float y,float w,float h){if(!p_IOFromFile||!p_LoadBMP_IO||!p_DestroySurface||!p_CreateTextureFromSurface||!p_RenderTexture||!p_DestroyTexture)return false;SDL_IOStream*io=p_IOFromFile(path,"rb");if(!io)return false;SDL_Surface*s=p_LoadBMP_IO(io,true);if(!s)return false;SDL_Texture*t=p_CreateTextureFromSurface(r,s);p_DestroySurface(s);if(!t)return false;SDL_FRect d={x,y,w,h};bool ok=p_RenderTexture(r,t,NULL,&d);p_DestroyTexture(t);return ok;}
+typedef SDL_Surface *(*PFN_IMG_Load)(const char*);
+static void *zimg_lib=NULL;static PFN_IMG_Load p_IMG_Load=NULL;
+typedef void GdkPixbuf;typedef void GError;
+typedef GdkPixbuf *(*PFN_GDK_PIXBUF_NEW_FROM_FILE)(const char*,GError**);typedef int(*PFN_GDK_PIXBUF_GET_INT)(const GdkPixbuf*);typedef unsigned char*(*PFN_GDK_PIXBUF_GET_PIXELS)(const GdkPixbuf*);typedef void(*PFN_G_OBJECT_UNREF)(void*);
+static void*zpix_lib=NULL,*zgobject_lib=NULL;static PFN_GDK_PIXBUF_NEW_FROM_FILE p_gdk_new=NULL;static PFN_GDK_PIXBUF_GET_INT p_gdk_width=NULL,p_gdk_height=NULL,p_gdk_stride=NULL,p_gdk_channels=NULL,p_gdk_alpha=NULL;static PFN_GDK_PIXBUF_GET_PIXELS p_gdk_pixels=NULL;static PFN_G_OBJECT_UNREF p_g_object_unref=NULL;
+#define ZSDL_PIXELFORMAT_RGBA32 0x16762004u
+typedef struct{uint32_t flags,format;int w,h,pitch;void*pixels;int refcount;void*reserved;}ZSDLSurfaceView;
+static void zsdl_image_loaders(void){
+    if(!zimg_lib){const char*names[]={"libSDL3_image.so.0","libSDL3_image.so",NULL};for(int i=0;names[i];i++){zimg_lib=dlopen(names[i],RTLD_NOW|RTLD_LOCAL);if(zimg_lib)break;}if(zimg_lib)p_IMG_Load=(PFN_IMG_Load)dlsym(zimg_lib,"IMG_Load");}
+    if(!zpix_lib){zpix_lib=dlopen("libgdk_pixbuf-2.0.so.0",RTLD_NOW|RTLD_LOCAL);zgobject_lib=dlopen("libgobject-2.0.so.0",RTLD_NOW|RTLD_LOCAL);if(zpix_lib&&zgobject_lib){p_gdk_new=(PFN_GDK_PIXBUF_NEW_FROM_FILE)dlsym(zpix_lib,"gdk_pixbuf_new_from_file");p_gdk_width=(PFN_GDK_PIXBUF_GET_INT)dlsym(zpix_lib,"gdk_pixbuf_get_width");p_gdk_height=(PFN_GDK_PIXBUF_GET_INT)dlsym(zpix_lib,"gdk_pixbuf_get_height");p_gdk_stride=(PFN_GDK_PIXBUF_GET_INT)dlsym(zpix_lib,"gdk_pixbuf_get_rowstride");p_gdk_channels=(PFN_GDK_PIXBUF_GET_INT)dlsym(zpix_lib,"gdk_pixbuf_get_n_channels");p_gdk_alpha=(PFN_GDK_PIXBUF_GET_INT)dlsym(zpix_lib,"gdk_pixbuf_get_has_alpha");p_gdk_pixels=(PFN_GDK_PIXBUF_GET_PIXELS)dlsym(zpix_lib,"gdk_pixbuf_get_pixels");p_g_object_unref=(PFN_G_OBJECT_UNREF)dlsym(zgobject_lib,"g_object_unref");}}
+}
+static SDL_Surface*zsdl_load_image_surface(const char*path,unsigned char**owned){
+    *owned=NULL;zsdl_image_loaders();if(p_IMG_Load){SDL_Surface*s=p_IMG_Load(path);if(s)return s;}
+    if(p_gdk_new&&p_gdk_width&&p_gdk_height&&p_gdk_stride&&p_gdk_channels&&p_gdk_pixels&&p_g_object_unref&&p_CreateSurfaceFrom){GError*err=NULL;GdkPixbuf*pix=p_gdk_new(path,&err);if(pix){int w=p_gdk_width(pix),h=p_gdk_height(pix),stride=p_gdk_stride(pix),channels=p_gdk_channels(pix),alpha=p_gdk_alpha?p_gdk_alpha(pix):channels==4;unsigned char*src=p_gdk_pixels(pix),*rgba=(unsigned char*)malloc((size_t)w*(size_t)h*4u);if(rgba){for(int y=0;y<h;y++)for(int x=0;x<w;x++){unsigned char*q=rgba+((size_t)y*(size_t)w+(size_t)x)*4u,*v=src+(size_t)y*(size_t)stride+(size_t)x*(size_t)channels;q[0]=v[0];q[1]=v[1];q[2]=v[2];q[3]=alpha&&channels>3?v[3]:255;}SDL_Surface*s=p_CreateSurfaceFrom(w,h,ZSDL_PIXELFORMAT_RGBA32,rgba,w*4);if(s){*owned=rgba;p_g_object_unref(pix);return s;}free(rgba);}p_g_object_unref(pix);}}
+    if(p_IOFromFile&&p_LoadBMP_IO){SDL_IOStream*io=p_IOFromFile(path,"rb");if(io)return p_LoadBMP_IO(io,true);}return NULL;
+}
+static bool zsdl_image(SDL_Renderer*r,const char*path,float x,float y,float w,float h,const char*fit){if(!p_DestroySurface||!p_CreateTextureFromSurface||!p_RenderTexture||!p_DestroyTexture)return false;unsigned char*owned=NULL;SDL_Surface*s=zsdl_load_image_surface(path,&owned);if(!s)return false;SDL_Texture*t=p_CreateTextureFromSurface(r,s);p_DestroySurface(s);if(owned)free(owned);if(!t)return false;float tw=0,th=0;if(p_GetTextureSize)p_GetTextureSize(t,&tw,&th);SDL_FRect d={x,y,w,h};if(fit&&strcmp(fit,"contain")==0&&tw>0&&th>0){float sx=w/tw,sy=h/th,scale=sx<sy?sx:sy;d.w=tw*scale;d.h=th*scale;d.x=x+(w-d.w)/2;d.y=y+(h-d.h)/2;}bool ok=p_RenderTexture(r,t,NULL,&d);p_DestroyTexture(t);return ok;}
+static void zsdl_box_blur_rgba(unsigned char*pixels,int w,int h,int pitch,int radius){if(!pixels||w<2||h<2||radius<1)return;size_t bytes=(size_t)pitch*(size_t)h;unsigned char*src=(unsigned char*)malloc(bytes),*tmp=(unsigned char*)malloc(bytes);if(!src||!tmp){free(src);free(tmp);return;}memcpy(src,pixels,bytes);for(int y=0;y<h;y++)for(int x=0;x<w;x++){int count=0,sum[4]={0,0,0,0};for(int k=-radius;k<=radius;k++){int sx=x+k;if(sx<0)sx=0;if(sx>=w)sx=w-1;unsigned char*q=src+(size_t)y*(size_t)pitch+(size_t)sx*4u;for(int c=0;c<4;c++)sum[c]+=q[c];count++;}unsigned char*d=tmp+(size_t)y*(size_t)pitch+(size_t)x*4u;for(int c=0;c<4;c++)d[c]=(unsigned char)(sum[c]/count);}for(int y=0;y<h;y++)for(int x=0;x<w;x++){int count=0,sum[4]={0,0,0,0};for(int k=-radius;k<=radius;k++){int sy=y+k;if(sy<0)sy=0;if(sy>=h)sy=h-1;unsigned char*q=tmp+(size_t)sy*(size_t)pitch+(size_t)x*4u;for(int c=0;c<4;c++)sum[c]+=q[c];count++;}unsigned char*d=pixels+(size_t)y*(size_t)pitch+(size_t)x*4u;for(int c=0;c<4;c++)d[c]=(unsigned char)(sum[c]/count);}free(src);free(tmp);}
+static bool zsdl_blur_backdrop(SDL_Renderer*r,int w,int h,int radius){if(!p_RenderReadPixels||!p_ConvertSurface||!p_CreateTextureFromSurface||!p_RenderTexture||!p_DestroyTexture||!p_DestroySurface)return false;SDL_Surface*raw=p_RenderReadPixels(r,NULL);if(!raw)return false;SDL_Surface*rgba=p_ConvertSurface(raw,ZSDL_PIXELFORMAT_RGBA32);p_DestroySurface(raw);if(!rgba)return false;ZSDLSurfaceView*v=(ZSDLSurfaceView*)rgba;if(v->pixels&&v->w>0&&v->h>0)zsdl_box_blur_rgba((unsigned char*)v->pixels,v->w,v->h,v->pitch,radius);SDL_Texture*t=p_CreateTextureFromSurface(r,rgba);p_DestroySurface(rgba);if(!t)return false;SDL_FRect d={0,0,(float)w,(float)h};bool ok=p_RenderTexture(r,t,NULL,&d);p_DestroyTexture(t);return ok;}
 
 #define ZSDL_TRAY_QUEUE 128
 static char *zsdl_tray_queue[ZSDL_TRAY_QUEUE]; static int zsdl_tray_head=0,zsdl_tray_tail=0;
@@ -1213,13 +1236,18 @@ func sdlUIRenderItem(renderer *C.SDL_Renderer, item object.UIRenderItem) {
 		path := uiString(item.Props, "path", "")
 		if path != "" {
 			c := C.CString(path)
-			C.zsdl_bmp(renderer, c, C.float(bounds.X), C.float(bounds.Y), C.float(bounds.Width), C.float(bounds.Height))
+			fit := C.CString(uiString(item.Props, "fit", "contain"))
+			C.zsdl_image(renderer, c, C.float(bounds.X), C.float(bounds.Y), C.float(bounds.Width), C.float(bounds.Height), fit)
+			C.free(unsafe.Pointer(fit))
 			C.free(unsafe.Pointer(c))
 		}
 	case "modal":
-		sdlUIFill(renderer, object.UIRect{X: 0, Y: 0, Width: bounds.X*2 + bounds.Width, Height: bounds.Y*2 + bounds.Height}, uiColor(item.Props, "overlay", "#00000080"))
+		sdlUIFill(renderer, object.UIRect{X: 0, Y: 0, Width: bounds.X*2 + bounds.Width, Height: bounds.Y*2 + bounds.Height}, uiColor(item.Props, "overlay", "#00000055"))
+		sdlUIFill(renderer, object.UIRect{X: bounds.X + 8, Y: bounds.Y + 10, Width: bounds.Width, Height: bounds.Height}, uiColor(item.Props, "modalShadow", "#00000040"))
 		sdlUIFill(renderer, bounds, background)
-		sdlUIStroke(renderer, bounds, border)
+		if uiBool(item.Props, "border", false) {
+			sdlUIStroke(renderer, bounds, border)
+		}
 	case "tooltip":
 		sdlUIFill(renderer, bounds, background)
 		sdlUIText(renderer, bounds.X+6, bounds.Y+5, sdlUIItemText(item), textColor, item.Props)
@@ -1276,11 +1304,94 @@ func sdlUIRenderCanvasCommand(renderer *C.SDL_Renderer, origin object.UIRect, co
 		path := uiString(values, "path", "")
 		if path != "" {
 			c := C.CString(path)
-			C.zsdl_bmp(renderer, c, C.float(x), C.float(y), C.float(uiFloat(values, "width", 64)), C.float(uiFloat(values, "height", 64)))
+			fit := C.CString(uiString(values, "fit", "contain"))
+			C.zsdl_image(renderer, c, C.float(x), C.float(y), C.float(uiFloat(values, "width", 64)), C.float(uiFloat(values, "height", 64)), fit)
+			C.free(unsafe.Pointer(fit))
 			C.free(unsafe.Pointer(c))
 		}
 	}
 }
+
+func sdlUISelectPopupGeometry(item object.UIRenderItem, viewport object.UIRect) (object.UIRect, float64, int) {
+	items := uiArrayStrings(item.Props["options"])
+	if len(items) == 0 {
+		return object.UIRect{}, 0, 0
+	}
+	rowHeight := math.Max(28, uiFloat(item.Props, "optionHeight", math.Max(34, item.Bounds.Height)))
+	maxVisible := int(math.Max(1, uiFloat(item.Props, "maxVisibleOptions", 8)))
+	visible := len(items)
+	if visible > maxVisible {
+		visible = maxVisible
+	}
+	height := rowHeight * float64(visible)
+	width := math.Max(item.Bounds.Width, uiFloat(item.Props, "dropdownWidth", item.Bounds.Width))
+	x := item.Bounds.X
+	if x+width > viewport.X+viewport.Width {
+		x = math.Max(viewport.X, viewport.X+viewport.Width-width)
+	}
+	y := item.Bounds.Y + item.Bounds.Height + 2
+	if y+height > viewport.Y+viewport.Height && item.Bounds.Y-2-height >= viewport.Y {
+		y = item.Bounds.Y - 2 - height
+	}
+	if y+height > viewport.Y+viewport.Height {
+		height = math.Max(rowHeight, viewport.Y+viewport.Height-y)
+	}
+	return object.UIRect{X: x, Y: y, Width: width, Height: height}, rowHeight, visible
+}
+
+func sdlUIRenderSelectPopup(renderer *C.SDL_Renderer, item object.UIRenderItem, viewport object.UIRect) {
+	if item.Kind != "select" || !uiBool(item.Props, "open", false) {
+		return
+	}
+	options := uiArrayStrings(item.Props["options"])
+	popup, rowHeight, visible := sdlUISelectPopupGeometry(item, viewport)
+	if len(options) == 0 || visible == 0 {
+		return
+	}
+	offset := int(uiFloat(item.Props, "popupOffset", 0))
+	maxOffset := len(options) - visible
+	if maxOffset < 0 {
+		maxOffset = 0
+	}
+	if offset < 0 {
+		offset = 0
+	}
+	if offset > maxOffset {
+		offset = maxOffset
+	}
+	shadow := object.UIRect{X: popup.X + 4, Y: popup.Y + 5, Width: popup.Width, Height: popup.Height}
+	sdlUIFill(renderer, shadow, uiColor(item.Props, "dropdownShadow", "#00000030"))
+	sdlUIFill(renderer, popup, uiColor(item.Props, "dropdownBackground", uiColor(item.Props, "background", "#ffffff")))
+	sdlUIStroke(renderer, popup, uiColor(item.Props, "dropdownBorderColor", uiColor(item.Props, "borderColor", "#cfd6e2")))
+	selected := uiString(item.Props, "value", "")
+	textColor := uiColor(item.Props, "textColor", "#172033")
+	contentWidth := popup.Width
+	if len(options) > visible {
+		contentWidth -= 10
+	}
+	for row := 0; row < visible && offset+row < len(options); row++ {
+		index := offset + row
+		rowBounds := object.UIRect{X: popup.X + 1, Y: popup.Y + float64(row)*rowHeight + 1, Width: contentWidth - 2, Height: rowHeight - 2}
+		if options[index] == selected {
+			sdlUIFill(renderer, rowBounds, uiColor(item.Props, "selectedOptionBackground", "#dfe8ff"))
+		}
+		sdlUITextCentered(renderer, rowBounds, 10, options[index], textColor, item.Props)
+		if row > 0 {
+			sdlUIFill(renderer, object.UIRect{X: popup.X + 1, Y: popup.Y + float64(row)*rowHeight, Width: contentWidth - 2, Height: 1}, uiColor(item.Props, "optionSeparatorColor", uiColor(item.Props, "borderColor", "#cfd6e2")))
+		}
+	}
+	if len(options) > visible {
+		track := object.UIRect{X: popup.X + popup.Width - 8, Y: popup.Y + 3, Width: 5, Height: popup.Height - 6}
+		sdlUIFill(renderer, track, uiColor(item.Props, "scrollbarTrack", "#e1e6ef"))
+		thumbHeight := math.Max(18, track.Height*float64(visible)/float64(len(options)))
+		thumbY := track.Y
+		if maxOffset > 0 {
+			thumbY += (track.Height - thumbHeight) * float64(offset) / float64(maxOffset)
+		}
+		sdlUIFill(renderer, object.UIRect{X: track.X, Y: thumbY, Width: track.Width, Height: thumbHeight}, uiColor(item.Props, "scrollbarThumb", "#9aa7ba"))
+	}
+}
+
 func uiRectsEqual(a, b *object.UIRect) bool {
 	if a == nil || b == nil {
 		return a == nil && b == nil
@@ -1305,7 +1416,17 @@ func (w *sdlWindow) RenderUI(frame *object.UIRenderFrame) error {
 		return errors.New(C.GoString(C.zsdl_last_error()))
 	}
 	var activeClip *object.UIRect
+	blurredBackdrop := false
 	for _, item := range frame.Items {
+		if item.Kind == "modal" && !blurredBackdrop {
+			C.zsdl_clip_reset(w.renderer)
+			radius := int(uiFloat(item.Props, "backdropBlur", 6))
+			if radius > 0 {
+				C.zsdl_blur_backdrop(w.renderer, C.int(frame.Width), C.int(frame.Height), C.int(radius))
+			}
+			blurredBackdrop = true
+			activeClip = nil
+		}
 		if !uiRectsEqual(activeClip, item.Clip) {
 			if item.Clip == nil {
 				C.zsdl_clip_reset(w.renderer)
@@ -1320,6 +1441,26 @@ func (w *sdlWindow) RenderUI(frame *object.UIRenderFrame) error {
 		sdlUIRenderItem(w.renderer, item)
 	}
 	C.zsdl_clip_reset(w.renderer)
+	viewport := object.UIRect{X: 0, Y: 0, Width: frame.Width, Height: frame.Height}
+	var modalBounds *object.UIRect
+	for _, item := range frame.Items {
+		if item.Kind == "modal" {
+			bounds := item.Bounds
+			modalBounds = &bounds
+		}
+	}
+	for _, item := range frame.Items {
+		if item.Kind != "select" || !uiBool(item.Props, "open", false) {
+			continue
+		}
+		if modalBounds != nil {
+			centerX, centerY := item.Bounds.X+item.Bounds.Width/2, item.Bounds.Y+item.Bounds.Height/2
+			if !uiPointInRect(centerX, centerY, *modalBounds) {
+				continue
+			}
+		}
+		sdlUIRenderSelectPopup(w.renderer, item, viewport)
+	}
 	if !bool(C.zsdl_present(w.renderer)) {
 		return errors.New(C.GoString(C.zsdl_last_error()))
 	}

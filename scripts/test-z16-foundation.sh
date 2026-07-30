@@ -14,6 +14,7 @@ go build -o "$TMP/zumbra" .
 "$TMP/zumbra" check code_examples/core/ui_modal.zum
 "$TMP/zumbra" check code_examples/core/array_append.zum
 "$TMP/zumbra" check code_examples/core/data_exchange.zum
+"$TMP/zumbra" check code_examples/core/ui_select_dropdown.zum
 
 VM_OUTPUT="$(ZUMBRA_DESKTOP_HEADLESS=1 "$TMP/zumbra" run code_examples/core/ui_event_target.zum)"
 EXPECTED=$'edit-42\nbutton'
@@ -79,6 +80,19 @@ fi
 DATA_NATIVE_OUTPUT="$("$TMP/data-exchange")"
 if [[ "$DATA_NATIVE_OUTPUT" != "$DATA_EXPECTED" ]]; then
   printf 'Unexpected recoverable data native output:\n%s\n' "$DATA_NATIVE_OUTPUT" >&2
+  exit 1
+fi
+
+SELECT_EXPECTED=$'true\nPrimeira\nSegunda\nfalse'
+SELECT_VM_OUTPUT="$(ZUMBRA_DESKTOP_HEADLESS=1 "$TMP/zumbra" run code_examples/core/ui_select_dropdown.zum)"
+if [[ "$SELECT_VM_OUTPUT" != "$SELECT_EXPECTED" ]]; then
+  printf 'Unexpected select dropdown VM output:\n%s\n' "$SELECT_VM_OUTPUT" >&2
+  exit 1
+fi
+"$TMP/zumbra" build --release -o "$TMP/ui-select-dropdown" code_examples/core/ui_select_dropdown.zum
+SELECT_NATIVE_OUTPUT="$(ZUMBRA_DESKTOP_HEADLESS=1 "$TMP/ui-select-dropdown")"
+if [[ "$SELECT_NATIVE_OUTPUT" != "$SELECT_EXPECTED" ]]; then
+  printf 'Unexpected select dropdown native output:\n%s\n' "$SELECT_NATIVE_OUTPUT" >&2
   exit 1
 fi
 

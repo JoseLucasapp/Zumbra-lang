@@ -1,0 +1,33 @@
+import "../../std/desktop.zum" as desktop;
+import "../../std/ui.zum" as ui;
+
+var application << desktop.app({"backend": "headless", "quitOnLastWindow": false});
+var window << application.window({"title": "Select", "width": 360, "height": 240});
+var selection << ui.stringState("Primeira");
+var picker << ui.select({
+    "id": "picker",
+    "value": "Primeira",
+    "options": ["Primeira", "Segunda", "Terceira"],
+    "width": 220,
+    "height": 40,
+    "optionHeight": 36,
+    "maxVisibleOptions": 3
+});
+ui.bind(picker, "value", selection);
+var root << ui.columnWith({"padding": 12}, [picker]);
+var context << ui.mount(application, window, root, {});
+var items << ui.snapshot(context)["items"];
+var selectItem << items[1];
+var x << selectItem["x"] + 10;
+var y << selectItem["y"] + 10;
+ui.dispatch(context, {"type": "mouse_down", "x": x, "y": y});
+ui.dispatch(context, {"type": "mouse_up", "x": x, "y": y});
+show(ui.get(picker, "open"));
+show(selection.get());
+var optionY << selectItem["y"] + selectItem["height"] + 2 + 36 + 8;
+ui.dispatch(context, {"type": "mouse_down", "x": x, "y": optionY});
+ui.dispatch(context, {"type": "mouse_up", "x": x, "y": optionY});
+show(selection.get());
+show(ui.get(picker, "open"));
+context.close();
+application.close();

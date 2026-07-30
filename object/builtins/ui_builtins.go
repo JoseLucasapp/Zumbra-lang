@@ -958,6 +958,136 @@ func updateUIBoundState(node *object.UINode, property string, value object.Objec
 	return nil
 }
 
+func uiSelectCurrentIndex(props map[string]object.Object, items []string) int {
+	value := optionString(props, "value", "")
+	for index, item := range items {
+		if item == value {
+			return index
+		}
+	}
+	index := int(optionInt(props, "selectedIndex", 0))
+	if index < 0 || index >= len(items) {
+		return 0
+	}
+	return index
+}
+
+func uiSelectPopupGeometry(node *object.UINode, viewport object.UIRect) (object.UIRect, float64, int) {
+	if node == nil {
+		return object.UIRect{}, 0, 0
+	}
+	node.Mu.RLock()
+	bounds := node.Bounds
+	props := cloneUIProps(node.Props)
+	node.Mu.RUnlock()
+	items := uiArrayStrings(props["options"])
+	if len(items) == 0 {
+		return object.UIRect{}, 0, 0
+	}
+	rowHeight := math.Max(28, uiPropNumber(props, "optionHeight", math.Max(34, bounds.Height)))
+	maxVisible := int(math.Max(1, uiPropNumber(props, "maxVisibleOptions", 8)))
+	visible := len(items)
+	if visible > maxVisible {
+		visible = maxVisible
+	}
+	height := rowHeight * float64(visible)
+	width := math.Max(bounds.Width, uiPropNumber(props, "dropdownWidth", bounds.Width))
+	x := bounds.X
+	if x+width > viewport.X+viewport.Width {
+		x = math.Max(viewport.X, viewport.X+viewport.Width-width)
+	}
+	y := bounds.Y + bounds.Height + 2
+	if y+height > viewport.Y+viewport.Height && bounds.Y-2-height >= viewport.Y {
+		y = bounds.Y - 2 - height
+	}
+	if y+height > viewport.Y+viewport.Height {
+		height = math.Max(rowHeight, viewport.Y+viewport.Height-y)
+	}
+	return object.UIRect{X: x, Y: y, Width: width, Height: height}, rowHeight, visible
+}
+
+func topmostOpenSelect(node *object.UINode) *object.UINode {
+	if node == nil {
+		return nil
+	}
+	node.Mu.RLock()
+	visible := node.Visible
+	kind := node.Kind
+	props := cloneUIProps(node.Props)
+	children := append([]*object.UINode{}, node.Children...)
+	node.Mu.RUnlock()
+	if !visible {
+		return nil
+	}
+	for index := len(children) - 1; index >= 0; index-- {
+		if selected := topmostOpenSelect(children[index]); selected != nil {
+			return selected
+		}
+	}
+	if kind == "select" && optionBool(props, "open", false) {
+		return node
+	}
+	return nil
+}
+
+func setUISelectOpen(node *object.UINode, open bool) {
+	if node == nil || node.Kind != "select" {
+		return
+	}
+	node.Mu.Lock()
+	node.Props["open"] = NewBoolean(open)
+	node.Mu.Unlock()
+}
+
+func closeOpenUISelects(node *object.UINode, except *object.UINode) bool {
+	if node == nil {
+		return false
+	}
+	changed := false
+	node.Mu.RLock()
+	children := append([]*object.UINode{}, node.Children...)
+	kind := node.Kind
+	open := optionBool(node.Props, "open", false)
+	node.Mu.RUnlock()
+	if kind == "select" && node != except && open {
+		setUISelectOpen(node, false)
+		changed = true
+	}
+	for _, child := range children {
+		if closeOpenUISelects(child, except) {
+			changed = true
+		}
+	}
+	return changed
+}
+
+func updateUISelectValue(target *object.UINode, props map[string]object.Object, index int, invoke func(string) *object.Error) *object.Error {
+	items := uiArrayStrings(props["options"])
+	if len(items) == 0 {
+		return nil
+	}
+	if index < 0 {
+		index = 0
+	}
+	if index >= len(items) {
+		index = len(items) - 1
+	}
+	selectedIndex := NewInteger(int64(index))
+	selectedValue := NewString(items[index])
+	target.Mu.Lock()
+	target.Props["selectedIndex"] = selectedIndex
+	target.Props["value"] = selectedValue
+	target.Props["open"] = NewBoolean(false)
+	target.Mu.Unlock()
+	if e := updateUIBoundState(target, "selectedIndex", selectedIndex); e != nil {
+		return e
+	}
+	if e := updateUIBoundState(target, "value", selectedValue); e != nil {
+		return e
+	}
+	return invoke("onChange")
+}
+
 func dispatchUIEvent(ctx *object.UIContext, event *object.DesktopEvent) *object.Error {
 	if ctx == nil || event == nil {
 		return nil
@@ -973,9 +1103,26 @@ func dispatchUIEvent(ctx *object.UIContext, event *object.DesktopEvent) *object.
 	x := uiEventNumber(event.Data, "x")
 	y := uiEventNumber(event.Data, "y")
 	var target *object.UINode
+	popupRoot := root
+	if modal := topmostVisibleModal(root); modal != nil {
+		popupRoot = modal
+	}
+	openSelect := topmostOpenSelect(popupRoot)
+	var openPopup object.UIRect
+	var openPopupRowHeight float64
+	if openSelect != nil {
+		root.Mu.RLock()
+		viewport := root.Bounds
+		root.Mu.RUnlock()
+		openPopup, openPopupRowHeight, _ = uiSelectPopupGeometry(openSelect, viewport)
+	}
 	switch event.Type {
 	case "mouse_motion", "mouse_down", "mouse_up", "mouse_button_down", "mouse_button_up", "mouse_wheel":
-		target = hitTestUI(root, x, y)
+		if openSelect != nil && uiPointInRect(x, y, openPopup) {
+			target = openSelect
+		} else {
+			target = hitTestUI(root, x, y)
+		}
 		if event.Type == "mouse_motion" {
 			ctx.Mu.Lock()
 			if target != nil {
@@ -997,9 +1144,41 @@ func dispatchUIEvent(ctx *object.UIContext, event *object.DesktopEvent) *object.
 			shortcut = strings.ToLower(s.Value)
 		}
 		if shortcut == "tab" || shortcut == "shift+tab" {
+			closeOpenUISelects(root, nil)
 			focusNextUI(ctx, shortcut == "shift+tab")
 			return nil
 		}
+	}
+	if event.Type == "mouse_wheel" && openSelect != nil && target == openSelect && uiPointInRect(x, y, openPopup) {
+		openSelect.Mu.RLock()
+		selectProps := cloneUIProps(openSelect.Props)
+		openSelect.Mu.RUnlock()
+		items := uiArrayStrings(selectProps["options"])
+		maxVisible := int(math.Max(1, uiPropNumber(selectProps, "maxVisibleOptions", 8)))
+		maxOffset := maxInt(0, len(items)-maxVisible)
+		offset := int(optionInt(selectProps, "popupOffset", 0))
+		dy := uiEventNumber(event.Data, "dy")
+		if dy == 0 {
+			dy = uiEventNumber(event.Data, "wheelY")
+		}
+		if dy > 0 {
+			offset--
+		} else if dy < 0 {
+			offset++
+		}
+		if offset < 0 {
+			offset = 0
+		}
+		if offset > maxOffset {
+			offset = maxOffset
+		}
+		openSelect.Mu.Lock()
+		openSelect.Props["popupOffset"] = NewInteger(int64(offset))
+		openSelect.Mu.Unlock()
+		ctx.Mu.Lock()
+		ctx.Dirty = true
+		ctx.Mu.Unlock()
+		return nil
 	}
 	if event.Type == "mouse_wheel" {
 		scrollNode := target
@@ -1028,6 +1207,13 @@ func dispatchUIEvent(ctx *object.UIContext, event *object.DesktopEvent) *object.
 		return nil
 	}
 	down := event.Type == "mouse_down" || event.Type == "mouse_button_down"
+	if down && openSelect != nil && target != openSelect {
+		if closeOpenUISelects(root, nil) {
+			ctx.Mu.Lock()
+			ctx.Dirty = true
+			ctx.Mu.Unlock()
+		}
+	}
 	if target == nil {
 		if down {
 			ctx.Mu.Lock()
@@ -1064,7 +1250,47 @@ func dispatchUIEvent(ctx *object.UIContext, event *object.DesktopEvent) *object.
 		}
 		return nil
 	}
+	if event.Type == "key_down" && kind == "select" {
+		key := ""
+		if value, ok := event.Data["key"].(*object.String); ok {
+			key = strings.ToLower(value.Value)
+		}
+		items := uiArrayStrings(props["options"])
+		if key == "escape" {
+			setUISelectOpen(target, false)
+			ctx.Mu.Lock()
+			ctx.Dirty = true
+			ctx.Mu.Unlock()
+			return nil
+		}
+		if (key == "arrowdown" || key == "down" || key == "arrowup" || key == "up") && len(items) > 0 {
+			index := uiSelectCurrentIndex(props, items)
+			if key == "arrowup" || key == "up" {
+				index = (index + len(items) - 1) % len(items)
+			} else {
+				index = (index + 1) % len(items)
+			}
+			if e := updateUISelectValue(target, props, index, invoke); e != nil {
+				return e
+			}
+			setUISelectOpen(target, true)
+			ctx.Mu.Lock()
+			ctx.Dirty = true
+			ctx.Mu.Unlock()
+			return nil
+		}
+	}
 	up := event.Type == "mouse_up" || event.Type == "mouse_button_up"
+	if up && kind == "select" && openSelect == target && uiPointInRect(x, y, openPopup) && openPopupRowHeight > 0 {
+		index := int(optionInt(props, "popupOffset", 0)) + int((y-openPopup.Y)/openPopupRowHeight)
+		if e := updateUISelectValue(target, props, index, invoke); e != nil {
+			return e
+		}
+		ctx.Mu.Lock()
+		ctx.Dirty = true
+		ctx.Mu.Unlock()
+		return nil
+	}
 	if down {
 		if uiNodeFocusable(target) {
 			ctx.Mu.Lock()
@@ -1140,11 +1366,24 @@ func dispatchUIEvent(ctx *object.UIContext, event *object.DesktopEvent) *object.
 			if e := invoke("onChange"); e != nil {
 				return e
 			}
-		case "select", "tabs":
-			items := uiArrayStrings(props["options"])
-			if kind == "tabs" {
-				items = uiArrayStrings(props["tabs"])
+		case "select":
+			open := optionBool(props, "open", false)
+			closeOpenUISelects(root, target)
+			if !open {
+				items := uiArrayStrings(props["options"])
+				selected := uiSelectCurrentIndex(props, items)
+				maxVisible := int(math.Max(1, uiPropNumber(props, "maxVisibleOptions", 8)))
+				offset := 0
+				if selected >= maxVisible {
+					offset = selected - maxVisible + 1
+				}
+				target.Mu.Lock()
+				target.Props["popupOffset"] = NewInteger(int64(offset))
+				target.Mu.Unlock()
 			}
+			setUISelectOpen(target, !open)
+		case "tabs":
+			items := uiArrayStrings(props["tabs"])
 			if len(items) > 0 {
 				index := int(optionInt(props, "selectedIndex", 0))
 				index = (index + 1) % len(items)
@@ -1277,7 +1516,7 @@ func hitTestUIClipped(node *object.UINode, x, y float64, inheritedClip *object.U
 		return nil
 	}
 	childClip := inheritedClip
-	if uiScrollableY(props) {
+	if uiClipsChildren(props) {
 		viewport := contentBounds
 		if inheritedClip != nil {
 			intersection, ok := uiRectIntersection(*inheritedClip, viewport)
