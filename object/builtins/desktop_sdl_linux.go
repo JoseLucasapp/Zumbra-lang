@@ -1786,6 +1786,19 @@ func uiRectsEqual(a, b *object.UIRect) bool {
 	return a.X == b.X && a.Y == b.Y && a.Width == b.Width && a.Height == b.Height
 }
 
+// sdlUIFirstModalIndex separates the normal application layer from the active
+// modal layer. Scrollbars must be rendered inside their own layer; drawing all
+// scrollbars after the entire frame lets scrollbars from the blurred background
+// appear on top of a dialog.
+func sdlUIFirstModalIndex(items []object.UIRenderItem) int {
+	for index, item := range items {
+		if item.Kind == "modal" {
+			return index
+		}
+	}
+	return len(items)
+}
+
 func (w *sdlWindow) RenderUI(frame *object.UIRenderFrame) error {
 	w.mu.Lock()
 	defer w.mu.Unlock()
@@ -1802,42 +1815,51 @@ func (w *sdlWindow) RenderUI(frame *object.UIRenderFrame) error {
 	if !bool(C.zsdl_clear(w.renderer)) {
 		return errors.New(C.GoString(C.zsdl_last_error()))
 	}
-	var activeClip *object.UIRect
-	blurredBackdrop := false
-	for _, item := range frame.Items {
-		if item.Kind == "modal" && !blurredBackdrop {
+	applyClip := func(activeClip **object.UIRect, clip *object.UIRect) {
+		if uiRectsEqual(*activeClip, clip) {
+			return
+		}
+		if clip == nil {
 			C.zsdl_clip_reset(w.renderer)
-			radius := int(uiFloat(item.Props, "backdropBlur", 6))
-			if radius > 0 {
-				C.zsdl_blur_backdrop(w.renderer, C.int(frame.Width), C.int(frame.Height), C.int(radius))
-			}
-			blurredBackdrop = true
-			activeClip = nil
+			*activeClip = nil
+			return
 		}
-		if !uiRectsEqual(activeClip, item.Clip) {
-			if item.Clip == nil {
-				C.zsdl_clip_reset(w.renderer)
-				activeClip = nil
-			} else {
-				clip := *item.Clip
-				C.zsdl_clip(w.renderer, C.int32_t(math.Floor(clip.X)), C.int32_t(math.Floor(clip.Y)), C.int32_t(math.Ceil(clip.Width)), C.int32_t(math.Ceil(clip.Height)))
-				copy := clip
-				activeClip = &copy
-			}
-		}
-		sdlUIRenderItem(w.renderer, item)
+		value := *clip
+		C.zsdl_clip(w.renderer, C.int32_t(math.Floor(value.X)), C.int32_t(math.Floor(value.Y)), C.int32_t(math.Ceil(value.Width)), C.int32_t(math.Ceil(value.Height)))
+		copy := value
+		*activeClip = &copy
 	}
-	C.zsdl_clip_reset(w.renderer)
-	for _, item := range frame.Items {
-		if uiShouldRenderVerticalScrollbar(item.Props, item.ScrollContentHeight, item.ContentBounds.Height) {
-			if item.Clip != nil {
-				clip := *item.Clip
-				C.zsdl_clip(w.renderer, C.int32_t(math.Floor(clip.X)), C.int32_t(math.Floor(clip.Y)), C.int32_t(math.Ceil(clip.Width)), C.int32_t(math.Ceil(clip.Height)))
-			} else {
-				C.zsdl_clip_reset(w.renderer)
+	renderItems := func(items []object.UIRenderItem) {
+		var activeClip *object.UIRect
+		for _, item := range items {
+			applyClip(&activeClip, item.Clip)
+			sdlUIRenderItem(w.renderer, item)
+		}
+		C.zsdl_clip_reset(w.renderer)
+	}
+	renderScrollbars := func(items []object.UIRenderItem) {
+		var activeClip *object.UIRect
+		for _, item := range items {
+			if !uiShouldRenderVerticalScrollbar(item.Props, item.ScrollContentHeight, item.ContentBounds.Height) {
+				continue
 			}
+			applyClip(&activeClip, item.Clip)
 			sdlUIRenderVerticalScrollbar(w.renderer, item)
 		}
+		C.zsdl_clip_reset(w.renderer)
+	}
+
+	modalIndex := sdlUIFirstModalIndex(frame.Items)
+	renderItems(frame.Items[:modalIndex])
+	renderScrollbars(frame.Items[:modalIndex])
+	if modalIndex < len(frame.Items) {
+		modal := frame.Items[modalIndex]
+		radius := int(uiFloat(modal.Props, "backdropBlur", 6))
+		if radius > 0 {
+			C.zsdl_blur_backdrop(w.renderer, C.int(frame.Width), C.int(frame.Height), C.int(radius))
+		}
+		renderItems(frame.Items[modalIndex:])
+		renderScrollbars(frame.Items[modalIndex:])
 	}
 	C.zsdl_clip_reset(w.renderer)
 	viewport := object.UIRect{X: 0, Y: 0, Width: frame.Width, Height: frame.Height}
