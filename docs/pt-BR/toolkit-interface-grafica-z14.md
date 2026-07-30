@@ -678,3 +678,8 @@ ui.columnWith({
 ```
 
 Isso mantém margens e alinhamentos simétricos. Use padding interno nos itens quando não quiser que a barra sobreponha conteúdo clicável.
+
+
+## Correções da versão 0.12.4
+
+Navegações laterais usam toda a altura disponível. Gráficos de linha exibem valores sobre os pontos e rótulos categóricos abaixo deles. Use `showValues: false` para ocultar os valores.

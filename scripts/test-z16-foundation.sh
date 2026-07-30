@@ -17,6 +17,7 @@ go build -o "$TMP/zumbra" .
 "$TMP/zumbra" check code_examples/core/ui_select_dropdown.zum
 "$TMP/zumbra" check code_examples/core/ui_navigation_charts.zum
 "$TMP/zumbra" check code_examples/core/ui_interaction_polish.zum
+"$TMP/zumbra" check code_examples/core/ui_sidebar_line_chart.zum
 
 VM_OUTPUT="$(ZUMBRA_DESKTOP_HEADLESS=1 "$TMP/zumbra" run code_examples/core/ui_event_target.zum)"
 EXPECTED=$'edit-42\nbutton'
@@ -139,6 +140,27 @@ if [[ "$POLISH_NATIVE_OUTPUT" != "$POLISH_EXPECTED" ]]; then
   printf 'Unexpected interaction polish native output:
 %s
 ' "$POLISH_NATIVE_OUTPUT" >&2
+  exit 1
+fi
+
+
+SIDEBAR_LINE_EXPECTED=$'600
+true
+40
+PlayStation 1'
+SIDEBAR_LINE_VM_OUTPUT="$(ZUMBRA_DESKTOP_HEADLESS=1 "$TMP/zumbra" run code_examples/core/ui_sidebar_line_chart.zum)"
+if [[ "$SIDEBAR_LINE_VM_OUTPUT" != "$SIDEBAR_LINE_EXPECTED" ]]; then
+  printf 'Unexpected sidebar/line chart VM output:
+%s
+' "$SIDEBAR_LINE_VM_OUTPUT" >&2
+  exit 1
+fi
+"$TMP/zumbra" build --release -o "$TMP/ui-sidebar-line-chart" code_examples/core/ui_sidebar_line_chart.zum
+SIDEBAR_LINE_NATIVE_OUTPUT="$(ZUMBRA_DESKTOP_HEADLESS=1 "$TMP/ui-sidebar-line-chart")"
+if [[ "$SIDEBAR_LINE_NATIVE_OUTPUT" != "$SIDEBAR_LINE_EXPECTED" ]]; then
+  printf 'Unexpected sidebar/line chart native output:
+%s
+' "$SIDEBAR_LINE_NATIVE_OUTPUT" >&2
   exit 1
 fi
 

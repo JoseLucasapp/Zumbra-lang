@@ -1639,17 +1639,28 @@ func sdlUIRenderBarChart(renderer *C.SDL_Renderer, origin object.UIRect, values,
 	}
 }
 func sdlUIRenderLineChart(renderer *C.SDL_Renderer, origin object.UIRect, values, chartProps map[string]object.Object) {
-	_ = chartProps
 	numbers := sdlUIChartNumbers(values["values"])
-	if len(numbers) < 2 {
+	if len(numbers) == 0 {
 		return
 	}
+	labels := uiArrayStrings(values["labels"])
 	x := origin.X + uiFloat(values, "x", 0)
 	y := origin.Y + uiFloat(values, "y", 0)
 	width := uiFloat(values, "width", origin.Width)
 	height := uiFloat(values, "height", origin.Height)
 	padding := math.Max(8, uiFloat(values, "padding", 18))
-	plot := object.UIRect{X: x + padding, Y: y + padding, Width: math.Max(0, width-padding*2), Height: math.Max(0, height-padding*2)}
+	labelHeight := 0.0
+	if len(labels) > 0 {
+		labelHeight = 30
+	}
+	valueHeight := 0.0
+	if uiBool(values, "showValues", true) {
+		valueHeight = 24
+	}
+	plot := object.UIRect{X: x + padding, Y: y + padding + valueHeight, Width: math.Max(0, width-padding*2), Height: math.Max(0, height-padding*2-labelHeight-valueHeight)}
+	if plot.Width <= 0 || plot.Height <= 0 {
+		return
+	}
 	minValue, maxValue := numbers[0], numbers[0]
 	for _, number := range numbers[1:] {
 		if number < minValue {
@@ -1660,17 +1671,31 @@ func sdlUIRenderLineChart(renderer *C.SDL_Renderer, origin object.UIRect, values
 		}
 	}
 	if maxValue == minValue {
-		maxValue = minValue + 1
+		minValue -= 0.5
+		maxValue += 0.5
 	}
-	color := uiString(values, "color", "#3867e8")
-	sdlUISetColor(renderer, color)
-	for index := 1; index < len(numbers); index++ {
-		x1 := plot.X + float64(index-1)*plot.Width/float64(len(numbers)-1)
-		x2 := plot.X + float64(index)*plot.Width/float64(len(numbers)-1)
-		y1 := plot.Y + plot.Height - (numbers[index-1]-minValue)/(maxValue-minValue)*plot.Height
-		y2 := plot.Y + plot.Height - (numbers[index]-minValue)/(maxValue-minValue)*plot.Height
-		C.zsdl_line(renderer, C.float(x1), C.float(y1), C.float(x2), C.float(y2))
-		sdlUIFill(renderer, object.UIRect{X: x2 - 2, Y: y2 - 2, Width: 4, Height: 4}, color)
+	colors := sdlUIChartPalette(values)
+	color := uiString(values, "color", colors[0])
+	textColor := uiString(values, "textColor", uiColor(chartProps, "textColor", "#172033"))
+	slot := plot.Width / float64(len(numbers))
+	previousX, previousY := 0.0, 0.0
+	for index, number := range numbers {
+		pointX := plot.X + (float64(index)+0.5)*slot
+		pointY := plot.Y + plot.Height - (number-minValue)/(maxValue-minValue)*plot.Height
+		if index > 0 {
+			sdlUISetColor(renderer, color)
+			C.zsdl_line(renderer, C.float(previousX), C.float(previousY), C.float(pointX), C.float(pointY))
+		}
+		sdlUIFill(renderer, object.UIRect{X: pointX - 3, Y: pointY - 3, Width: 6, Height: 6}, color)
+		cellWidth := math.Max(48, slot)
+		if valueHeight > 0 {
+			valueLabel := strconv.FormatFloat(number, 'f', -1, 64)
+			sdlUITextCentered(renderer, object.UIRect{X: pointX - cellWidth/2, Y: pointY - 24, Width: cellWidth, Height: 20}, 2, valueLabel, textColor, map[string]object.Object{"fontSize": NewFloat(11), "textAlign": NewString("center"), "textOverflow": NewString("ellipsis")})
+		}
+		if index < len(labels) {
+			sdlUITextCentered(renderer, object.UIRect{X: pointX - cellWidth/2, Y: plot.Y + plot.Height + 5, Width: cellWidth, Height: labelHeight - 4}, 2, labels[index], textColor, map[string]object.Object{"fontSize": NewFloat(10), "textAlign": NewString("center"), "textOverflow": NewString("ellipsis")})
+		}
+		previousX, previousY = pointX, pointY
 	}
 }
 

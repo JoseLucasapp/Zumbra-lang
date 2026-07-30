@@ -139,7 +139,7 @@ func layoutUINode(node *object.UINode, available object.UIRect, theme *object.UI
 		height = 0
 	}
 	natural := uiNaturalHeight(kind, props, theme, measurer)
-	if _, explicit := uiNumber(props["height"]); !explicit && kind != "row" && kind != "column" && kind != "container" && kind != "modal" {
+	if _, explicit := uiNumber(props["height"]); !explicit && kind != "row" && kind != "column" && kind != "container" && kind != "menu" && kind != "modal" {
 		height = math.Min(height, natural)
 	}
 	bounds := object.UIRect{X: x, Y: y, Width: width, Height: height}
