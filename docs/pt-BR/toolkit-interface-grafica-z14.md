@@ -510,3 +510,171 @@ var table << ui.dataTable({
 ```
 
 Pizza, barras, linhas e tabelas possuem paridade entre o renderer SDL3 Go/cgo, o backend C11 e o snapshot headless dos comandos.
+
+## Cursores, caret e foco
+
+Controles interativos podem definir o cursor exibido pelo sistema:
+
+```zum
+ui.buttonWith({
+    "text": "Salvar",
+    "cursor": "pointer"
+});
+
+ui.input({
+    "placeholder": "Nome do jogo",
+    "cursor": "text"
+});
+```
+
+Valores suportados:
+
+- `default`;
+- `pointer` ou `hand`;
+- `text`, `ibeam` ou `i-beam`.
+
+Botões, selects, checkboxes e radios usam `pointer` por padrão. Inputs e textareas usam `text`, recebem um fundo de foco derivado do tema e exibem um caret real enquanto estão focados. O anel de foco é desenhado dentro do componente, evitando clipping nas bordas de modais e containers.
+
+## Ícones vetoriais em botões
+
+Botões podem usar ícones independentes da fonte:
+
+```zum
+ui.buttonWith({
+    "icon": "close",
+    "text": "",
+    "width": 38,
+    "height": 36,
+    "accessibilityLabel": "Fechar"
+});
+```
+
+Ícones disponíveis:
+
+- `close`;
+- `menu`;
+- `chevron-left`;
+- `chevron-right`.
+
+O texto acessível deve ser mantido em `accessibilityLabel` quando o botão não possui texto visível.
+
+## Sidebar fora do fluxo
+
+Para ocultar completamente uma navegação e permitir que o conteúdo ocupe todo o espaço, vincule `visible`, `expandedSize` e o `gap` do layout:
+
+```zum
+var visible << ui.boolState(true);
+var size << ui.intState(300);
+var gap << ui.intState(16);
+
+var sidebar << ui.navigation({
+    "placement": "left",
+    "expandedSize": 300
+}, children);
+ui.bind(sidebar, "visible", visible);
+ui.bind(sidebar, "expandedSize", size);
+
+var layout << ui.rowWith({"gap": 16, "grow": 1}, [sidebar, content]);
+ui.bind(layout, "gap", gap);
+```
+
+Ao ocultar, use tamanho e gap iguais a zero antes de definir `visible` como `false`. Nós invisíveis recebem bounds zerados e não participam do cálculo do layout.
+
+## Scrollbar sobreposta
+
+`scrollbarOverlay: true` desenha a barra dentro do viewport sem reduzir `contentWidth`:
+
+```zum
+ui.columnWith({
+    "overflowY": "auto",
+    "scrollbarOverlay": true,
+    "scrollbarWidth": 8,
+    "scrollbarGutter": 4
+}, children);
+```
+
+Isso mantém margens e alinhamentos simétricos. Use padding interno nos itens quando não quiser que a barra sobreponha conteúdo clicável.
+
+## Cursores, caret e foco
+
+Controles interativos podem definir o cursor exibido pelo sistema:
+
+```zum
+ui.buttonWith({
+    "text": "Salvar",
+    "cursor": "pointer"
+});
+
+ui.input({
+    "placeholder": "Nome do jogo",
+    "cursor": "text"
+});
+```
+
+Valores suportados:
+
+- `default`;
+- `pointer` ou `hand`;
+- `text`, `ibeam` ou `i-beam`.
+
+Botões, selects, checkboxes e radios usam `pointer` por padrão. Inputs e textareas usam `text`, recebem um fundo de foco derivado do tema e exibem um caret real enquanto estão focados. O anel de foco é desenhado dentro do componente, evitando clipping nas bordas de modais e containers.
+
+## Ícones vetoriais em botões
+
+Botões podem usar ícones independentes da fonte:
+
+```zum
+ui.buttonWith({
+    "icon": "close",
+    "text": "",
+    "width": 38,
+    "height": 36,
+    "accessibilityLabel": "Fechar"
+});
+```
+
+Ícones disponíveis:
+
+- `close`;
+- `menu`;
+- `chevron-left`;
+- `chevron-right`.
+
+O texto acessível deve ser mantido em `accessibilityLabel` quando o botão não possui texto visível.
+
+## Sidebar fora do fluxo
+
+Para ocultar completamente uma navegação e permitir que o conteúdo ocupe todo o espaço, vincule `visible`, `expandedSize` e o `gap` do layout:
+
+```zum
+var visible << ui.boolState(true);
+var size << ui.intState(300);
+var gap << ui.intState(16);
+
+var sidebar << ui.navigation({
+    "placement": "left",
+    "expandedSize": 300
+}, children);
+ui.bind(sidebar, "visible", visible);
+ui.bind(sidebar, "expandedSize", size);
+
+var layout << ui.rowWith({"gap": 16, "grow": 1}, [sidebar, content]);
+ui.bind(layout, "gap", gap);
+```
+
+Ao ocultar, use tamanho e gap iguais a zero antes de definir `visible` como `false`. Nós invisíveis recebem bounds zerados e não participam do cálculo do layout.
+
+## Scrollbar sobreposta
+
+`scrollbarOverlay: true` desenha a barra dentro do viewport sem reduzir `contentWidth`:
+
+```zum
+ui.columnWith({
+    "overflowY": "auto",
+    "scrollbarOverlay": true,
+    "scrollbarWidth": 8,
+    "scrollbarGutter": 4
+}, children);
+```
+
+Isso mantém margens e alinhamentos simétricos. Use padding interno nos itens quando não quiser que a barra sobreponha conteúdo clicável.

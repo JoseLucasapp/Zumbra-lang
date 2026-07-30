@@ -72,6 +72,12 @@ func layoutUINode(node *object.UINode, available object.UIRect, theme *object.UI
 		childVisible := child.Visible
 		child.Mu.RUnlock()
 		if !childVisible {
+			child.Mu.Lock()
+			child.Bounds = object.UIRect{}
+			child.ContentBounds = object.UIRect{}
+			child.ContentHeight = 0
+			child.ScrollOffsetY = 0
+			child.Mu.Unlock()
 			continue
 		}
 		if childKind == "modal" {
@@ -227,7 +233,7 @@ func layoutUINode(node *object.UINode, available object.UIRect, theme *object.UI
 			maxOffset = 0
 		}
 		scrollOffsetY = uiClamp(scrollOffsetY, 0, maxOffset)
-		if uiHasVerticalOverflow(contentHeight, inner.Height) {
+		if uiHasVerticalOverflow(contentHeight, inner.Height) && !optionBool(props, "scrollbarOverlay", false) {
 			scrollbarWidth := math.Max(4, uiPropNumber(props, "scrollbarWidth", 8))
 			gutter := math.Max(2, uiPropNumber(props, "scrollbarGutter", 4))
 			inner.Width = math.Max(0, inner.Width-scrollbarWidth-gutter)
@@ -672,8 +678,15 @@ func applyUIStyleDefaults(kind string, props map[string]object.Object, theme *ob
 		set("textColor", NewString(uiThemeString(theme, "primaryText", "#ffffff")))
 		set("textAlign", NewString("center"))
 		set("textOverflow", NewString("ellipsis"))
-	case "input", "textarea", "checkbox", "radio":
+		set("cursor", NewString("pointer"))
+	case "input", "textarea":
 		set("background", NewString(uiThemeString(theme, "surface", "#ffffff")))
+		set("focusBackground", NewString(uiThemeString(theme, "surfaceAlt", "#eef2f7")))
+		set("cursor", NewString("text"))
+		set("caretColor", NewString(uiThemeString(theme, "primary", "#3867e8")))
+	case "checkbox", "radio":
+		set("background", NewString(uiThemeString(theme, "surface", "#ffffff")))
+		set("cursor", NewString("pointer"))
 	case "select":
 		set("background", NewString(uiThemeString(theme, "surface", "#ffffff")))
 		set("textAlign", NewString("left"))
@@ -681,6 +694,7 @@ func applyUIStyleDefaults(kind string, props map[string]object.Object, theme *ob
 		set("dropdownBackground", NewString(uiThemeString(theme, "surface", "#ffffff")))
 		set("selectedOptionBackground", NewString(uiThemeString(theme, "surfaceAlt", "#eef2f7")))
 		set("dropdownBorderColor", NewString(uiThemeString(theme, "border", "#cfd6e2")))
+		set("cursor", NewString("pointer"))
 	case "modal":
 		set("background", NewString(uiThemeString(theme, "surface", "#ffffff")))
 		set("overlay", NewString("#00000055"))

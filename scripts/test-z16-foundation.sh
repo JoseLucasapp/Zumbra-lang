@@ -16,6 +16,7 @@ go build -o "$TMP/zumbra" .
 "$TMP/zumbra" check code_examples/core/data_exchange.zum
 "$TMP/zumbra" check code_examples/core/ui_select_dropdown.zum
 "$TMP/zumbra" check code_examples/core/ui_navigation_charts.zum
+"$TMP/zumbra" check code_examples/core/ui_interaction_polish.zum
 
 VM_OUTPUT="$(ZUMBRA_DESKTOP_HEADLESS=1 "$TMP/zumbra" run code_examples/core/ui_event_target.zum)"
 EXPECTED=$'edit-42\nbutton'
@@ -115,6 +116,29 @@ if [[ "$NAV_NATIVE_OUTPUT" != "$NAV_EXPECTED" ]]; then
   printf 'Unexpected navigation/chart native output:
 %s
 ' "$NAV_NATIVE_OUTPUT" >&2
+  exit 1
+fi
+
+
+POLISH_EXPECTED=$'296
+604
+true
+0
+900
+false'
+POLISH_VM_OUTPUT="$(ZUMBRA_DESKTOP_HEADLESS=1 "$TMP/zumbra" run code_examples/core/ui_interaction_polish.zum)"
+if [[ "$POLISH_VM_OUTPUT" != "$POLISH_EXPECTED" ]]; then
+  printf 'Unexpected interaction polish VM output:
+%s
+' "$POLISH_VM_OUTPUT" >&2
+  exit 1
+fi
+"$TMP/zumbra" build --release -o "$TMP/ui-interaction-polish" code_examples/core/ui_interaction_polish.zum
+POLISH_NATIVE_OUTPUT="$(ZUMBRA_DESKTOP_HEADLESS=1 "$TMP/ui-interaction-polish")"
+if [[ "$POLISH_NATIVE_OUTPUT" != "$POLISH_EXPECTED" ]]; then
+  printf 'Unexpected interaction polish native output:
+%s
+' "$POLISH_NATIVE_OUTPUT" >&2
   exit 1
 fi
 

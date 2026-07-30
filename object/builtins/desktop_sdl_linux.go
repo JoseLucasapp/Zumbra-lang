@@ -23,6 +23,7 @@ typedef struct SDL_TrayMenu SDL_TrayMenu;
 typedef struct SDL_TrayEntry SDL_TrayEntry;
 typedef struct SDL_Renderer SDL_Renderer;
 typedef struct SDL_Texture SDL_Texture;
+typedef struct SDL_Cursor SDL_Cursor;
 typedef struct TTF_Font TTF_Font;
 typedef struct { float x,y,w,h; } SDL_FRect;
 typedef struct { int32_t x,y,w,h; } SDL_Rect;
@@ -86,6 +87,9 @@ typedef bool (*PFN_SDL_WaitEventTimeout)(ZSDL_Event*,int32_t);
 typedef const char *(*PFN_SDL_GetKeyName)(uint32_t);
 typedef bool (*PFN_SDL_StartTextInput)(SDL_Window*);
 typedef bool (*PFN_SDL_StopTextInput)(SDL_Window*);
+typedef SDL_Cursor *(*PFN_SDL_CreateSystemCursor)(int);
+typedef bool (*PFN_SDL_SetCursor)(SDL_Cursor*);
+typedef void (*PFN_SDL_DestroyCursor)(SDL_Cursor*);
 typedef bool (*PFN_SDL_SetClipboardText)(const char*);
 typedef char *(*PFN_SDL_GetClipboardText)(void);
 typedef void (*PFN_SDL_free)(void*);
@@ -139,6 +143,7 @@ static PFN_SDL_GetWindowFlags p_GetWindowFlags; static PFN_SDL_MaximizeWindow p_
 static PFN_SDL_GetWindowDisplayScale p_GetWindowDisplayScale; static PFN_SDL_GetWindowPixelDensity p_GetWindowPixelDensity;
 static PFN_SDL_PollEvent p_PollEvent; static PFN_SDL_WaitEvent p_WaitEvent; static PFN_SDL_WaitEventTimeout p_WaitEventTimeout; static PFN_SDL_GetKeyName p_GetKeyName;
 static PFN_SDL_StartTextInput p_StartTextInput; static PFN_SDL_StopTextInput p_StopTextInput;
+static PFN_SDL_CreateSystemCursor p_CreateSystemCursor; static PFN_SDL_SetCursor p_SetCursor; static PFN_SDL_DestroyCursor p_DestroyCursor;
 static PFN_SDL_SetClipboardText p_SetClipboardText; static PFN_SDL_GetClipboardText p_GetClipboardText; static PFN_SDL_free p_free;
 static PFN_SDL_IOFromFile p_IOFromFile; static PFN_SDL_LoadBMP_IO p_LoadBMP_IO; static PFN_SDL_DestroySurface p_DestroySurface; static PFN_SDL_SetWindowIcon p_SetWindowIcon;
 static PFN_SDL_CreateTray p_CreateTray; static PFN_SDL_CreateTrayMenu p_CreateTrayMenu; static PFN_SDL_InsertTrayEntryAt p_InsertTrayEntryAt; static PFN_SDL_SetTrayEntryCallback p_SetTrayEntryCallback; static PFN_SDL_SetTrayTooltip p_SetTrayTooltip; static PFN_SDL_DestroyTray p_DestroyTray;
@@ -163,7 +168,7 @@ static bool zsdl_load(void) {
     LOAD_REQ(CreateWindow); LOAD_REQ(DestroyWindow); LOAD_REQ(GetWindowID); LOAD_REQ(ShowWindow); LOAD_REQ(HideWindow); LOAD_REQ(GetWindowTitle); LOAD_REQ(SetWindowTitle);
     LOAD_REQ(GetWindowSize); LOAD_REQ(GetWindowSizeInPixels); LOAD_REQ(SetWindowSize); LOAD_REQ(GetWindowPosition); LOAD_REQ(SetWindowPosition); LOAD_REQ(SetWindowFullscreen); LOAD_REQ(GetWindowFlags);
     LOAD_REQ(MaximizeWindow); LOAD_REQ(MinimizeWindow); LOAD_REQ(RestoreWindow); LOAD_REQ(RaiseWindow); LOAD_REQ(GetWindowDisplayScale); LOAD_REQ(GetWindowPixelDensity);
-    LOAD_REQ(PollEvent); LOAD_REQ(WaitEvent); LOAD_REQ(WaitEventTimeout); LOAD_REQ(GetKeyName); LOAD_REQ(StartTextInput); LOAD_REQ(StopTextInput); LOAD_REQ(SetClipboardText); LOAD_REQ(GetClipboardText); LOAD_REQ(free);
+    LOAD_REQ(PollEvent); LOAD_REQ(WaitEvent); LOAD_REQ(WaitEventTimeout); LOAD_REQ(GetKeyName); LOAD_REQ(StartTextInput); LOAD_REQ(StopTextInput); LOAD_OPT(CreateSystemCursor); LOAD_OPT(SetCursor); LOAD_OPT(DestroyCursor); LOAD_REQ(SetClipboardText); LOAD_REQ(GetClipboardText); LOAD_REQ(free);
     LOAD_OPT(IOFromFile); LOAD_OPT(LoadBMP_IO); LOAD_OPT(DestroySurface); LOAD_OPT(SetWindowIcon);
     LOAD_OPT(CreateTray); LOAD_OPT(CreateTrayMenu); LOAD_OPT(InsertTrayEntryAt); LOAD_OPT(SetTrayEntryCallback); LOAD_OPT(SetTrayTooltip); LOAD_OPT(DestroyTray);
     LOAD_REQ(CreateRenderer); LOAD_REQ(DestroyRenderer); LOAD_REQ(SetRenderDrawColor); LOAD_OPT(SetRenderDrawBlendMode); LOAD_OPT(SetRenderClipRect); LOAD_REQ(RenderClear); LOAD_REQ(RenderFillRect); LOAD_REQ(RenderRect); LOAD_REQ(RenderLine); LOAD_REQ(RenderPresent); LOAD_OPT(RenderDebugText); LOAD_OPT(CreateTextureFromSurface); LOAD_OPT(CreateSurfaceFrom); LOAD_OPT(RenderReadPixels); LOAD_OPT(ConvertSurface); LOAD_OPT(RenderTexture); LOAD_OPT(DestroyTexture); LOAD_OPT(GetTextureSize);
@@ -230,7 +235,16 @@ static bool zsdl_ttf_available(void){return zttf_load();}
 static void zttf_shutdown(void){ZTTFFontCache*c=zttf_fonts;while(c){ZTTFFontCache*n=c->next;if(c->font&&p_TTF_CloseFont)p_TTF_CloseFont(c->font);free(c);c=n;}zttf_fonts=NULL;if(zttf_initialized&&p_TTF_Quit)p_TTF_Quit();zttf_initialized=false;if(zttf_lib){dlclose(zttf_lib);zttf_lib=NULL;}}
 static const char *zsdl_last_error(void){ if(zsdl_error[0])return zsdl_error; if(p_GetError){const char*e=p_GetError();if(e&&*e)return e;} return "unknown SDL3 error"; }
 static bool zsdl_init(const char*name,const char*version,const char*identifier){ if(!zsdl_load())return false; if(p_SetAppMetadata)p_SetAppMetadata(name,version,identifier); if(!p_Init(0x00000020u)){snprintf(zsdl_error,sizeof(zsdl_error),"%s",p_GetError());return false;} return true; }
-static void zsdl_quit(void){zttf_shutdown();if(p_Quit)p_Quit();}
+static SDL_Cursor *zsdl_system_cursors[3]={NULL,NULL,NULL};
+static bool zsdl_set_system_cursor(int kind){
+    if(!p_CreateSystemCursor||!p_SetCursor)return false;
+    if(kind<0||kind>2)kind=0;
+    int system_kind=kind==1?11:(kind==2?1:0);
+    if(!zsdl_system_cursors[kind])zsdl_system_cursors[kind]=p_CreateSystemCursor(system_kind);
+    return zsdl_system_cursors[kind]&&p_SetCursor(zsdl_system_cursors[kind]);
+}
+static void zsdl_destroy_system_cursors(void){if(!p_DestroyCursor)return;for(int i=0;i<3;i++){if(zsdl_system_cursors[i]){p_DestroyCursor(zsdl_system_cursors[i]);zsdl_system_cursors[i]=NULL;}}}
+static void zsdl_quit(void){zttf_shutdown();zsdl_destroy_system_cursors();if(p_Quit)p_Quit();}
 static SDL_Window *zsdl_create_window(const char*t,int w,int h,uint64_t flags){return p_CreateWindow(t,w,h,flags);}
 static void zsdl_destroy_window(SDL_Window*w){if(w)p_DestroyWindow(w);} static uint32_t zsdl_window_id(SDL_Window*w){return p_GetWindowID(w);}
 static bool zsdl_show(SDL_Window*w){return p_ShowWindow(w);} static bool zsdl_hide(SDL_Window*w){return p_HideWindow(w);}
@@ -1140,6 +1154,34 @@ func sdlUIItemText(item object.UIRenderItem) string {
 	}
 	return ""
 }
+func sdlUIRenderControlIcon(renderer *C.SDL_Renderer, bounds object.UIRect, icon, color string) bool {
+	icon = strings.ToLower(strings.TrimSpace(icon))
+	if icon == "" {
+		return false
+	}
+	sdlUISetColor(renderer, color)
+	cx, cy := bounds.X+bounds.Width/2, bounds.Y+bounds.Height/2
+	size := math.Max(4, math.Min(bounds.Width, bounds.Height)*0.22)
+	switch icon {
+	case "close", "x":
+		C.zsdl_line(renderer, C.float(cx-size), C.float(cy-size), C.float(cx+size), C.float(cy+size))
+		C.zsdl_line(renderer, C.float(cx+size), C.float(cy-size), C.float(cx-size), C.float(cy+size))
+	case "menu", "hamburger":
+		for _, offset := range []float64{-size, 0, size} {
+			C.zsdl_line(renderer, C.float(cx-size), C.float(cy+offset), C.float(cx+size), C.float(cy+offset))
+		}
+	case "chevron-left", "collapse-left":
+		C.zsdl_line(renderer, C.float(cx+size/2), C.float(cy-size), C.float(cx-size/2), C.float(cy))
+		C.zsdl_line(renderer, C.float(cx-size/2), C.float(cy), C.float(cx+size/2), C.float(cy+size))
+	case "chevron-right", "expand-right":
+		C.zsdl_line(renderer, C.float(cx-size/2), C.float(cy-size), C.float(cx+size/2), C.float(cy))
+		C.zsdl_line(renderer, C.float(cx+size/2), C.float(cy), C.float(cx-size/2), C.float(cy+size))
+	default:
+		return false
+	}
+	return true
+}
+
 func sdlUIRenderItem(renderer *C.SDL_Renderer, item object.UIRenderItem) {
 	bounds := item.Bounds
 	background := uiColor(item.Props, "background", "transparent")
@@ -1243,10 +1285,16 @@ func sdlUIRenderItem(renderer *C.SDL_Renderer, item object.UIRenderItem) {
 		}
 		sdlUIFill(renderer, bounds, background)
 		sdlUIStroke(renderer, bounds, border)
-		sdlUITextCentered(renderer, bounds, 10, sdlUIItemText(item), textColor, item.Props)
+		if !sdlUIRenderControlIcon(renderer, bounds, uiString(item.Props, "icon", ""), textColor) {
+			sdlUITextCentered(renderer, bounds, 10, sdlUIItemText(item), textColor, item.Props)
+		}
 	case "input", "textarea", "select":
+		if item.Focused {
+			background = uiColor(item.Props, "focusBackground", background)
+		}
 		sdlUIFill(renderer, bounds, background)
 		sdlUIStroke(renderer, bounds, border)
+		actualText := uiString(item.Props, "value", "")
 		text := sdlUIItemText(item)
 		if text == "" {
 			text = uiString(item.Props, "placeholder", "")
@@ -1263,6 +1311,14 @@ func sdlUIRenderItem(renderer *C.SDL_Renderer, item object.UIRenderItem) {
 			sdlUISetColor(renderer, textColor)
 			C.zsdl_line(renderer, C.float(cx-4), C.float(cy-2), C.float(cx), C.float(cy+2))
 			C.zsdl_line(renderer, C.float(cx), C.float(cy+2), C.float(cx+4), C.float(cy-2))
+		} else if item.Focused {
+			style := sdlUITextStyle(item.Props)
+			metrics := sdlMeasureUIText(actualText, style)
+			caretX := bounds.X + 8 + math.Min(metrics.Width, math.Max(0, bounds.Width-18))
+			caretHeight := math.Min(bounds.Height-12, math.Max(14, metrics.Height))
+			caretY := bounds.Y + (bounds.Height-caretHeight)/2
+			sdlUISetColor(renderer, uiColor(item.Props, "caretColor", textColor))
+			C.zsdl_line(renderer, C.float(caretX), C.float(caretY), C.float(caretX), C.float(caretY+caretHeight))
 		}
 	case "checkbox", "radio":
 		box := object.UIRect{X: bounds.X + 4, Y: bounds.Y + (bounds.Height-16)/2, Width: 16, Height: 16}
@@ -1316,7 +1372,11 @@ func sdlUIRenderItem(renderer *C.SDL_Renderer, item object.UIRenderItem) {
 	viewportHeight := item.ContentBounds.Height
 	if uiShouldRenderVerticalScrollbar(item.Props, item.ScrollContentHeight, viewportHeight) {
 		barWidth := math.Max(4, uiFloat(item.Props, "scrollbarWidth", 8))
-		track := object.UIRect{X: item.ContentBounds.X + item.ContentBounds.Width + math.Max(2, uiFloat(item.Props, "scrollbarGutter", 4)), Y: item.ContentBounds.Y, Width: barWidth, Height: viewportHeight}
+		trackX := item.ContentBounds.X + item.ContentBounds.Width + math.Max(2, uiFloat(item.Props, "scrollbarGutter", 4))
+		if uiBool(item.Props, "scrollbarOverlay", false) {
+			trackX = item.ContentBounds.X + item.ContentBounds.Width - barWidth - math.Max(0, uiFloat(item.Props, "scrollbarGutter", 4))
+		}
+		track := object.UIRect{X: trackX, Y: item.ContentBounds.Y, Width: barWidth, Height: viewportHeight}
 		sdlUIFill(renderer, track, uiColor(item.Props, "scrollbarTrack", "#e1e6ef"))
 		thumbHeight := math.Max(24, track.Height*viewportHeight/item.ScrollContentHeight)
 		if thumbHeight > track.Height {
@@ -1330,7 +1390,8 @@ func sdlUIRenderItem(renderer *C.SDL_Renderer, item object.UIRenderItem) {
 		sdlUIFill(renderer, object.UIRect{X: track.X, Y: thumbY, Width: track.Width, Height: thumbHeight}, uiColor(item.Props, "scrollbarThumb", "#9aa7ba"))
 	}
 	if item.Focused {
-		sdlUIStroke(renderer, object.UIRect{X: bounds.X - 2, Y: bounds.Y - 2, Width: bounds.Width + 4, Height: bounds.Height + 4}, uiColor(item.Props, "focusColor", "#6e95ff"))
+		inset := math.Max(1, uiFloat(item.Props, "focusInset", 1))
+		sdlUIStroke(renderer, object.UIRect{X: bounds.X + inset, Y: bounds.Y + inset, Width: math.Max(0, bounds.Width-inset*2), Height: math.Max(0, bounds.Height-inset*2)}, uiColor(item.Props, "focusColor", "#6e95ff"))
 	}
 }
 func sdlUIRenderCanvasCommand(renderer *C.SDL_Renderer, origin object.UIRect, command object.UICanvasCommand, chartProps map[string]object.Object) {
@@ -1670,6 +1731,19 @@ func (w *sdlWindow) RenderUI(frame *object.UIRenderFrame) error {
 			modalBounds = &bounds
 		}
 	}
+	cursorKind := 0
+	for _, item := range frame.Items {
+		if !item.Hovered {
+			continue
+		}
+		switch strings.ToLower(strings.TrimSpace(uiString(item.Props, "cursor", "default"))) {
+		case "pointer", "hand":
+			cursorKind = 1
+		case "text", "ibeam", "i-beam":
+			cursorKind = 2
+		}
+	}
+	C.zsdl_set_system_cursor(C.int(cursorKind))
 	for _, item := range frame.Items {
 		if item.Kind != "select" || !uiBool(item.Props, "open", false) {
 			continue
