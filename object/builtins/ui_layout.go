@@ -69,7 +69,11 @@ func layoutUINode(node *object.UINode, available object.UIRect, theme *object.UI
 	for _, child := range children {
 		child.Mu.RLock()
 		childKind := child.Kind
+		childVisible := child.Visible
 		child.Mu.RUnlock()
+		if !childVisible {
+			continue
+		}
 		if childKind == "modal" {
 			overlayChildren = append(overlayChildren, child)
 		} else {
@@ -104,6 +108,23 @@ func layoutUINode(node *object.UINode, available object.UIRect, theme *object.UI
 	}
 	if v, ok := uiNumber(props["maxHeight"]); ok {
 		height = math.Min(height, v)
+	}
+	if kind == "menu" {
+		placement := optionString(props, "placement", "left")
+		collapsed := optionBool(props, "collapsed", false)
+		if placement == "top" || placement == "bottom" {
+			size := uiPropNumber(props, "expandedSize", height)
+			if collapsed {
+				size = uiPropNumber(props, "collapsedSize", math.Min(size, 48))
+			}
+			height = size
+		} else {
+			size := uiPropNumber(props, "expandedSize", width)
+			if collapsed {
+				size = uiPropNumber(props, "collapsedSize", math.Min(size, 56))
+			}
+			width = size
+		}
 	}
 	if width < 0 {
 		width = 0
@@ -143,6 +164,14 @@ func layoutUINode(node *object.UINode, available object.UIRect, theme *object.UI
 	direction := kind
 	if direction != "row" && direction != "column" {
 		direction = optionString(props, "direction", "column")
+	}
+	if kind == "menu" {
+		placement := optionString(props, "placement", "left")
+		if placement == "top" || placement == "bottom" {
+			direction = "row"
+		} else {
+			direction = "column"
+		}
 	}
 	if kind == "modal" {
 		direction = "column"
@@ -486,8 +515,18 @@ func uiNaturalHeight(kind string, props map[string]object.Object, theme *object.
 			items = 1
 		}
 		return float64(items) * control
-	case "tabs", "menu":
+	case "tabs":
 		return control
+	case "menu":
+		placement := optionString(props, "placement", "left")
+		if placement == "top" || placement == "bottom" {
+			size := uiPropNumber(props, "expandedSize", control)
+			if optionBool(props, "collapsed", false) {
+				size = uiPropNumber(props, "collapsedSize", math.Min(size, 48))
+			}
+			return size
+		}
+		return uiPropNumber(props, "height", control)
 	case "modal":
 		return uiPropNumber(props, "height", 320)
 	case "tooltip":
@@ -514,6 +553,16 @@ func uiNaturalWidth(kind string, props map[string]object.Object, theme *object.U
 		return base + 20
 	case "image", "canvas":
 		return uiPropNumber(props, "width", 240)
+	case "menu":
+		placement := optionString(props, "placement", "left")
+		if placement == "left" || placement == "right" {
+			size := uiPropNumber(props, "expandedSize", uiPropNumber(props, "width", 240))
+			if optionBool(props, "collapsed", false) {
+				size = uiPropNumber(props, "collapsedSize", math.Min(size, 56))
+			}
+			return size
+		}
+		return uiPropNumber(props, "width", base)
 	case "spacer":
 		return uiPropNumber(props, "size", 8)
 	}
@@ -621,10 +670,14 @@ func applyUIStyleDefaults(kind string, props map[string]object.Object, theme *ob
 	case "button":
 		set("background", NewString(uiThemeString(theme, "primary", "#3867e8")))
 		set("textColor", NewString(uiThemeString(theme, "primaryText", "#ffffff")))
+		set("textAlign", NewString("center"))
+		set("textOverflow", NewString("ellipsis"))
 	case "input", "textarea", "checkbox", "radio":
 		set("background", NewString(uiThemeString(theme, "surface", "#ffffff")))
 	case "select":
 		set("background", NewString(uiThemeString(theme, "surface", "#ffffff")))
+		set("textAlign", NewString("left"))
+		set("textOverflow", NewString("ellipsis"))
 		set("dropdownBackground", NewString(uiThemeString(theme, "surface", "#ffffff")))
 		set("selectedOptionBackground", NewString(uiThemeString(theme, "surfaceAlt", "#eef2f7")))
 		set("dropdownBorderColor", NewString(uiThemeString(theme, "border", "#cfd6e2")))

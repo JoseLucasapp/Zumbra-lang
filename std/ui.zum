@@ -33,11 +33,22 @@ pub fct list(options) { uiList(options, []); }
 pub fct tree(options) { uiTree(options, []); }
 pub fct tabs(options, children) { uiTabs(options, children); }
 pub fct menu(options, children) { uiMenu(options, children); }
+// Navigation regions are menu nodes with a placement (left, right, top or bottom)
+// and optional expandedSize/collapsedSize/collapsed properties.
+pub fct navigation(options, children) { uiMenu(options, children); }
 pub fct modal(options, children) { uiModal(options, children); }
 pub fct tooltip(options, children) { uiTooltip(options, children); }
 pub fct progress(options) { uiProgress(options, []); }
 pub fct image(options) { uiImage(options, []); }
 pub fct canvas(options) { uiCanvas(options, []); }
+// Charts use the portable canvas renderer. Supported chart commands include
+// pieChart, barChart and lineChart; table/dataTable cover tabular data.
+pub fct chart(options) { uiCanvas(options, []); }
+pub fct clearChart(chartValue) { uiSet(chartValue, "commands", []); }
+pub fct pieChart(chartValue, values) { uiCanvasCommand(chartValue, "pieChart", values); }
+pub fct barChart(chartValue, values) { uiCanvasCommand(chartValue, "barChart", values); }
+pub fct lineChart(chartValue, values) { uiCanvasCommand(chartValue, "lineChart", values); }
+pub fct dataTable(options) { uiTable(options, []); }
 pub fct spacer(size) { uiSpacer({"size": size}, []); }
 pub fct custom(name, options, children) { uiCustom({"component": name, "options": options}, children); }
 

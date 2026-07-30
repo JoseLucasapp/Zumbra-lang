@@ -425,3 +425,88 @@ var dialog << ui.modal({
 ]);
 ui.bind(dialog, "visible", visible);
 ```
+
+## Alinhamento e overflow de texto em controles
+
+Botões centralizam o texto horizontal e verticalmente por padrão. `input` e `select` mantêm alinhamento à esquerda. O renderer limita o texto à área interna do controle e usa reticências no backend SDL3 Go quando necessário.
+
+Propriedades disponíveis:
+
+```zum
+ui.buttonWith({
+    "text": "Ação com nome longo",
+    "textAlign": "center",
+    "textOverflow": "ellipsis",
+    "width": 160
+});
+```
+
+`textAlign` aceita `left`, `center` e `right`. `textOverflow` aceita `ellipsis` e `visible`. O backend C11 sempre recorta o texto ao limite do controle para impedir vazamento visual.
+
+Os selects desenham um chevron gráfico no lado direito, em vez de usar a letra `v` como indicador.
+
+## Regiões de navegação
+
+`ui.navigation` é um alias semântico de `ui.menu` para barras laterais, headers e barras inferiores. O programador define a posição e os tamanhos expandido e recolhido:
+
+```zum
+var collapsed << ui.boolState(false);
+var navigation << ui.navigation({
+    "placement": "left",
+    "expandedSize": 300,
+    "collapsedSize": 56,
+    "collapsed": false,
+    "border": true
+}, children);
+ui.bind(navigation, "collapsed", collapsed);
+```
+
+`placement` aceita:
+
+- `left`;
+- `right`;
+- `top`;
+- `bottom`.
+
+Menus laterais usam layout em coluna. Menus superiores e inferiores usam layout em linha. O pai continua controlando a ordem espacial: em uma `row`, coloque o menu antes do conteúdo para `left` e depois para `right`; em uma `column`, coloque-o antes para `top` e depois para `bottom`.
+
+Filhos com `visible: false` deixam de consumir espaço no layout. Isso permite manter uma árvore expandida e outra compacta dentro da mesma navegação.
+
+## Gráficos e tabelas de dados
+
+`ui.chart` cria um canvas portátil voltado a visualizações. Os helpers disponíveis são:
+
+```zum
+var chart << ui.chart({"height": 240});
+
+ui.pieChart(chart, {
+    "values": [8, 3],
+    "labels": ["Físico", "Digital"],
+    "colors": ["#3867e8", "#e89b38"],
+    "legend": true
+});
+
+ui.barChart(chart, {
+    "values": [5, 3, 2],
+    "labels": ["PS1", "PC", "NES"]
+});
+
+ui.lineChart(chart, {
+    "values": [1, 4, 3, 7],
+    "color": "#3867e8"
+});
+```
+
+Use `ui.clearChart(chart)` antes de reconstruir uma visualização dinâmica.
+
+`ui.dataTable` é um alias de `ui.table` para tabelas estruturadas. Cada linha pode ser um array de células:
+
+```zum
+var table << ui.dataTable({
+    "columns": ["Plataforma", "Jogos"],
+    "rows": [["PS1", "5"], ["PC", "3"]],
+    "rowHeight": 34
+});
+```
+
+Pizza, barras, linhas e tabelas possuem paridade entre o renderer SDL3 Go/cgo, o backend C11 e o snapshot headless dos comandos.

@@ -15,6 +15,7 @@ go build -o "$TMP/zumbra" .
 "$TMP/zumbra" check code_examples/core/array_append.zum
 "$TMP/zumbra" check code_examples/core/data_exchange.zum
 "$TMP/zumbra" check code_examples/core/ui_select_dropdown.zum
+"$TMP/zumbra" check code_examples/core/ui_navigation_charts.zum
 
 VM_OUTPUT="$(ZUMBRA_DESKTOP_HEADLESS=1 "$TMP/zumbra" run code_examples/core/ui_event_target.zum)"
 EXPECTED=$'edit-42\nbutton'
@@ -93,6 +94,27 @@ fi
 SELECT_NATIVE_OUTPUT="$(ZUMBRA_DESKTOP_HEADLESS=1 "$TMP/ui-select-dropdown")"
 if [[ "$SELECT_NATIVE_OUTPUT" != "$SELECT_EXPECTED" ]]; then
   printf 'Unexpected select dropdown native output:\n%s\n' "$SELECT_NATIVE_OUTPUT" >&2
+  exit 1
+fi
+
+
+NAV_EXPECTED=$'280
+2
+56
+Plataforma'
+NAV_VM_OUTPUT="$(ZUMBRA_DESKTOP_HEADLESS=1 "$TMP/zumbra" run code_examples/core/ui_navigation_charts.zum)"
+if [[ "$NAV_VM_OUTPUT" != "$NAV_EXPECTED" ]]; then
+  printf 'Unexpected navigation/chart VM output:
+%s
+' "$NAV_VM_OUTPUT" >&2
+  exit 1
+fi
+"$TMP/zumbra" build --release -o "$TMP/ui-navigation-charts" code_examples/core/ui_navigation_charts.zum
+NAV_NATIVE_OUTPUT="$(ZUMBRA_DESKTOP_HEADLESS=1 "$TMP/ui-navigation-charts")"
+if [[ "$NAV_NATIVE_OUTPUT" != "$NAV_EXPECTED" ]]; then
+  printf 'Unexpected navigation/chart native output:
+%s
+' "$NAV_NATIVE_OUTPUT" >&2
   exit 1
 fi
 

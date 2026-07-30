@@ -314,3 +314,7 @@ Zumbra 0.11.3 restricts scrollbar rendering to nodes that explicitly enable vert
 
 Zumbra 0.12.1 fecha a fundação do primeiro aplicativo desktop oficial. A versão adiciona operações recuperáveis de JSON e CSV, backup/restauração/verificação de integridade SQLite, file picker em modo salvar, notificações não fatais, modais reais com isolamento de foco, acessibilidade e ponteiro, além de paridade nativa para mutação incremental de arrays. Veja [`docs/releases/0.12.1.md`](./docs/releases/0.12.1.md) e [`docs/pt-BR/aplicativo-referencia-z16.md`](./docs/pt-BR/aplicativo-referencia-z16.md).
 
+
+## Zumbra 0.12.2 — navegação e gráficos
+
+Zumbra 0.12.2 corrige alinhamento e overflow de texto em controles, substitui o `v` textual dos selects por um chevron, adiciona regiões de navegação recolhíveis em qualquer borda e inclui gráficos portáteis de pizza, barras e linhas, além de tabelas estruturadas. Veja [`docs/releases/0.12.2.md`](./docs/releases/0.12.2.md).

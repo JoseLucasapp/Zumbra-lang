@@ -1094,10 +1094,43 @@ func sdlUIText(renderer *C.SDL_Renderer, x, y float64, text, color string, props
 	C.zsdl_text_ex(renderer, C.float(x), C.float(y), ctext, C.uint8_t(r), C.uint8_t(g), C.uint8_t(b), C.uint8_t(a), cfamily, cpath, C.float(style.FontSize), cweight, cstyle, C.float(style.WrapWidth))
 	return metrics
 }
-func sdlUITextCentered(renderer *C.SDL_Renderer, bounds object.UIRect, leftPadding float64, text, color string, props map[string]object.Object) {
-	metrics := sdlMeasureUIText(text, sdlUITextStyle(props))
+func sdlFitUIText(text string, maxWidth float64, props map[string]object.Object) (string, object.UITextMetrics) {
+	style := sdlUITextStyle(props)
+	metrics := sdlMeasureUIText(text, style)
+	if maxWidth <= 0 {
+		return "", object.UITextMetrics{}
+	}
+	if metrics.Width <= maxWidth || uiString(props, "textOverflow", "ellipsis") == "visible" {
+		return text, metrics
+	}
+	runes := []rune(text)
+	ellipsis := "…"
+	for len(runes) > 0 {
+		candidate := string(runes) + ellipsis
+		metrics = sdlMeasureUIText(candidate, style)
+		if metrics.Width <= maxWidth {
+			return candidate, metrics
+		}
+		runes = runes[:len(runes)-1]
+	}
+	metrics = sdlMeasureUIText(ellipsis, style)
+	if metrics.Width <= maxWidth {
+		return ellipsis, metrics
+	}
+	return "", object.UITextMetrics{}
+}
+func sdlUITextCentered(renderer *C.SDL_Renderer, bounds object.UIRect, horizontalPadding float64, text, color string, props map[string]object.Object) {
+	available := math.Max(0, bounds.Width-horizontalPadding*2)
+	text, metrics := sdlFitUIText(text, available, props)
 	y := bounds.Y + math.Max(0, (bounds.Height-metrics.Height)/2)
-	sdlUIText(renderer, bounds.X+leftPadding, y, text, color, props)
+	x := bounds.X + horizontalPadding
+	switch uiString(props, "textAlign", "left") {
+	case "center":
+		x = bounds.X + math.Max(horizontalPadding, (bounds.Width-metrics.Width)/2)
+	case "right":
+		x = bounds.X + math.Max(horizontalPadding, bounds.Width-horizontalPadding-metrics.Width)
+	}
+	sdlUIText(renderer, x, y, text, color, props)
 }
 func sdlUIItemText(item object.UIRenderItem) string {
 	for _, key := range []string{"text", "label", "value", "placeholder", "title"} {
@@ -1156,12 +1189,12 @@ func sdlUIRenderItem(renderer *C.SDL_Renderer, item object.UIRenderItem) {
 		}
 	case "menu":
 		sdlUIFill(renderer, bounds, background)
-		sdlUIStroke(renderer, bounds, border)
-		label := sdlUIItemText(item)
-		if label == "" {
-			label = "Menu"
+		if uiBool(item.Props, "border", true) {
+			sdlUIStroke(renderer, bounds, border)
 		}
-		sdlUITextCentered(renderer, bounds, 10, label, textColor, item.Props)
+		if label := sdlUIItemText(item); label != "" {
+			sdlUITextCentered(renderer, bounds, 10, label, textColor, item.Props)
+		}
 	case "table":
 		sdlUIFill(renderer, bounds, background)
 		sdlUIStroke(renderer, bounds, border)
@@ -1185,10 +1218,20 @@ func sdlUIRenderItem(renderer *C.SDL_Renderer, item object.UIRenderItem) {
 		C.zsdl_line(renderer, C.float(bounds.X), C.float(bounds.Y+rowHeight), C.float(bounds.X+bounds.Width), C.float(bounds.Y+rowHeight))
 		for index, row := range rows {
 			y := bounds.Y + rowHeight + float64(index)*rowHeight
-			if y+8 > bounds.Y+bounds.Height {
+			if y+rowHeight > bounds.Y+bounds.Height+0.5 {
 				break
 			}
-			sdlUIText(renderer, bounds.X+6, y+8, uiTextDisplay(row), textColor, item.Props)
+			cells := uiObjectArray(row)
+			for columnIndex := 0; columnIndex < columnCount; columnIndex++ {
+				cellText := ""
+				if len(cells) > columnIndex {
+					cellText = uiTextDisplay(cells[columnIndex])
+				} else if columnIndex == 0 {
+					cellText = uiTextDisplay(row)
+				}
+				cellBounds := object.UIRect{X: bounds.X + float64(columnIndex)*columnWidth, Y: y, Width: columnWidth, Height: rowHeight}
+				sdlUITextCentered(renderer, cellBounds, 6, cellText, textColor, item.Props)
+			}
 			sdlUISetColor(renderer, border)
 			C.zsdl_line(renderer, C.float(bounds.X), C.float(y+rowHeight), C.float(bounds.X+bounds.Width), C.float(y+rowHeight))
 		}
@@ -1209,9 +1252,17 @@ func sdlUIRenderItem(renderer *C.SDL_Renderer, item object.UIRenderItem) {
 			text = uiString(item.Props, "placeholder", "")
 			textColor = "#87909f"
 		}
-		sdlUITextCentered(renderer, bounds, 8, text, textColor, item.Props)
+		textBounds := bounds
 		if item.Kind == "select" {
-			sdlUITextCentered(renderer, object.UIRect{X: bounds.X + bounds.Width - 24, Y: bounds.Y, Width: 20, Height: bounds.Height}, 2, "v", textColor, item.Props)
+			textBounds.Width = math.Max(0, textBounds.Width-30)
+		}
+		sdlUITextCentered(renderer, textBounds, 8, text, textColor, item.Props)
+		if item.Kind == "select" {
+			cx := bounds.X + bounds.Width - 15
+			cy := bounds.Y + bounds.Height/2
+			sdlUISetColor(renderer, textColor)
+			C.zsdl_line(renderer, C.float(cx-4), C.float(cy-2), C.float(cx), C.float(cy+2))
+			C.zsdl_line(renderer, C.float(cx), C.float(cy+2), C.float(cx+4), C.float(cy-2))
 		}
 	case "checkbox", "radio":
 		box := object.UIRect{X: bounds.X + 4, Y: bounds.Y + (bounds.Height-16)/2, Width: 16, Height: 16}
@@ -1254,7 +1305,7 @@ func sdlUIRenderItem(renderer *C.SDL_Renderer, item object.UIRenderItem) {
 	case "canvas":
 		sdlUIFill(renderer, bounds, background)
 		for _, command := range item.Commands {
-			sdlUIRenderCanvasCommand(renderer, bounds, command)
+			sdlUIRenderCanvasCommand(renderer, bounds, command, item.Props)
 		}
 	case "spacer":
 		// Layout-only node.
@@ -1282,7 +1333,7 @@ func sdlUIRenderItem(renderer *C.SDL_Renderer, item object.UIRenderItem) {
 		sdlUIStroke(renderer, object.UIRect{X: bounds.X - 2, Y: bounds.Y - 2, Width: bounds.Width + 4, Height: bounds.Height + 4}, uiColor(item.Props, "focusColor", "#6e95ff"))
 	}
 }
-func sdlUIRenderCanvasCommand(renderer *C.SDL_Renderer, origin object.UIRect, command object.UICanvasCommand) {
+func sdlUIRenderCanvasCommand(renderer *C.SDL_Renderer, origin object.UIRect, command object.UICanvasCommand, chartProps map[string]object.Object) {
 	values := command.Values
 	color := uiString(values, "color", "#172033")
 	x := origin.X + uiFloat(values, "x", 0)
@@ -1300,6 +1351,26 @@ func sdlUIRenderCanvasCommand(renderer *C.SDL_Renderer, origin object.UIRect, co
 		C.zsdl_line(renderer, C.float(x), C.float(y), C.float(origin.X+uiFloat(values, "x2", 0)), C.float(origin.Y+uiFloat(values, "y2", 0)))
 	case "text":
 		sdlUIText(renderer, x, y, uiString(values, "text", ""), color, values)
+	case "circle", "fillCircle":
+		radius := math.Max(0, uiFloat(values, "radius", 10))
+		segments := int(math.Max(24, radius*3))
+		sdlUISetColor(renderer, color)
+		for i := 0; i < segments; i++ {
+			a1 := float64(i) * 2 * math.Pi / float64(segments)
+			a2 := float64(i+1) * 2 * math.Pi / float64(segments)
+			x1, y1 := x+math.Cos(a1)*radius, y+math.Sin(a1)*radius
+			x2, y2 := x+math.Cos(a2)*radius, y+math.Sin(a2)*radius
+			C.zsdl_line(renderer, C.float(x1), C.float(y1), C.float(x2), C.float(y2))
+			if command.Kind == "fillCircle" {
+				C.zsdl_line(renderer, C.float(x), C.float(y), C.float(x1), C.float(y1))
+			}
+		}
+	case "pieChart":
+		sdlUIRenderPieChart(renderer, origin, values, chartProps)
+	case "barChart":
+		sdlUIRenderBarChart(renderer, origin, values, chartProps)
+	case "lineChart":
+		sdlUIRenderLineChart(renderer, origin, values, chartProps)
 	case "image":
 		path := uiString(values, "path", "")
 		if path != "" {
@@ -1389,6 +1460,156 @@ func sdlUIRenderSelectPopup(renderer *C.SDL_Renderer, item object.UIRenderItem, 
 			thumbY += (track.Height - thumbHeight) * float64(offset) / float64(maxOffset)
 		}
 		sdlUIFill(renderer, object.UIRect{X: track.X, Y: thumbY, Width: track.Width, Height: thumbHeight}, uiColor(item.Props, "scrollbarThumb", "#9aa7ba"))
+	}
+}
+
+func sdlUIChartNumbers(value object.Object) []float64 {
+	items := uiObjectArray(value)
+	result := make([]float64, 0, len(items))
+	for _, item := range items {
+		if number, ok := uiNumber(item); ok {
+			result = append(result, number)
+		}
+	}
+	return result
+}
+func sdlUIChartPalette(values map[string]object.Object) []string {
+	colors := uiArrayStrings(values["colors"])
+	if len(colors) > 0 {
+		return colors
+	}
+	return []string{"#3867e8", "#e89b38", "#42a56b", "#9b59b6", "#e05260", "#2f9db0", "#8a6d3b", "#6c7a89"}
+}
+func sdlUIRenderPieChart(renderer *C.SDL_Renderer, origin object.UIRect, values, chartProps map[string]object.Object) {
+	numbers := sdlUIChartNumbers(values["values"])
+	if len(numbers) == 0 {
+		return
+	}
+	colors := sdlUIChartPalette(values)
+	labels := uiArrayStrings(values["labels"])
+	x := origin.X + uiFloat(values, "x", 0)
+	y := origin.Y + uiFloat(values, "y", 0)
+	width := uiFloat(values, "width", origin.Width)
+	height := uiFloat(values, "height", origin.Height)
+	legend := uiBool(values, "legend", true)
+	legendWidth := 0.0
+	if legend {
+		legendWidth = math.Min(170, width*0.42)
+	}
+	plotWidth := math.Max(0, width-legendWidth)
+	radius := math.Max(0, math.Min(plotWidth, height)/2-8)
+	cx, cy := x+plotWidth/2, y+height/2
+	total := 0.0
+	for _, number := range numbers {
+		if number > 0 {
+			total += number
+		}
+	}
+	if total <= 0 || radius <= 0 {
+		return
+	}
+	start := -math.Pi / 2
+	for index, number := range numbers {
+		if number <= 0 {
+			continue
+		}
+		end := start + number/total*2*math.Pi
+		sdlUISetColor(renderer, colors[index%len(colors)])
+		steps := int(math.Max(2, math.Ceil((end-start)*radius*1.6)))
+		for step := 0; step <= steps; step++ {
+			angle := start + (end-start)*float64(step)/float64(steps)
+			ex, ey := cx+math.Cos(angle)*radius, cy+math.Sin(angle)*radius
+			C.zsdl_line(renderer, C.float(cx), C.float(cy), C.float(ex), C.float(ey))
+		}
+		start = end
+	}
+	if legend {
+		legendX := x + plotWidth + 8
+		for index, number := range numbers {
+			rowY := y + 8 + float64(index)*24
+			if rowY+18 > y+height {
+				break
+			}
+			color := colors[index%len(colors)]
+			sdlUIFill(renderer, object.UIRect{X: legendX, Y: rowY + 3, Width: 12, Height: 12}, color)
+			label := strconv.FormatFloat(number, 'f', -1, 64)
+			if index < len(labels) && labels[index] != "" {
+				label = labels[index] + ": " + label
+			}
+			sdlUIText(renderer, legendX+18, rowY, label, uiString(values, "textColor", uiColor(chartProps, "textColor", "#172033")), values)
+		}
+	}
+}
+func sdlUIRenderBarChart(renderer *C.SDL_Renderer, origin object.UIRect, values, chartProps map[string]object.Object) {
+	numbers := sdlUIChartNumbers(values["values"])
+	if len(numbers) == 0 {
+		return
+	}
+	colors := sdlUIChartPalette(values)
+	labels := uiArrayStrings(values["labels"])
+	x := origin.X + uiFloat(values, "x", 0)
+	y := origin.Y + uiFloat(values, "y", 0)
+	width := uiFloat(values, "width", origin.Width)
+	height := uiFloat(values, "height", origin.Height)
+	padding := math.Max(8, uiFloat(values, "padding", 18))
+	labelHeight := 28.0
+	plot := object.UIRect{X: x + padding, Y: y + padding, Width: math.Max(0, width-padding*2), Height: math.Max(0, height-padding*2-labelHeight)}
+	maxValue := 0.0
+	for _, number := range numbers {
+		if number > maxValue {
+			maxValue = number
+		}
+	}
+	if maxValue <= 0 || plot.Width <= 0 || plot.Height <= 0 {
+		return
+	}
+	gap := math.Max(4, uiFloat(values, "gap", 8))
+	barWidth := math.Max(2, (plot.Width-gap*float64(len(numbers)+1))/float64(len(numbers)))
+	for index, number := range numbers {
+		barHeight := plot.Height * math.Max(0, number) / maxValue
+		barX := plot.X + gap + float64(index)*(barWidth+gap)
+		bar := object.UIRect{X: barX, Y: plot.Y + plot.Height - barHeight, Width: barWidth, Height: barHeight}
+		sdlUIFill(renderer, bar, colors[index%len(colors)])
+		valueLabel := strconv.FormatFloat(number, 'f', -1, 64)
+		sdlUITextCentered(renderer, object.UIRect{X: barX, Y: bar.Y - 22, Width: barWidth, Height: 20}, 2, valueLabel, uiString(values, "textColor", uiColor(chartProps, "textColor", "#172033")), map[string]object.Object{"fontSize": NewFloat(11), "textAlign": NewString("center")})
+		if index < len(labels) {
+			sdlUITextCentered(renderer, object.UIRect{X: barX, Y: plot.Y + plot.Height + 4, Width: barWidth, Height: labelHeight}, 2, labels[index], uiString(values, "textColor", uiColor(chartProps, "textColor", "#172033")), map[string]object.Object{"fontSize": NewFloat(10), "textAlign": NewString("center"), "textOverflow": NewString("ellipsis")})
+		}
+	}
+}
+func sdlUIRenderLineChart(renderer *C.SDL_Renderer, origin object.UIRect, values, chartProps map[string]object.Object) {
+	_ = chartProps
+	numbers := sdlUIChartNumbers(values["values"])
+	if len(numbers) < 2 {
+		return
+	}
+	x := origin.X + uiFloat(values, "x", 0)
+	y := origin.Y + uiFloat(values, "y", 0)
+	width := uiFloat(values, "width", origin.Width)
+	height := uiFloat(values, "height", origin.Height)
+	padding := math.Max(8, uiFloat(values, "padding", 18))
+	plot := object.UIRect{X: x + padding, Y: y + padding, Width: math.Max(0, width-padding*2), Height: math.Max(0, height-padding*2)}
+	minValue, maxValue := numbers[0], numbers[0]
+	for _, number := range numbers[1:] {
+		if number < minValue {
+			minValue = number
+		}
+		if number > maxValue {
+			maxValue = number
+		}
+	}
+	if maxValue == minValue {
+		maxValue = minValue + 1
+	}
+	color := uiString(values, "color", "#3867e8")
+	sdlUISetColor(renderer, color)
+	for index := 1; index < len(numbers); index++ {
+		x1 := plot.X + float64(index-1)*plot.Width/float64(len(numbers)-1)
+		x2 := plot.X + float64(index)*plot.Width/float64(len(numbers)-1)
+		y1 := plot.Y + plot.Height - (numbers[index-1]-minValue)/(maxValue-minValue)*plot.Height
+		y2 := plot.Y + plot.Height - (numbers[index]-minValue)/(maxValue-minValue)*plot.Height
+		C.zsdl_line(renderer, C.float(x1), C.float(y1), C.float(x2), C.float(y2))
+		sdlUIFill(renderer, object.UIRect{X: x2 - 2, Y: y2 - 2, Width: 4, Height: 4}, color)
 	}
 }
 
