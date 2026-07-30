@@ -6,6 +6,7 @@ import (
 	"sort"
 	"strings"
 	"sync/atomic"
+	"unicode"
 
 	"zumbra/object"
 )
@@ -1088,6 +1089,291 @@ func updateUISelectValue(target *object.UINode, props map[string]object.Object, 
 	return invoke("onChange")
 }
 
+func uiTextIndices(props map[string]object.Object) ([]rune, int, int, int, int) {
+	runes := []rune(optionString(props, "value", ""))
+	length := len(runes)
+	caret := int(optionInt(props, "caretIndex", int64(length)))
+	anchor := int(optionInt(props, "selectionAnchor", int64(caret)))
+	if caret < 0 {
+		caret = 0
+	}
+	if caret > length {
+		caret = length
+	}
+	if anchor < 0 {
+		anchor = 0
+	}
+	if anchor > length {
+		anchor = length
+	}
+	start, end := caret, anchor
+	if start > end {
+		start, end = end, start
+	}
+	return runes, caret, anchor, start, end
+}
+
+func setUITextSelection(target *object.UINode, caret, anchor int) {
+	target.Mu.Lock()
+	length := len([]rune(optionString(target.Props, "value", "")))
+	if caret < 0 {
+		caret = 0
+	}
+	if caret > length {
+		caret = length
+	}
+	if anchor < 0 {
+		anchor = 0
+	}
+	if anchor > length {
+		anchor = length
+	}
+	start, end := caret, anchor
+	if start > end {
+		start, end = end, start
+	}
+	target.Props["caretIndex"] = NewInteger(int64(caret))
+	target.Props["selectionAnchor"] = NewInteger(int64(anchor))
+	target.Props["selectionStart"] = NewInteger(int64(start))
+	target.Props["selectionEnd"] = NewInteger(int64(end))
+	target.Mu.Unlock()
+}
+
+func updateUITextValue(target *object.UINode, runes []rune, caret int, invoke func(string) *object.Error) *object.Error {
+	value := NewString(string(runes))
+	target.Mu.Lock()
+	target.Props["value"] = value
+	target.Mu.Unlock()
+	setUITextSelection(target, caret, caret)
+	if e := updateUIBoundState(target, "value", value); e != nil {
+		return e
+	}
+	if e := invoke("onInput"); e != nil {
+		return e
+	}
+	return invoke("onChange")
+}
+
+func replaceUITextSelection(target *object.UINode, props map[string]object.Object, replacement string, invoke func(string) *object.Error) *object.Error {
+	runes, _, _, start, end := uiTextIndices(props)
+	added := []rune(replacement)
+	next := make([]rune, 0, len(runes)-(end-start)+len(added))
+	next = append(next, runes[:start]...)
+	next = append(next, added...)
+	next = append(next, runes[end:]...)
+	return updateUITextValue(target, next, start+len(added), invoke)
+}
+
+func uiTextWordLeft(runes []rune, index int) int {
+	if index > len(runes) {
+		index = len(runes)
+	}
+	for index > 0 && unicode.IsSpace(runes[index-1]) {
+		index--
+	}
+	for index > 0 && !unicode.IsSpace(runes[index-1]) {
+		index--
+	}
+	return index
+}
+func uiTextWordRight(runes []rune, index int) int {
+	if index < 0 {
+		index = 0
+	}
+	for index < len(runes) && unicode.IsSpace(runes[index]) {
+		index++
+	}
+	for index < len(runes) && !unicode.IsSpace(runes[index]) {
+		index++
+	}
+	return index
+}
+
+func uiTextMeasurer(ctx *object.UIContext) object.DesktopUITextMeasurer {
+	if ctx != nil && ctx.Window != nil && ctx.Window.Runtime != nil {
+		if m, ok := ctx.Window.Runtime.(object.DesktopUITextMeasurer); ok {
+			return m
+		}
+	}
+	return nil
+}
+
+func uiTextVisibleStart(ctx *object.UIContext, props map[string]object.Object, runes []rune, caret int, available float64) int {
+	if available <= 0 {
+		return caret
+	}
+	start := 0
+	for start < caret {
+		metrics := uiMeasureText(string(runes[start:caret]), props, ctx.Theme, uiTextMeasurer(ctx), 0)
+		if metrics.Width <= available {
+			break
+		}
+		start++
+	}
+	return start
+}
+
+func uiTextCaretFromX(ctx *object.UIContext, target *object.UINode, x float64) int {
+	target.Mu.RLock()
+	props := cloneUIProps(target.Props)
+	bounds := target.Bounds
+	target.Mu.RUnlock()
+	runes, caret, _, _, _ := uiTextIndices(props)
+	available := math.Max(0, bounds.Width-16)
+	start := uiTextVisibleStart(ctx, props, runes, caret, available)
+	relative := x - bounds.X - 8
+	if relative <= 0 {
+		return start
+	}
+	previous := 0.0
+	for index := start; index < len(runes); index++ {
+		width := uiMeasureText(string(runes[start:index+1]), props, ctx.Theme, uiTextMeasurer(ctx), 0).Width
+		if relative < previous+(width-previous)/2 {
+			return index
+		}
+		if relative < width {
+			return index + 1
+		}
+		previous = width
+		if width > available {
+			break
+		}
+	}
+	return len(runes)
+}
+
+func uiTextSelectWord(target *object.UINode, index int) {
+	target.Mu.RLock()
+	props := cloneUIProps(target.Props)
+	target.Mu.RUnlock()
+	runes, _, _, _, _ := uiTextIndices(props)
+	if len(runes) == 0 {
+		setUITextSelection(target, 0, 0)
+		return
+	}
+	if index >= len(runes) {
+		index = len(runes) - 1
+	}
+	if index < 0 {
+		index = 0
+	}
+	start, end := index, index
+	for start > 0 && !unicode.IsSpace(runes[start-1]) {
+		start--
+	}
+	for end < len(runes) && !unicode.IsSpace(runes[end]) {
+		end++
+	}
+	setUITextSelection(target, end, start)
+}
+
+func uiTextSelected(props map[string]object.Object) string {
+	runes, _, _, start, end := uiTextIndices(props)
+	if start == end {
+		return ""
+	}
+	return string(runes[start:end])
+}
+
+func handleUITextKey(ctx *object.UIContext, target *object.UINode, props map[string]object.Object, event *object.DesktopEvent, invoke func(string) *object.Error) (bool, *object.Error) {
+	key := strings.ToLower(optionString(event.Data, "key", ""))
+	shortcut := strings.ToLower(optionString(event.Data, "shortcut", ""))
+	runes, caret, anchor, start, end := uiTextIndices(props)
+	shift := strings.Contains(shortcut, "shift+")
+	ctrl := strings.Contains(shortcut, "ctrl+") || strings.Contains(shortcut, "super+")
+	move := func(next int) {
+		if shift {
+			setUITextSelection(target, next, anchor)
+		} else {
+			setUITextSelection(target, next, next)
+		}
+	}
+	switch shortcut {
+	case "ctrl+a", "super+a":
+		setUITextSelection(target, len(runes), 0)
+		return true, nil
+	case "ctrl+c", "super+c":
+		selected := uiTextSelected(props)
+		if selected != "" && ctx.App != nil && ctx.App.Backend != nil {
+			if err := ctx.App.Backend.SetClipboard(selected); err != nil {
+				return true, NewError("UI clipboard copy: %s", err)
+			}
+		}
+		return true, nil
+	case "ctrl+x", "super+x":
+		selected := uiTextSelected(props)
+		if selected != "" && ctx.App != nil && ctx.App.Backend != nil {
+			if err := ctx.App.Backend.SetClipboard(selected); err != nil {
+				return true, NewError("UI clipboard cut: %s", err)
+			}
+			return true, updateUITextValue(target, append(append([]rune{}, runes[:start]...), runes[end:]...), start, invoke)
+		}
+		return true, nil
+	case "ctrl+v", "super+v":
+		if ctx.App != nil && ctx.App.Backend != nil {
+			text, err := ctx.App.Backend.Clipboard()
+			if err != nil {
+				return true, NewError("UI clipboard paste: %s", err)
+			}
+			return true, replaceUITextSelection(target, props, text, invoke)
+		}
+		return true, nil
+	}
+	left := key == "left" || key == "arrowleft"
+	right := key == "right" || key == "arrowright"
+	if left {
+		next := caret
+		if !shift && start != end {
+			next = start
+		} else if ctrl {
+			next = uiTextWordLeft(runes, caret)
+		} else if next > 0 {
+			next--
+		}
+		move(next)
+		return true, nil
+	}
+	if right {
+		next := caret
+		if !shift && start != end {
+			next = end
+		} else if ctrl {
+			next = uiTextWordRight(runes, caret)
+		} else if next < len(runes) {
+			next++
+		}
+		move(next)
+		return true, nil
+	}
+	if key == "home" {
+		move(0)
+		return true, nil
+	}
+	if key == "end" {
+		move(len(runes))
+		return true, nil
+	}
+	if key == "backspace" {
+		if start != end {
+			return true, updateUITextValue(target, append(append([]rune{}, runes[:start]...), runes[end:]...), start, invoke)
+		}
+		if caret > 0 {
+			return true, updateUITextValue(target, append(append([]rune{}, runes[:caret-1]...), runes[caret:]...), caret-1, invoke)
+		}
+		return true, nil
+	}
+	if key == "delete" {
+		if start != end {
+			return true, updateUITextValue(target, append(append([]rune{}, runes[:start]...), runes[end:]...), start, invoke)
+		}
+		if caret < len(runes) {
+			return true, updateUITextValue(target, append(append([]rune{}, runes[:caret]...), runes[caret+1:]...), caret, invoke)
+		}
+		return true, nil
+	}
+	return false, nil
+}
+
 func dispatchUIEvent(ctx *object.UIContext, event *object.DesktopEvent) *object.Error {
 	if ctx == nil || event == nil {
 		return nil
@@ -1122,6 +1408,20 @@ func dispatchUIEvent(ctx *object.UIContext, event *object.DesktopEvent) *object.
 			target = openSelect
 		} else {
 			target = hitTestUI(root, x, y)
+		}
+		if event.Type == "mouse_motion" && uiEventNumber(event.Data, "buttons") != 0 && focusID != "" {
+			ctx.Mu.RLock()
+			focused := ctx.Nodes[focusID]
+			ctx.Mu.RUnlock()
+			if focused != nil {
+				focused.Mu.RLock()
+				selecting := optionBool(focused.Props, "selecting", false)
+				editable := focused.Kind == "input" || focused.Kind == "textarea"
+				focused.Mu.RUnlock()
+				if selecting && editable {
+					target = focused
+				}
+			}
 		}
 		if event.Type == "mouse_motion" {
 			ctx.Mu.Lock()
@@ -1250,6 +1550,22 @@ func dispatchUIEvent(ctx *object.UIContext, event *object.DesktopEvent) *object.
 		}
 		return nil
 	}
+
+	if down && (kind == "input" || kind == "textarea") {
+		index := uiTextCaretFromX(ctx, target, x)
+		clicks := int(uiEventNumber(event.Data, "clicks"))
+		if clicks >= 2 {
+			uiTextSelectWord(target, index)
+		} else {
+			setUITextSelection(target, index, index)
+		}
+		target.Mu.Lock()
+		target.Props["selecting"] = NewBoolean(true)
+		target.Mu.Unlock()
+		ctx.Mu.Lock()
+		ctx.Dirty = true
+		ctx.Mu.Unlock()
+	}
 	if event.Type == "key_down" && kind == "select" {
 		key := ""
 		if value, ok := event.Data["key"].(*object.String); ok {
@@ -1281,6 +1597,19 @@ func dispatchUIEvent(ctx *object.UIContext, event *object.DesktopEvent) *object.
 		}
 	}
 	up := event.Type == "mouse_up" || event.Type == "mouse_button_up"
+	if event.Type == "mouse_motion" && (kind == "input" || kind == "textarea") && optionBool(props, "selecting", false) && uiEventNumber(event.Data, "buttons") != 0 {
+		_, _, anchor, _, _ := uiTextIndices(props)
+		setUITextSelection(target, uiTextCaretFromX(ctx, target, x), anchor)
+		ctx.Mu.Lock()
+		ctx.Dirty = true
+		ctx.Mu.Unlock()
+		return nil
+	}
+	if up && (kind == "input" || kind == "textarea") {
+		target.Mu.Lock()
+		target.Props["selecting"] = NewBoolean(false)
+		target.Mu.Unlock()
+	}
 	if up && kind == "select" && openSelect == target && uiPointInRect(x, y, openPopup) && openPopupRowHeight > 0 {
 		index := int(optionInt(props, "popupOffset", 0)) + int((y-openPopup.Y)/openPopupRowHeight)
 		if e := updateUISelectValue(target, props, index, invoke); e != nil {
@@ -1406,47 +1735,26 @@ func dispatchUIEvent(ctx *object.UIContext, event *object.DesktopEvent) *object.
 		}
 	}
 	if event.Type == "key_down" && (kind == "input" || kind == "textarea") {
-		key := ""
-		if v, ok := event.Data["key"].(*object.String); ok {
-			key = strings.ToLower(v.Value)
+		handled, e := handleUITextKey(ctx, target, props, event, invoke)
+		if e != nil {
+			return e
 		}
-		if key == "backspace" {
-			current := []rune(optionString(props, "value", ""))
-			if len(current) > 0 {
-				next := NewString(string(current[:len(current)-1]))
-				target.Mu.Lock()
-				target.Props["value"] = next
-				target.Mu.Unlock()
-				if e := updateUIBoundState(target, "value", next); e != nil {
-					return e
-				}
-				if e := invoke("onInput"); e != nil {
-					return e
-				}
-				if e := invoke("onChange"); e != nil {
-					return e
-				}
-			}
+		if handled {
+			ctx.Mu.Lock()
+			ctx.Dirty = true
+			ctx.Mu.Unlock()
+			return nil
 		}
 	}
 	if event.Type == "text_input" && (kind == "input" || kind == "textarea") {
-		text := ""
-		if v, ok := event.Data["text"].(*object.String); ok {
-			text = v.Value
-		}
-		current := optionString(props, "value", "")
-		next := NewString(current + text)
-		target.Mu.Lock()
-		target.Props["value"] = next
-		target.Mu.Unlock()
-		if e := updateUIBoundState(target, "value", next); e != nil {
-			return e
-		}
-		if e := invoke("onInput"); e != nil {
-			return e
-		}
-		if e := invoke("onChange"); e != nil {
-			return e
+		text := optionString(event.Data, "text", "")
+		if text != "" {
+			target.Mu.RLock()
+			latest := cloneUIProps(target.Props)
+			target.Mu.RUnlock()
+			if e := replaceUITextSelection(target, latest, text, invoke); e != nil {
+				return e
+			}
 		}
 	}
 	ctx.Mu.Lock()

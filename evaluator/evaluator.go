@@ -155,7 +155,7 @@ func Eval(node ast.Node, env *object.Environment) object.Object {
 	case *ast.VarStatement:
 
 		if _, ok := env.Get(node.Name.Value); ok {
-			return newError("variável '%s' já declarada", node.Name.Value)
+			return newError("identifier '%s' already declared", node.Name.Value)
 		}
 
 		value := Eval(node.Value, env)

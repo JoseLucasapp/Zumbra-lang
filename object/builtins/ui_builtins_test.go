@@ -75,7 +75,7 @@ func TestZ14BidirectionalBindingAndKeyboardEditing(t *testing.T) {
 	root := uiTestNode("column", map[string]object.Object{"padding": NewInteger(8)}, input)
 	UIBindBuiltin().Fn(input, NewString("value"), state)
 	ctx := UIMountBuiltin().Fn(app, window, root, desktopTestDict(map[string]object.Object{})).(*object.UIContext)
-	UIDispatchBuiltin().Fn(ctx, desktopTestDict(map[string]object.Object{"type": NewString("mouse_down"), "x": NewInteger(12), "y": NewInteger(12)}))
+	UIDispatchBuiltin().Fn(ctx, desktopTestDict(map[string]object.Object{"type": NewString("mouse_down"), "x": NewInteger(100), "y": NewInteger(12)}))
 	UIDispatchBuiltin().Fn(ctx, desktopTestDict(map[string]object.Object{"type": NewString("text_input"), "text": NewString("B")}))
 	if got := UIStateGetBuiltin().Fn(state).Inspect(); got != "AB" {
 		t.Fatalf("two-way binding=%q", got)

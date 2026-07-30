@@ -233,10 +233,14 @@ func layoutUINode(node *object.UINode, available object.UIRect, theme *object.UI
 			maxOffset = 0
 		}
 		scrollOffsetY = uiClamp(scrollOffsetY, 0, maxOffset)
-		if uiHasVerticalOverflow(contentHeight, inner.Height) && !optionBool(props, "scrollbarOverlay", false) {
-			scrollbarWidth := math.Max(4, uiPropNumber(props, "scrollbarWidth", 8))
-			gutter := math.Max(2, uiPropNumber(props, "scrollbarGutter", 4))
-			inner.Width = math.Max(0, inner.Width-scrollbarWidth-gutter)
+		if uiHasVerticalOverflow(contentHeight, inner.Height) {
+			overlay := optionBool(props, "scrollbarOverlay", false)
+			avoidContent := optionBool(props, "scrollbarAvoidContent", false)
+			if !overlay || avoidContent {
+				scrollbarWidth := math.Max(4, uiPropNumber(props, "scrollbarWidth", 8))
+				gutter := math.Max(2, uiPropNumber(props, "scrollbarGutter", 4))
+				inner.Width = math.Max(0, inner.Width-scrollbarWidth-gutter)
+			}
 		}
 	}
 
@@ -580,6 +584,13 @@ func uiObjectArray(value object.Object) []object.Object {
 	}
 	return nil
 }
+func minInt(a, b int) int {
+	if a < b {
+		return a
+	}
+	return b
+}
+
 func maxInt(a, b int) int {
 	if a > b {
 		return a
@@ -684,6 +695,7 @@ func applyUIStyleDefaults(kind string, props map[string]object.Object, theme *ob
 		set("focusBackground", NewString(uiThemeString(theme, "surfaceAlt", "#eef2f7")))
 		set("cursor", NewString("text"))
 		set("caretColor", NewString(uiThemeString(theme, "primary", "#3867e8")))
+		set("selectionBackground", NewString(uiThemeString(theme, "selection", "#3867e855")))
 	case "checkbox", "radio":
 		set("background", NewString(uiThemeString(theme, "surface", "#ffffff")))
 		set("cursor", NewString("pointer"))

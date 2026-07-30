@@ -683,3 +683,47 @@ Isso mantém margens e alinhamentos simétricos. Use padding interno nos itens q
 ## Correções da versão 0.12.4
 
 Navegações laterais usam toda a altura disponível. Gráficos de linha exibem valores sobre os pontos e rótulos categóricos abaixo deles. Use `showValues: false` para ocultar os valores.
+
+
+## Edição de texto completa e gutter de scrollbar — 0.12.5
+
+Inputs e textareas mantêm posição do caret e intervalo de seleção em índices UTF-8. A edição funciona de forma equivalente na VM/evaluator e no backend C11.
+
+Controles de teclado suportados:
+
+- `Left` e `Right` movem o caret por caractere;
+- `Home` e `End` movem para o início e o fim;
+- `Ctrl+Left` e `Ctrl+Right` ou equivalentes com `Super` movem por palavra;
+- `Shift` combinado com os movimentos amplia ou reduz a seleção;
+- `Backspace` e `Delete` removem a seleção ou o caractere adjacente;
+- `Ctrl+A`, `Ctrl+C`, `Ctrl+X` e `Ctrl+V` selecionam, copiam, recortam e colam.
+
+O mouse permite posicionar o caret, arrastar uma seleção e selecionar uma palavra com clique duplo. O texto selecionado e o caret são renderizados de acordo com o tema, e campos longos deslocam horizontalmente o viewport para manter o caret visível.
+
+Para scroll interno sem a barra atravessar cards, inputs ou botões, use um gutter dedicado:
+
+```zum
+ui.columnWith({
+    "overflowY": "auto",
+    "scrollbarOverlay": true,
+    "scrollbarAvoidContent": true,
+    "scrollbarTrack": "transparent",
+    "scrollbarWidth": 8,
+    "scrollbarGutter": 4
+}, children);
+```
+
+`scrollbarAvoidContent: true` mantém a barra sobreposta ao viewport, mas reduz a largura disponível aos filhos pela soma de `scrollbarWidth` e `scrollbarGutter`. Assim a margem visual permanece controlável sem a barra ser desenhada por cima do conteúdo interativo.
+
+Imagens usadas como miniaturas também aceitam recorte proporcional:
+
+```zum
+ui.image({
+    "path": coverPath,
+    "fit": "cover",
+    "width": 72,
+    "height": 72
+});
+```
+
+Com `fit: "cover"`, a imagem preserva a proporção, preenche o retângulo e recorta apenas o excesso centralizado.

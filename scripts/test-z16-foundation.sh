@@ -18,6 +18,7 @@ go build -o "$TMP/zumbra" .
 "$TMP/zumbra" check code_examples/core/ui_navigation_charts.zum
 "$TMP/zumbra" check code_examples/core/ui_interaction_polish.zum
 "$TMP/zumbra" check code_examples/core/ui_sidebar_line_chart.zum
+"$TMP/zumbra" check code_examples/core/ui_text_editing.zum
 
 VM_OUTPUT="$(ZUMBRA_DESKTOP_HEADLESS=1 "$TMP/zumbra" run code_examples/core/ui_event_target.zum)"
 EXPECTED=$'edit-42\nbutton'
@@ -161,6 +162,22 @@ if [[ "$SIDEBAR_LINE_NATIVE_OUTPUT" != "$SIDEBAR_LINE_EXPECTED" ]]; then
   printf 'Unexpected sidebar/line chart native output:
 %s
 ' "$SIDEBAR_LINE_NATIVE_OUTPUT" >&2
+  exit 1
+fi
+
+
+TEXT_EDIT_EXPECTED=$'GXmmaAlpha beta
+15
+15'
+TEXT_EDIT_VM_OUTPUT="$(ZUMBRA_DESKTOP_HEADLESS=1 "$TMP/zumbra" run code_examples/core/ui_text_editing.zum)"
+if [[ "$TEXT_EDIT_VM_OUTPUT" != "$TEXT_EDIT_EXPECTED" ]]; then
+  printf 'Unexpected text editing VM output:\n%s\n' "$TEXT_EDIT_VM_OUTPUT" >&2
+  exit 1
+fi
+"$TMP/zumbra" build --release -o "$TMP/ui-text-editing" code_examples/core/ui_text_editing.zum
+TEXT_EDIT_NATIVE_OUTPUT="$(ZUMBRA_DESKTOP_HEADLESS=1 "$TMP/ui-text-editing")"
+if [[ "$TEXT_EDIT_NATIVE_OUTPUT" != "$TEXT_EDIT_EXPECTED" ]]; then
+  printf 'Unexpected text editing native output:\n%s\n' "$TEXT_EDIT_NATIVE_OUTPUT" >&2
   exit 1
 fi
 

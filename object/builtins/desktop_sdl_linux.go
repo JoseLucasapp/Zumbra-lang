@@ -278,7 +278,7 @@ static SDL_Surface*zsdl_load_image_surface(const char*path,unsigned char**owned)
     if(p_gdk_new&&p_gdk_width&&p_gdk_height&&p_gdk_stride&&p_gdk_channels&&p_gdk_pixels&&p_g_object_unref&&p_CreateSurfaceFrom){GError*err=NULL;GdkPixbuf*pix=p_gdk_new(path,&err);if(pix){int w=p_gdk_width(pix),h=p_gdk_height(pix),stride=p_gdk_stride(pix),channels=p_gdk_channels(pix),alpha=p_gdk_alpha?p_gdk_alpha(pix):channels==4;unsigned char*src=p_gdk_pixels(pix),*rgba=(unsigned char*)malloc((size_t)w*(size_t)h*4u);if(rgba){for(int y=0;y<h;y++)for(int x=0;x<w;x++){unsigned char*q=rgba+((size_t)y*(size_t)w+(size_t)x)*4u,*v=src+(size_t)y*(size_t)stride+(size_t)x*(size_t)channels;q[0]=v[0];q[1]=v[1];q[2]=v[2];q[3]=alpha&&channels>3?v[3]:255;}SDL_Surface*s=p_CreateSurfaceFrom(w,h,ZSDL_PIXELFORMAT_RGBA32,rgba,w*4);if(s){*owned=rgba;p_g_object_unref(pix);return s;}free(rgba);}p_g_object_unref(pix);}}
     if(p_IOFromFile&&p_LoadBMP_IO){SDL_IOStream*io=p_IOFromFile(path,"rb");if(io)return p_LoadBMP_IO(io,true);}return NULL;
 }
-static bool zsdl_image(SDL_Renderer*r,const char*path,float x,float y,float w,float h,const char*fit){if(!p_DestroySurface||!p_CreateTextureFromSurface||!p_RenderTexture||!p_DestroyTexture)return false;unsigned char*owned=NULL;SDL_Surface*s=zsdl_load_image_surface(path,&owned);if(!s)return false;SDL_Texture*t=p_CreateTextureFromSurface(r,s);p_DestroySurface(s);if(owned)free(owned);if(!t)return false;float tw=0,th=0;if(p_GetTextureSize)p_GetTextureSize(t,&tw,&th);SDL_FRect d={x,y,w,h};if(fit&&strcmp(fit,"contain")==0&&tw>0&&th>0){float sx=w/tw,sy=h/th,scale=sx<sy?sx:sy;d.w=tw*scale;d.h=th*scale;d.x=x+(w-d.w)/2;d.y=y+(h-d.h)/2;}bool ok=p_RenderTexture(r,t,NULL,&d);p_DestroyTexture(t);return ok;}
+static bool zsdl_image(SDL_Renderer*r,const char*path,float x,float y,float w,float h,const char*fit){if(!p_DestroySurface||!p_CreateTextureFromSurface||!p_RenderTexture||!p_DestroyTexture)return false;unsigned char*owned=NULL;SDL_Surface*s=zsdl_load_image_surface(path,&owned);if(!s)return false;SDL_Texture*t=p_CreateTextureFromSurface(r,s);p_DestroySurface(s);if(owned)free(owned);if(!t)return false;float tw=0,th=0;if(p_GetTextureSize)p_GetTextureSize(t,&tw,&th);SDL_FRect d={x,y,w,h},src={0,0,tw,th};SDL_FRect*source=NULL;if(fit&&strcmp(fit,"contain")==0&&tw>0&&th>0){float sx=w/tw,sy=h/th,scale=sx<sy?sx:sy;d.w=tw*scale;d.h=th*scale;d.x=x+(w-d.w)/2;d.y=y+(h-d.h)/2;}else if(fit&&strcmp(fit,"cover")==0&&tw>0&&th>0&&w>0&&h>0){float target=w/h,actual=tw/th;if(actual>target){src.w=th*target;src.x=(tw-src.w)/2;}else{src.h=tw/target;src.y=(th-src.h)/2;}source=&src;}bool ok=p_RenderTexture(r,t,source,&d);p_DestroyTexture(t);return ok;}
 static void zsdl_box_blur_rgba(unsigned char*pixels,int w,int h,int pitch,int radius){if(!pixels||w<2||h<2||radius<1)return;size_t bytes=(size_t)pitch*(size_t)h;unsigned char*src=(unsigned char*)malloc(bytes),*tmp=(unsigned char*)malloc(bytes);if(!src||!tmp){free(src);free(tmp);return;}memcpy(src,pixels,bytes);for(int y=0;y<h;y++)for(int x=0;x<w;x++){int count=0,sum[4]={0,0,0,0};for(int k=-radius;k<=radius;k++){int sx=x+k;if(sx<0)sx=0;if(sx>=w)sx=w-1;unsigned char*q=src+(size_t)y*(size_t)pitch+(size_t)sx*4u;for(int c=0;c<4;c++)sum[c]+=q[c];count++;}unsigned char*d=tmp+(size_t)y*(size_t)pitch+(size_t)x*4u;for(int c=0;c<4;c++)d[c]=(unsigned char)(sum[c]/count);}for(int y=0;y<h;y++)for(int x=0;x<w;x++){int count=0,sum[4]={0,0,0,0};for(int k=-radius;k<=radius;k++){int sy=y+k;if(sy<0)sy=0;if(sy>=h)sy=h-1;unsigned char*q=tmp+(size_t)sy*(size_t)pitch+(size_t)x*4u;for(int c=0;c<4;c++)sum[c]+=q[c];count++;}unsigned char*d=pixels+(size_t)y*(size_t)pitch+(size_t)x*4u;for(int c=0;c<4;c++)d[c]=(unsigned char)(sum[c]/count);}free(src);free(tmp);}
 static bool zsdl_blur_backdrop(SDL_Renderer*r,int w,int h,int radius){if(!p_RenderReadPixels||!p_ConvertSurface||!p_CreateTextureFromSurface||!p_RenderTexture||!p_DestroyTexture||!p_DestroySurface)return false;SDL_Surface*raw=p_RenderReadPixels(r,NULL);if(!raw)return false;SDL_Surface*rgba=p_ConvertSurface(raw,ZSDL_PIXELFORMAT_RGBA32);p_DestroySurface(raw);if(!rgba)return false;ZSDLSurfaceView*v=(ZSDLSurfaceView*)rgba;if(v->pixels&&v->w>0&&v->h>0)zsdl_box_blur_rgba((unsigned char*)v->pixels,v->w,v->h,v->pitch,radius);SDL_Texture*t=p_CreateTextureFromSurface(r,rgba);p_DestroySurface(rgba);if(!t)return false;SDL_FRect d={0,0,(float)w,(float)h};bool ok=p_RenderTexture(r,t,NULL,&d);p_DestroyTexture(t);return ok;}
 
@@ -494,6 +494,7 @@ func sdlEvent(t int64, e *C.ZDesktopNativeEvent) (string, map[string]object.Obje
 		d["y"] = NewFloat(float64(e.y))
 		d["dx"] = NewFloat(float64(e.dx))
 		d["dy"] = NewFloat(float64(e.dy))
+		d["buttons"] = NewInteger(int64(e.data1))
 		return "mouse_move", d
 	case 0x401, 0x402:
 		d["button"] = NewInteger(int64(e.button))
@@ -1154,6 +1155,111 @@ func sdlUIItemText(item object.UIRenderItem) string {
 	}
 	return ""
 }
+
+func sdlUITextSelection(props map[string]object.Object, text string) (int, int, int) {
+	length := len([]rune(text))
+	caret := int(uiFloat(props, "caretIndex", float64(length)))
+	start := int(uiFloat(props, "selectionStart", float64(caret)))
+	end := int(uiFloat(props, "selectionEnd", float64(caret)))
+	if caret < 0 {
+		caret = 0
+	}
+	if caret > length {
+		caret = length
+	}
+	if start < 0 {
+		start = 0
+	}
+	if start > length {
+		start = length
+	}
+	if end < 0 {
+		end = 0
+	}
+	if end > length {
+		end = length
+	}
+	if start > end {
+		start, end = end, start
+	}
+	return caret, start, end
+}
+func sdlUITextWindow(text string, props map[string]object.Object, available float64) ([]rune, int, int, int, int, int) {
+	runes := []rune(text)
+	caret, selStart, selEnd := sdlUITextSelection(props, text)
+	start := 0
+	for start < caret && sdlMeasureUIText(string(runes[start:caret]), sdlUITextStyle(props)).Width > available {
+		start++
+	}
+	end := start
+	for end < len(runes) {
+		if sdlMeasureUIText(string(runes[start:end+1]), sdlUITextStyle(props)).Width > available {
+			break
+		}
+		end++
+	}
+	return runes, start, end, caret, selStart, selEnd
+}
+func sdlUIRenderEditableText(renderer *C.SDL_Renderer, bounds object.UIRect, text, textColor string, props map[string]object.Object, focused bool) {
+	available := math.Max(0, bounds.Width-16)
+	runes, viewStart, viewEnd, caret, selStart, selEnd := sdlUITextWindow(text, props, available)
+	visible := string(runes[viewStart:viewEnd])
+	style := sdlUITextStyle(props)
+	metrics := sdlMeasureUIText(visible, style)
+	y := bounds.Y + math.Max(0, (bounds.Height-metrics.Height)/2)
+	x := bounds.X + 8
+	if focused && selStart != selEnd {
+		visibleSelectionStart := maxInt(selStart, viewStart)
+		visibleSelectionEnd := minInt(selEnd, viewEnd)
+		if visibleSelectionStart < visibleSelectionEnd {
+			prefixWidth := sdlMeasureUIText(string(runes[viewStart:visibleSelectionStart]), style).Width
+			selectionWidth := sdlMeasureUIText(string(runes[visibleSelectionStart:visibleSelectionEnd]), style).Width
+			sdlUIFill(renderer, object.UIRect{X: x + prefixWidth, Y: y - 2, Width: selectionWidth, Height: math.Max(metrics.Height+4, 18)}, uiColor(props, "selectionBackground", "#3867e855"))
+		}
+	}
+	sdlUIText(renderer, x, y, visible, textColor, props)
+	if focused {
+		visibleCaret := caret
+		if visibleCaret < viewStart {
+			visibleCaret = viewStart
+		}
+		if visibleCaret > viewEnd {
+			visibleCaret = viewEnd
+		}
+		caretWidth := sdlMeasureUIText(string(runes[viewStart:visibleCaret]), style).Width
+		caretHeight := math.Min(bounds.Height-12, math.Max(14, metrics.Height))
+		caretY := bounds.Y + (bounds.Height-caretHeight)/2
+		sdlUISetColor(renderer, uiColor(props, "caretColor", textColor))
+		C.zsdl_line(renderer, C.float(x+caretWidth), C.float(caretY), C.float(x+caretWidth), C.float(caretY+caretHeight))
+	}
+}
+func sdlUIRenderVerticalScrollbar(renderer *C.SDL_Renderer, item object.UIRenderItem) {
+	viewportHeight := item.ContentBounds.Height
+	if !uiShouldRenderVerticalScrollbar(item.Props, item.ScrollContentHeight, viewportHeight) {
+		return
+	}
+	barWidth := math.Max(4, uiFloat(item.Props, "scrollbarWidth", 8))
+	gutter := math.Max(0, uiFloat(item.Props, "scrollbarGutter", 4))
+	overlay := uiBool(item.Props, "scrollbarOverlay", false)
+	avoidContent := uiBool(item.Props, "scrollbarAvoidContent", false)
+	trackX := item.ContentBounds.X + item.ContentBounds.Width + math.Max(2, gutter)
+	if overlay && !avoidContent {
+		trackX = item.ContentBounds.X + item.ContentBounds.Width - barWidth - gutter
+	}
+	track := object.UIRect{X: trackX, Y: item.ContentBounds.Y, Width: barWidth, Height: viewportHeight}
+	sdlUIFill(renderer, track, uiColor(item.Props, "scrollbarTrack", "transparent"))
+	thumbHeight := math.Max(24, track.Height*viewportHeight/item.ScrollContentHeight)
+	if thumbHeight > track.Height {
+		thumbHeight = track.Height
+	}
+	maxOffset := item.ScrollContentHeight - viewportHeight
+	thumbY := track.Y
+	if maxOffset > 0 {
+		thumbY += (track.Height - thumbHeight) * item.ScrollOffsetY / maxOffset
+	}
+	sdlUIFill(renderer, object.UIRect{X: track.X, Y: thumbY, Width: track.Width, Height: thumbHeight}, uiColor(item.Props, "scrollbarThumb", "#9aa7ba"))
+}
+
 func sdlUIRenderControlIcon(renderer *C.SDL_Renderer, bounds object.UIRect, icon, color string) bool {
 	icon = strings.ToLower(strings.TrimSpace(icon))
 	if icon == "" {
@@ -1295,30 +1401,24 @@ func sdlUIRenderItem(renderer *C.SDL_Renderer, item object.UIRenderItem) {
 		sdlUIFill(renderer, bounds, background)
 		sdlUIStroke(renderer, bounds, border)
 		actualText := uiString(item.Props, "value", "")
-		text := sdlUIItemText(item)
+		text := actualText
 		if text == "" {
 			text = uiString(item.Props, "placeholder", "")
 			textColor = "#87909f"
 		}
-		textBounds := bounds
 		if item.Kind == "select" {
+			textBounds := bounds
 			textBounds.Width = math.Max(0, textBounds.Width-30)
-		}
-		sdlUITextCentered(renderer, textBounds, 8, text, textColor, item.Props)
-		if item.Kind == "select" {
+			sdlUITextCentered(renderer, textBounds, 8, text, textColor, item.Props)
 			cx := bounds.X + bounds.Width - 15
 			cy := bounds.Y + bounds.Height/2
 			sdlUISetColor(renderer, textColor)
 			C.zsdl_line(renderer, C.float(cx-4), C.float(cy-2), C.float(cx), C.float(cy+2))
 			C.zsdl_line(renderer, C.float(cx), C.float(cy+2), C.float(cx+4), C.float(cy-2))
-		} else if item.Focused {
-			style := sdlUITextStyle(item.Props)
-			metrics := sdlMeasureUIText(actualText, style)
-			caretX := bounds.X + 8 + math.Min(metrics.Width, math.Max(0, bounds.Width-18))
-			caretHeight := math.Min(bounds.Height-12, math.Max(14, metrics.Height))
-			caretY := bounds.Y + (bounds.Height-caretHeight)/2
-			sdlUISetColor(renderer, uiColor(item.Props, "caretColor", textColor))
-			C.zsdl_line(renderer, C.float(caretX), C.float(caretY), C.float(caretX), C.float(caretY+caretHeight))
+		} else if actualText == "" && !item.Focused {
+			sdlUITextCentered(renderer, bounds, 8, text, textColor, item.Props)
+		} else {
+			sdlUIRenderEditableText(renderer, bounds, actualText, textColor, item.Props, item.Focused)
 		}
 	case "checkbox", "radio":
 		box := object.UIRect{X: bounds.X + 4, Y: bounds.Y + (bounds.Height-16)/2, Width: 16, Height: 16}
@@ -1368,26 +1468,6 @@ func sdlUIRenderItem(renderer *C.SDL_Renderer, item object.UIRenderItem) {
 	default:
 		sdlUIFill(renderer, bounds, background)
 		sdlUIText(renderer, bounds.X+4, bounds.Y+4, sdlUIItemText(item), textColor, item.Props)
-	}
-	viewportHeight := item.ContentBounds.Height
-	if uiShouldRenderVerticalScrollbar(item.Props, item.ScrollContentHeight, viewportHeight) {
-		barWidth := math.Max(4, uiFloat(item.Props, "scrollbarWidth", 8))
-		trackX := item.ContentBounds.X + item.ContentBounds.Width + math.Max(2, uiFloat(item.Props, "scrollbarGutter", 4))
-		if uiBool(item.Props, "scrollbarOverlay", false) {
-			trackX = item.ContentBounds.X + item.ContentBounds.Width - barWidth - math.Max(0, uiFloat(item.Props, "scrollbarGutter", 4))
-		}
-		track := object.UIRect{X: trackX, Y: item.ContentBounds.Y, Width: barWidth, Height: viewportHeight}
-		sdlUIFill(renderer, track, uiColor(item.Props, "scrollbarTrack", "#e1e6ef"))
-		thumbHeight := math.Max(24, track.Height*viewportHeight/item.ScrollContentHeight)
-		if thumbHeight > track.Height {
-			thumbHeight = track.Height
-		}
-		maxOffset := item.ScrollContentHeight - viewportHeight
-		thumbY := track.Y
-		if maxOffset > 0 {
-			thumbY += (track.Height - thumbHeight) * item.ScrollOffsetY / maxOffset
-		}
-		sdlUIFill(renderer, object.UIRect{X: track.X, Y: thumbY, Width: track.Width, Height: thumbHeight}, uiColor(item.Props, "scrollbarThumb", "#9aa7ba"))
 	}
 	if item.Focused {
 		inset := math.Max(1, uiFloat(item.Props, "focusInset", 1))
@@ -1514,7 +1594,7 @@ func sdlUIRenderSelectPopup(renderer *C.SDL_Renderer, item object.UIRenderItem, 
 	}
 	if len(options) > visible {
 		track := object.UIRect{X: popup.X + popup.Width - 8, Y: popup.Y + 3, Width: 5, Height: popup.Height - 6}
-		sdlUIFill(renderer, track, uiColor(item.Props, "scrollbarTrack", "#e1e6ef"))
+		sdlUIFill(renderer, track, uiColor(item.Props, "scrollbarTrack", "transparent"))
 		thumbHeight := math.Max(18, track.Height*float64(visible)/float64(len(options)))
 		thumbY := track.Y
 		if maxOffset > 0 {
@@ -1746,6 +1826,18 @@ func (w *sdlWindow) RenderUI(frame *object.UIRenderFrame) error {
 			}
 		}
 		sdlUIRenderItem(w.renderer, item)
+	}
+	C.zsdl_clip_reset(w.renderer)
+	for _, item := range frame.Items {
+		if uiShouldRenderVerticalScrollbar(item.Props, item.ScrollContentHeight, item.ContentBounds.Height) {
+			if item.Clip != nil {
+				clip := *item.Clip
+				C.zsdl_clip(w.renderer, C.int32_t(math.Floor(clip.X)), C.int32_t(math.Floor(clip.Y)), C.int32_t(math.Ceil(clip.Width)), C.int32_t(math.Ceil(clip.Height)))
+			} else {
+				C.zsdl_clip_reset(w.renderer)
+			}
+			sdlUIRenderVerticalScrollbar(w.renderer, item)
+		}
 	}
 	C.zsdl_clip_reset(w.renderer)
 	viewport := object.UIRect{X: 0, Y: 0, Width: frame.Width, Height: frame.Height}
