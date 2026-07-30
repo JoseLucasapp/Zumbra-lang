@@ -2,7 +2,7 @@ package builtinspec
 
 func init() {
 	Names = append(Names,
-		"sqliteQueryOne", "sqliteQueryStream", "sqliteMigrate", "sqliteSchemaVersion",
+		"sqliteQueryOne", "sqliteQueryStream", "sqliteMigrate", "sqliteSchemaVersion", "sqliteBackup", "sqliteRestore", "sqliteIntegrityCheck",
 		"sqliteStatementQueryStream", "sqliteStatementParameterCount", "sqliteStatementColumns",
 		"sqliteTransactionQueryStream", "sqliteSavepoint", "sqliteRollbackTo", "sqliteRelease",
 		"sqlRowsNext", "sqlRowsColumns", "sqlRowsClose", "sqlRowsOpen",
@@ -18,6 +18,6 @@ func init() {
 		"traceStart", "traceChild", "traceSet", "traceEvent", "traceFinish", "traceActive",
 		"sessionSQLite", "sessionRedis", "sessionCreate", "sessionGet", "sessionSet", "sessionDelete", "sessionRotate", "sessionTouch", "sessionCleanup", "sessionClose",
 		"rateLimiter", "rateAllow", "rateReset",
-		"jsonReadFile", "jsonWriteFile", "binaryEncode", "binaryDecode", "binaryWriteFile", "binaryReadFile",
+		"fileExists", "jsonReadFile", "jsonWriteFile", "jsonReadResult", "jsonWriteResult", "csvReadFile", "csvWriteFile", "csvReadResult", "csvWriteResult", "binaryEncode", "binaryDecode", "binaryWriteFile", "binaryReadFile",
 	)
 }

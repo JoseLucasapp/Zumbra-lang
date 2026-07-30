@@ -190,6 +190,20 @@ func UIStateGetBuiltin() *object.Builtin {
 		return s.Value
 	}}
 }
+func applyUINodePropertyLocked(node *object.UINode, property string, value object.Object) {
+	node.Props[property] = value
+	if property == "visible" {
+		if boolean, ok := value.(*object.Boolean); ok {
+			node.Visible = boolean.Value
+		}
+	}
+	if property == "disabled" {
+		if boolean, ok := value.(*object.Boolean); ok {
+			node.Enabled = !boolean.Value
+		}
+	}
+}
+
 func UIStateSetBuiltin() *object.Builtin {
 	return &object.Builtin{Fn: func(args ...object.Object) object.Object {
 		if len(args) != 2 {
@@ -210,7 +224,7 @@ func UIStateSetBuiltin() *object.Builtin {
 				continue
 			}
 			binding.Node.Mu.Lock()
-			binding.Node.Props[binding.Property] = args[1]
+			applyUINodePropertyLocked(binding.Node, binding.Property, args[1])
 			ctx := binding.Node.Context
 			binding.Node.Mu.Unlock()
 			if ctx != nil {
@@ -268,7 +282,7 @@ func UIBindBuiltin() *object.Builtin {
 		s.Bindings = append(s.Bindings, object.UIStateBinding{Node: n, Property: property})
 		s.Mu.Unlock()
 		n.Mu.Lock()
-		n.Props[property] = value
+		applyUINodePropertyLocked(n, property, value)
 		if n.Bindings == nil {
 			n.Bindings = map[string]*object.UIState{}
 		}
@@ -433,17 +447,7 @@ func UISetBuiltin() *object.Builtin {
 			return e
 		}
 		n.Mu.Lock()
-		n.Props[property] = args[2]
-		if property == "visible" {
-			if b, ok := args[2].(*object.Boolean); ok {
-				n.Visible = b.Value
-			}
-		}
-		if property == "disabled" {
-			if b, ok := args[2].(*object.Boolean); ok {
-				n.Enabled = !b.Value
-			}
-		}
+		applyUINodePropertyLocked(n, property, args[2])
 		ctx := n.Context
 		n.Mu.Unlock()
 		markUIContextDirty(ctx)
@@ -622,8 +626,12 @@ func UIAccessibilityBuiltin() *object.Builtin {
 		ctx.Mu.RLock()
 		root := ctx.Root
 		ctx.Mu.RUnlock()
+		accessibilityRoot := root
+		if modal := topmostVisibleModal(root); modal != nil {
+			accessibilityRoot = modal
+		}
 		items := []object.Object{}
-		collectAccessibility(root, &items)
+		collectAccessibility(accessibilityRoot, &items)
 		return &object.Array{Elements: items}
 	}}
 }
@@ -709,13 +717,27 @@ func syncUITextInput(ctx *object.UIContext, node *object.UINode) *object.Error {
 	return nil
 }
 
+func uiNodeEffectivelyVisible(n *object.UINode) bool {
+	for current := n; current != nil; {
+		current.Mu.RLock()
+		visible := current.Visible
+		parent := current.Parent
+		current.Mu.RUnlock()
+		if !visible {
+			return false
+		}
+		current = parent
+	}
+	return n != nil
+}
+
 func uiNodeFocusable(n *object.UINode) bool {
-	if n == nil {
+	if n == nil || !uiNodeEffectivelyVisible(n) {
 		return false
 	}
 	n.Mu.RLock()
 	defer n.Mu.RUnlock()
-	if !n.Visible || !n.Enabled {
+	if !n.Enabled {
 		return false
 	}
 	if optionInt(n.Props, "tabIndex", 0) < 0 {
@@ -732,8 +754,12 @@ func focusNextUI(ctx *object.UIContext, reverse bool) *object.UINode {
 	root := ctx.Root
 	current := ctx.FocusID
 	ctx.Mu.RUnlock()
+	focusRoot := root
+	if modal := topmostVisibleModal(root); modal != nil {
+		focusRoot = modal
+	}
 	nodes := []*object.UINode{}
-	walkUI(root, func(n *object.UINode) {
+	walkUI(focusRoot, func(n *object.UINode) {
 		if uiNodeFocusable(n) {
 			nodes = append(nodes, n)
 		}
@@ -792,11 +818,12 @@ func collectAccessibility(node *object.UINode, items *[]object.Object) {
 	bounds := node.Bounds
 	children := append([]*object.UINode{}, node.Children...)
 	node.Mu.RUnlock()
-	if visible {
-		role := optionString(props, "role", defaultUIRole(node.Kind))
-		label := optionString(props, "accessibilityLabel", optionString(props, "text", optionString(props, "label", "")))
-		*items = append(*items, objectMapDict(map[string]object.Object{"id": NewString(node.ID), "role": NewString(role), "label": NewString(label), "description": NewString(optionString(props, "accessibilityDescription", "")), "enabled": NewBoolean(enabled), "focusable": NewBoolean(uiNodeFocusable(node)), "x": NewFloat(bounds.X), "y": NewFloat(bounds.Y), "width": NewFloat(bounds.Width), "height": NewFloat(bounds.Height)}))
+	if !visible {
+		return
 	}
+	role := optionString(props, "role", defaultUIRole(node.Kind))
+	label := optionString(props, "accessibilityLabel", optionString(props, "text", optionString(props, "label", "")))
+	*items = append(*items, objectMapDict(map[string]object.Object{"id": NewString(node.ID), "role": NewString(role), "label": NewString(label), "description": NewString(optionString(props, "accessibilityDescription", "")), "enabled": NewBoolean(enabled), "focusable": NewBoolean(uiNodeFocusable(node)), "x": NewFloat(bounds.X), "y": NewFloat(bounds.Y), "width": NewFloat(bounds.Width), "height": NewFloat(bounds.Height)}))
 	for _, child := range children {
 		collectAccessibility(child, items)
 	}
@@ -1198,7 +1225,38 @@ func uiEventNumber(values map[string]object.Object, key string) float64 {
 	return 0
 }
 func hitTestUI(node *object.UINode, x, y float64) *object.UINode {
+	if modal := topmostVisibleModal(node); modal != nil {
+		if hit := hitTestUIClipped(modal, x, y, nil); hit != nil {
+			return hit
+		}
+		// The modal backdrop consumes clicks outside the dialog content so the
+		// underlying interface cannot be activated accidentally.
+		return modal
+	}
 	return hitTestUIClipped(node, x, y, nil)
+}
+
+func topmostVisibleModal(node *object.UINode) *object.UINode {
+	if node == nil {
+		return nil
+	}
+	node.Mu.RLock()
+	visible := node.Visible
+	kind := node.Kind
+	children := append([]*object.UINode{}, node.Children...)
+	node.Mu.RUnlock()
+	if !visible {
+		return nil
+	}
+	for index := len(children) - 1; index >= 0; index-- {
+		if modal := topmostVisibleModal(children[index]); modal != nil {
+			return modal
+		}
+	}
+	if kind == "modal" {
+		return node
+	}
+	return nil
 }
 
 func hitTestUIClipped(node *object.UINode, x, y float64, inheritedClip *object.UIRect) *object.UINode {

@@ -361,3 +361,37 @@ Versão esperada:
 - `epoll`, `kqueue`, IOCP e raw sockets públicos.
 
 Esses itens continuam no roadmap como extensões ou hardening. O próximo marco funcional é o **Z13 — runtime desktop**.
+
+## Operações recuperáveis para aplicativos desktop
+
+Aplicativos interativos não devem encerrar o processo por um arquivo inválido ou por uma falha de permissão. O módulo `std/data.zum` oferece variantes que retornam resultados explícitos:
+
+```zumbra
+var result << data.readJsonResult(path);
+if (result["ok"]) {
+    show(result["value"]);
+} else {
+    show(result["error"]);
+}
+
+var csv << data.readCsvResult("colecao.csv");
+data.writeCsvResult("exportacao.csv", [["name", "platform"], ["Chrono Trigger", "SNES"]]);
+```
+
+O formato comum é:
+
+```text
+{ok: bool, value: qualquer, error: string}
+```
+
+CSV usa o parser padrão RFC 4180 da plataforma, incluindo campos citados, vírgulas e quebras de linha. JSON e CSV são gravados atomicamente.
+
+## Backup, restauração e integridade SQLite
+
+```zumbra
+var backup << database.backup(db, "/tmp/colecao.sqlite");
+var integrity << database.integrity(db);
+var restored << database.restore(db, "/tmp/colecao.sqlite");
+```
+
+As três operações retornam resultados recuperáveis. A restauração valida o banco antes de substituir o arquivo ativo e utiliza troca atômica. O backup usa a API de backup do SQLite, preservando consistência mesmo com a conexão aberta.

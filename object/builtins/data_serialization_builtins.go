@@ -1,6 +1,8 @@
 package builtins
 
 import (
+	"bytes"
+	"encoding/csv"
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
@@ -15,6 +17,178 @@ import (
 )
 
 const zumbraBinaryEnvelope = "ZB1\n"
+
+func dataResult(ok bool, value object.Object, errText string) object.Object {
+	if value == nil {
+		value = &object.Null{}
+	}
+	return objectMapDict(map[string]object.Object{
+		"ok":    NewBoolean(ok),
+		"value": value,
+		"error": NewString(errText),
+	})
+}
+
+func dataResultFromObject(value object.Object) object.Object {
+	if errObj, ok := value.(*object.Error); ok {
+		return dataResult(false, &object.Null{}, errObj.Message)
+	}
+	return dataResult(true, value, "")
+}
+
+// FileExistsBuiltin checks whether a regular file or directory exists without
+// raising a runtime error when it does not.
+func FileExistsBuiltin() *object.Builtin {
+	return &object.Builtin{Fn: func(args ...object.Object) object.Object {
+		if len(args) != 1 {
+			return NewError("fileExists expects 1 argument, got %d", len(args))
+		}
+		path, errObj := httpString(args[0], "fileExists path")
+		if errObj != nil {
+			return errObj
+		}
+		_, err := os.Stat(path)
+		if err == nil {
+			return NewBoolean(true)
+		}
+		if os.IsNotExist(err) {
+			return NewBoolean(false)
+		}
+		return NewError("fileExists: %s", err)
+	}}
+}
+
+// JSONReadResultBuiltin is the recoverable form of jsonReadFile. It returns
+// {ok, value, error} and never converts an ordinary I/O or parse failure into a
+// fatal application error.
+func JSONReadResultBuiltin() *object.Builtin {
+	return &object.Builtin{Fn: func(args ...object.Object) object.Object {
+		if len(args) != 1 {
+			return NewError("jsonReadResult expects 1 argument, got %d", len(args))
+		}
+		return dataResultFromObject(JSONReadFileBuiltin().Fn(args...))
+	}}
+}
+
+// JSONWriteResultBuiltin is the recoverable form of jsonWriteFile.
+func JSONWriteResultBuiltin() *object.Builtin {
+	return &object.Builtin{Fn: func(args ...object.Object) object.Object {
+		if len(args) < 2 || len(args) > 3 {
+			return NewError("jsonWriteResult expects path, value and optional pretty flag")
+		}
+		return dataResultFromObject(JSONWriteFileBuiltin().Fn(args...))
+	}}
+}
+
+func csvCellText(value object.Object) (string, error) {
+	switch current := value.(type) {
+	case nil, *object.Null:
+		return "", nil
+	case *object.String:
+		return current.Value, nil
+	case *object.Integer, *object.Float, *object.Boolean, *object.FixedInteger:
+		return current.Inspect(), nil
+	default:
+		return "", fmt.Errorf("unsupported CSV cell type %s", value.Type())
+	}
+}
+
+// CSVReadFileBuiltin parses RFC 4180-style CSV records while preserving every
+// cell as a string. Variable-width rows are accepted for import diagnostics.
+func CSVReadFileBuiltin() *object.Builtin {
+	return &object.Builtin{Fn: func(args ...object.Object) object.Object {
+		if len(args) != 1 {
+			return NewError("csvReadFile expects path")
+		}
+		path, errObj := httpString(args[0], "csvReadFile path")
+		if errObj != nil {
+			return errObj
+		}
+		file, err := os.Open(path)
+		if err != nil {
+			return NewError("csvReadFile: %s", err)
+		}
+		defer file.Close()
+		reader := csv.NewReader(file)
+		reader.FieldsPerRecord = -1
+		records, err := reader.ReadAll()
+		if err != nil {
+			return NewError("csvReadFile: %s", err)
+		}
+		rows := make([]object.Object, 0, len(records))
+		for _, record := range records {
+			cells := make([]object.Object, 0, len(record))
+			for _, cell := range record {
+				cells = append(cells, NewString(cell))
+			}
+			rows = append(rows, &object.Array{Elements: cells})
+		}
+		return &object.Array{Elements: rows}
+	}}
+}
+
+// CSVWriteFileBuiltin writes CSV atomically and returns the number of bytes
+// persisted.
+func CSVWriteFileBuiltin() *object.Builtin {
+	return &object.Builtin{Fn: func(args ...object.Object) object.Object {
+		if len(args) != 2 {
+			return NewError("csvWriteFile expects path and rows")
+		}
+		path, errObj := httpString(args[0], "csvWriteFile path")
+		if errObj != nil {
+			return errObj
+		}
+		rows, ok := args[1].(*object.Array)
+		if !ok {
+			return NewError("csvWriteFile rows must be an array")
+		}
+		var buffer bytes.Buffer
+		writer := csv.NewWriter(&buffer)
+		for rowIndex, rowValue := range rows.Elements {
+			row, ok := rowValue.(*object.Array)
+			if !ok {
+				return NewError("csvWriteFile row %d must be an array", rowIndex+1)
+			}
+			record := make([]string, 0, len(row.Elements))
+			for columnIndex, cell := range row.Elements {
+				text, err := csvCellText(cell)
+				if err != nil {
+					return NewError("csvWriteFile row %d column %d: %s", rowIndex+1, columnIndex+1, err)
+				}
+				record = append(record, text)
+			}
+			if err := writer.Write(record); err != nil {
+				return NewError("csvWriteFile: %s", err)
+			}
+		}
+		writer.Flush()
+		if err := writer.Error(); err != nil {
+			return NewError("csvWriteFile: %s", err)
+		}
+		if err := atomicWriteFile(path, buffer.Bytes(), 0o644); err != nil {
+			return NewError("csvWriteFile: %s", err)
+		}
+		return &object.Integer{Value: int64(buffer.Len())}
+	}}
+}
+
+func CSVReadResultBuiltin() *object.Builtin {
+	return &object.Builtin{Fn: func(args ...object.Object) object.Object {
+		if len(args) != 1 {
+			return NewError("csvReadResult expects path")
+		}
+		return dataResultFromObject(CSVReadFileBuiltin().Fn(args...))
+	}}
+}
+
+func CSVWriteResultBuiltin() *object.Builtin {
+	return &object.Builtin{Fn: func(args ...object.Object) object.Object {
+		if len(args) != 2 {
+			return NewError("csvWriteResult expects path and rows")
+		}
+		return dataResultFromObject(CSVWriteFileBuiltin().Fn(args...))
+	}}
+}
 
 // JSONReadFileBuiltin reads a standard JSON document using json.Number so
 // integers do not silently become floats.

@@ -380,3 +380,21 @@ Valores aceitos para `overflowY` são `"auto"` e `"scroll"`. A forma booleana eq
 
 O snapshot headless inclui `contentX`, `contentY`, `contentWidth`, `contentHeight` e `scrollOffsetY`, permitindo testar overflow sem abrir uma janela gráfica.
 
+
+## Modais reais
+
+`ui.modal` é um overlay e não participa do fluxo de linhas, colunas ou containers. Quando um modal visível existe:
+
+- foco e `focusNext` permanecem dentro do modal mais alto;
+- a interface de fundo não recebe mouse ou teclado;
+- somente a árvore modal ativa é exposta pela acessibilidade;
+- filhos de modais ocultos não podem receber foco;
+- bindings das propriedades `visible` e `enabled` são aplicados imediatamente.
+
+```zumbra
+var visible << ui.boolState(false);
+var dialog << ui.modal({"id": "confirm", "visible": false}, [
+    ui.buttonWith({"id": "confirm-action", "text": "Confirmar"})
+]);
+ui.bind(dialog, "visible", visible);
+```

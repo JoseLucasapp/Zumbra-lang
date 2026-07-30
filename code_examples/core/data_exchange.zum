@@ -1,0 +1,29 @@
+import "../../std/data.zum" as data;
+
+var directory << "/tmp/zumbra-z16-native-data";
+var jsonPath << directory + "/collection.json";
+var csvPath << directory + "/collection.csv";
+
+var jsonWrite << data.writeJsonResult(jsonPath, {
+    "version": 1,
+    "games": [{"name": "Final Fantasy IX", "platform": "PlayStation"}]
+}, true);
+show(jsonWrite["ok"]);
+
+var jsonRead << data.readJsonResult(jsonPath);
+show(jsonRead["ok"]);
+show(jsonRead["value"]["games"][0]["name"]);
+
+var missing << data.readJsonResult(directory + "/missing.json");
+show(missing["ok"]);
+
+var csvWrite << data.writeCsvResult(csvPath, [
+    ["name", "platform", "notes"],
+    ["Final Fantasy IX", "PlayStation", "comma, preserved"]
+]);
+show(csvWrite["ok"]);
+
+var csvRead << data.readCsvResult(csvPath);
+show(csvRead["ok"]);
+show(sizeOf(csvRead["value"]));
+show(csvRead["value"][1][2]);

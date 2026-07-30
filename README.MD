@@ -310,4 +310,7 @@ Zumbra 0.11.2 corrects retained UI layout alignment, adds clipped vertical scrol
 ## Zumbra 0.11.3
 
 Zumbra 0.11.3 restricts scrollbar rendering to nodes that explicitly enable vertical overflow, eliminating stray scrollbar fragments on labels, cards, buttons and ordinary containers. See [`docs/pt-BR/correcao-scrollbars-0.11.3.md`](./docs/pt-BR/correcao-scrollbars-0.11.3.md).
+## Zumbra 0.12.0 — fechamento do Z16
+
+Zumbra 0.12.0 fecha a fundação do primeiro aplicativo desktop oficial. A versão adiciona operações recuperáveis de JSON e CSV, backup/restauração/verificação de integridade SQLite, file picker em modo salvar, notificações não fatais, modais reais com isolamento de foco, acessibilidade e ponteiro, além de paridade nativa para mutação incremental de arrays. Veja [`docs/releases/0.12.0.md`](./docs/releases/0.12.0.md) e [`docs/pt-BR/aplicativo-referencia-z16.md`](./docs/pt-BR/aplicativo-referencia-z16.md).
 

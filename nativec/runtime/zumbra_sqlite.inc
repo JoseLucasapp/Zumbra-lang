@@ -604,6 +604,117 @@ static ZValue z_sqlite_transaction_prepare(ZSQLiteTransactionNative *transaction
     return z_sqlite_value(ZV_SQLITE_STATEMENT, ZK_SQLITE_STATEMENT, native);
 }
 
+
+static ZValue z_sqlite_operation_result(bool ok, ZValue value, const char *error) {
+    ZValue pairs[3] = {
+        z_pair(z_string("ok"), z_bool(ok)),
+        z_pair(z_string("value"), value),
+        z_pair(z_string("error"), z_string(error == NULL ? "" : error))
+    };
+    return z_dict_from(pairs, 3);
+}
+
+static bool z_sqlite_integrity_raw(sqlite3 *handle, char *message, size_t message_size) {
+    sqlite3_stmt *statement = NULL;
+    int code = sqlite3_prepare_v2(handle, "PRAGMA quick_check", -1, &statement, NULL);
+    if (code != SQLITE_OK || statement == NULL) {
+        snprintf(message, message_size, "prepare integrity check: %s", sqlite3_errmsg(handle));
+        if (statement != NULL) sqlite3_finalize(statement);
+        return false;
+    }
+    code = sqlite3_step(statement);
+    if (code != SQLITE_ROW) {
+        snprintf(message, message_size, "run integrity check: %s", sqlite3_errmsg(handle));
+        sqlite3_finalize(statement);
+        return false;
+    }
+    const unsigned char *text = sqlite3_column_text(statement, 0);
+    snprintf(message, message_size, "%s", text == NULL ? "no integrity result" : (const char *)text);
+    bool ok = text != NULL && strcasecmp((const char *)text, "ok") == 0;
+    sqlite3_finalize(statement);
+    return ok;
+}
+
+static bool z_sqlite_copy_raw(sqlite3 *destination, sqlite3 *source, char *message, size_t message_size) {
+    sqlite3_backup *backup = sqlite3_backup_init(destination, "main", source, "main");
+    if (backup == NULL) {
+        snprintf(message, message_size, "initialize SQLite backup: %s", sqlite3_errmsg(destination));
+        return false;
+    }
+    int step = sqlite3_backup_step(backup, -1);
+    int finish = sqlite3_backup_finish(backup);
+    if (step != SQLITE_DONE) {
+        snprintf(message, message_size, "copy SQLite backup: %s", sqlite3_errmsg(destination));
+        return false;
+    }
+    if (finish != SQLITE_OK) {
+        snprintf(message, message_size, "finish SQLite backup: %s", sqlite3_errmsg(destination));
+        return false;
+    }
+    return true;
+}
+
+static ZValue z_sqlite_backup_result(ZSQLiteDatabaseNative *database, const char *path) {
+    if (path == NULL || *path == '\0') return z_sqlite_operation_result(false, z_null(), "SQLite backup path is empty");
+    pthread_mutex_lock(&database->mutex);
+    if (!database->open || database->database == NULL) { pthread_mutex_unlock(&database->mutex); return z_sqlite_operation_result(false, z_null(), "SQLite database is closed"); }
+    if (database->transaction_active) { pthread_mutex_unlock(&database->mutex); return z_sqlite_operation_result(false, z_null(), "cannot back up SQLite database with an active transaction"); }
+    if (database->path != NULL && strcmp(database->path, path) == 0) { pthread_mutex_unlock(&database->mutex); return z_sqlite_operation_result(false, z_null(), "SQLite backup destination must differ from the open database"); }
+    size_t temporary_size = strlen(path) + 48;
+    char *temporary = (char *)malloc(temporary_size);
+    if (temporary == NULL) { pthread_mutex_unlock(&database->mutex); return z_sqlite_operation_result(false, z_null(), "out of memory creating backup path"); }
+    snprintf(temporary, temporary_size, "%s.zumbra-%ld.tmp", path, (long)getpid());
+    unlink(temporary);
+    sqlite3 *target = NULL;
+    int code = sqlite3_open_v2(temporary, &target, SQLITE_OPEN_READWRITE | SQLITE_OPEN_CREATE | SQLITE_OPEN_FULLMUTEX, NULL);
+    char message[1024] = {0};
+    bool ok = code == SQLITE_OK && target != NULL;
+    if (!ok) snprintf(message, sizeof(message), "open SQLite backup destination: %s", target == NULL ? sqlite3_errstr(code) : sqlite3_errmsg(target));
+    if (ok) ok = z_sqlite_copy_raw(target, database->database, message, sizeof(message));
+    if (target != NULL) sqlite3_close_v2(target);
+    pthread_mutex_unlock(&database->mutex);
+    if (ok && rename(temporary, path) != 0) { snprintf(message, sizeof(message), "replace SQLite backup: %s", strerror(errno)); ok = false; }
+    if (!ok) unlink(temporary);
+    free(temporary);
+    return z_sqlite_operation_result(ok, ok ? z_string(path) : z_null(), ok ? "" : message);
+}
+
+static ZValue z_sqlite_restore_result(ZSQLiteDatabaseNative *database, const char *path) {
+    if (path == NULL || *path == '\0') return z_sqlite_operation_result(false, z_null(), "SQLite restore path is empty");
+    if (database->path != NULL && strcmp(database->path, path) == 0) return z_sqlite_operation_result(false, z_null(), "SQLite restore source must differ from the open database");
+    sqlite3 *source = NULL;
+    int code = sqlite3_open_v2(path, &source, SQLITE_OPEN_READONLY | SQLITE_OPEN_FULLMUTEX | SQLITE_OPEN_URI, NULL);
+    char message[1024] = {0};
+    if (code != SQLITE_OK || source == NULL) {
+        snprintf(message, sizeof(message), "open SQLite restore source: %s", source == NULL ? sqlite3_errstr(code) : sqlite3_errmsg(source));
+        if (source != NULL) sqlite3_close_v2(source);
+        return z_sqlite_operation_result(false, z_null(), message);
+    }
+    if (!z_sqlite_integrity_raw(source, message, sizeof(message))) {
+        sqlite3_close_v2(source);
+        char detailed[1200]; snprintf(detailed, sizeof(detailed), "validate SQLite restore source: %s", message);
+        return z_sqlite_operation_result(false, z_null(), detailed);
+    }
+    pthread_mutex_lock(&database->mutex);
+    if (!database->open || database->database == NULL) { pthread_mutex_unlock(&database->mutex); sqlite3_close_v2(source); return z_sqlite_operation_result(false, z_null(), "SQLite database is closed"); }
+    if (database->transaction_active) { pthread_mutex_unlock(&database->mutex); sqlite3_close_v2(source); return z_sqlite_operation_result(false, z_null(), "cannot restore SQLite database with an active transaction"); }
+    bool ok = z_sqlite_copy_raw(database->database, source, message, sizeof(message));
+    if (ok) ok = z_sqlite_integrity_raw(database->database, message, sizeof(message));
+    pthread_mutex_unlock(&database->mutex);
+    sqlite3_close_v2(source);
+    return z_sqlite_operation_result(ok, ok ? z_string(path) : z_null(), ok ? "" : message);
+}
+
+static ZValue z_sqlite_integrity_result(ZSQLiteDatabaseNative *database) {
+    char message[1024] = {0};
+    pthread_mutex_lock(&database->mutex);
+    if (!database->open || database->database == NULL) { pthread_mutex_unlock(&database->mutex); return z_sqlite_operation_result(false, z_null(), "SQLite database is closed"); }
+    if (database->transaction_active) { pthread_mutex_unlock(&database->mutex); return z_sqlite_operation_result(false, z_null(), "cannot check SQLite integrity with an active transaction"); }
+    bool ok = z_sqlite_integrity_raw(database->database, message, sizeof(message));
+    pthread_mutex_unlock(&database->mutex);
+    return z_sqlite_operation_result(ok, z_string(message), ok ? "" : message);
+}
+
 static ZValue z_sqlite_call_builtin(const char *name, const ZValue *args, size_t argc, bool *handled) {
     *handled = true;
     if (strcmp(name,"sqliteOpen")==0) { z_expect_args(name,argc,1); return z_sqlite_open(z_as_cstring(args[0])); }
@@ -614,6 +725,9 @@ static ZValue z_sqlite_call_builtin(const char *name, const ZValue *args, size_t
     if (strcmp(name,"sqliteQueryStream")==0) { if(argc<2||argc>3)z_fatal("sqliteQueryStream expects database, SQL and optional parameters"); return z_sqlite_database_stream(z_sqlite_expect_database(args[0]),z_as_cstring(args[1]),argc==3?args[2]:z_array_from(NULL,0),false); }
     if (strcmp(name,"sqliteMigrate")==0) { z_expect_args(name,argc,2); return z_int(z_sqlite_migrate(z_sqlite_expect_database(args[0]),args[1])); }
     if (strcmp(name,"sqliteSchemaVersion")==0) { z_expect_args(name,argc,1); return z_int(z_sqlite_schema_version(z_sqlite_expect_database(args[0]))); }
+    if (strcmp(name,"sqliteBackup")==0) { z_expect_args(name,argc,2); return z_sqlite_backup_result(z_sqlite_expect_database(args[0]),z_as_cstring(args[1])); }
+    if (strcmp(name,"sqliteRestore")==0) { z_expect_args(name,argc,2); return z_sqlite_restore_result(z_sqlite_expect_database(args[0]),z_as_cstring(args[1])); }
+    if (strcmp(name,"sqliteIntegrityCheck")==0) { z_expect_args(name,argc,1); return z_sqlite_integrity_result(z_sqlite_expect_database(args[0])); }
     if (strcmp(name,"sqlitePrepare")==0) { z_expect_args(name,argc,2); return z_sqlite_prepare_value(z_sqlite_expect_database(args[0]),NULL,z_as_cstring(args[1])); }
     if (strcmp(name,"sqliteBegin")==0) { z_expect_args(name,argc,1); return z_sqlite_begin(z_sqlite_expect_database(args[0])); }
     if (strcmp(name,"sqliteClose")==0) { z_expect_args(name,argc,1); return z_bool(z_sqlite_close_database(z_sqlite_expect_database(args[0]))); }

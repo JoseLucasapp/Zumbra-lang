@@ -655,7 +655,7 @@ func DesktopNotifyBuiltin() *object.Builtin {
 			return e
 		}
 		if err := app.Backend.Notify(options); err != nil {
-			return desktopError("desktopNotify", err)
+			return NewBoolean(false)
 		}
 		return NewBoolean(true)
 	}}

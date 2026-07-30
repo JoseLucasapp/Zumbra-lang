@@ -61,6 +61,8 @@ func TestDesktopRuntimeContainsWindowsAndMacOSBackends(t *testing.T) {
 	for _, expected := range []string{
 		"LoadLibraryA",
 		"GetOpenFileNameA",
+		"GetSaveFileNameA",
+		"OFN_OVERWRITEPROMPT",
 		"SHBrowseForFolderA",
 		"CreateProcessA",
 		"ShellExecuteA",
@@ -68,6 +70,9 @@ func TestDesktopRuntimeContainsWindowsAndMacOSBackends(t *testing.T) {
 		"SDL3_ttf.dll",
 		"__APPLE__",
 		"osascript",
+		"choose file name",
+		"--save --confirm-overwrite",
+		"--getsavefilename",
 		"_NSGetExecutablePath",
 		"@executable_path/../Frameworks/libSDL3",
 		"@executable_path/../Frameworks/libSDL3_ttf",

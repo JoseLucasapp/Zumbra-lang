@@ -16,6 +16,7 @@ func TestZ12PublicExamplesBuildAndRunNatively(t *testing.T) {
 		{"code_examples/core/data_persistence.zum", "2\n2\nLucas\n42\nLucas\nZumbra\ntrue\n43\ntrue\n"},
 		{"code_examples/core/config_observability.zum", "8080\ntrue\n[REDACTED]\n2\ntrue\nok\ntrue\ntrue\nfalse\nLucas\ntrue\nLucas\ntrue\n"},
 		{"code_examples/core/data_serialization.zum", "true\nLucas\n43981\ntrue\n42\n"},
+		{"code_examples/core/data_exchange.zum", "true\ntrue\nFinal Fantasy IX\nfalse\ntrue\ntrue\n2\ncomma, preserved\n"},
 	}
 	for _, test := range tests {
 		t.Run(strings.TrimSuffix(strings.TrimPrefix(test.path, "code_examples/core/"), ".zum"), func(t *testing.T) {

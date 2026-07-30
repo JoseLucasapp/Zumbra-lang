@@ -109,3 +109,17 @@ func TestZ16PointThreeNativeScrollbarRequiresScrollableNode(t *testing.T) {
 		t.Fatal("native scrollbar rendering is not restricted to explicitly scrollable nodes")
 	}
 }
+
+func TestZ16ModalFocusAndPointerIsolationRunsHeadlessNatively(t *testing.T) {
+	expected := "2\n2\nmodal-confirm\n0\n"
+	if output := buildAndRunZ8(t, "code_examples/core/ui_modal.zum"); output != expected {
+		t.Fatalf("output=%q", output)
+	}
+}
+
+func TestZ16NativeArrayAppendParity(t *testing.T) {
+	expected := "3\nfirst\nlast\n"
+	if output := buildAndRunZ8(t, "code_examples/core/array_append.zum"); output != expected {
+		t.Fatalf("output=%q", output)
+	}
+}

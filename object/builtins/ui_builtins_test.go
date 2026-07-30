@@ -279,3 +279,49 @@ func TestZ16PointThreeScrollbarRequiresExplicitVerticalOverflow(t *testing.T) {
 		t.Fatal("scrollY=true with real overflow must render a vertical scrollbar")
 	}
 }
+
+func TestZ16ModalOverlayTrapsFocusAccessibilityAndPointerEvents(t *testing.T) {
+	app := DesktopAppBuiltin().Fn(desktopTestDict(map[string]object.Object{"backend": NewString("headless")})).(*object.DesktopApp)
+	window := DesktopWindowBuiltin().Fn(app, desktopTestDict(map[string]object.Object{"title": NewString("Modal"), "width": NewInteger(400), "height": NewInteger(260)})).(*object.DesktopWindow)
+	visible := UIStateBuiltin().Fn(NewBoolean(false)).(*object.UIState)
+	backgroundClicks := 0
+	backgroundHandler := &object.Builtin{Fn: func(args ...object.Object) object.Object {
+		backgroundClicks++
+		return &object.Null{}
+	}}
+	background := uiTestNode("button", map[string]object.Object{
+		"id": NewString("background-action"), "text": NewString("Background"), "onClick": backgroundHandler,
+	})
+	confirm := uiTestNode("button", map[string]object.Object{"id": NewString("modal-confirm"), "text": NewString("Confirm")})
+	modal := uiTestNode("modal", map[string]object.Object{
+		"id": NewString("test-modal"), "visible": NewBoolean(false), "width": NewInteger(240), "height": NewInteger(160),
+	}, confirm)
+	if result := UIBindBuiltin().Fn(modal, NewString("visible"), visible); result.Type() == object.ERROR_OBJ {
+		t.Fatal(result.Inspect())
+	}
+	root := uiTestNode("row", map[string]object.Object{"padding": NewInteger(8)}, background, modal)
+	ctx := UIMountBuiltin().Fn(app, window, root, desktopTestDict(map[string]object.Object{})).(*object.UIContext)
+	backgroundBounds := background.Bounds
+
+	if got := len(UIAccessibilityBuiltin().Fn(ctx).(*object.Array).Elements); got != 2 {
+		t.Fatalf("hidden modal accessibility count=%d", got)
+	}
+	if result := UIStateSetBuiltin().Fn(visible, NewBoolean(true)); result.Type() == object.ERROR_OBJ {
+		t.Fatal(result.Inspect())
+	}
+	if background.Bounds != backgroundBounds {
+		t.Fatalf("modal changed background flow bounds: before=%+v after=%+v", backgroundBounds, background.Bounds)
+	}
+	if got := len(UIAccessibilityBuiltin().Fn(ctx).(*object.Array).Elements); got != 2 {
+		t.Fatalf("visible modal accessibility count=%d", got)
+	}
+	focused := UIFocusNextBuiltin().Fn(ctx, NewBoolean(false))
+	if got := UIGetBuiltin().Fn(focused, NewString("id")).Inspect(); got != "modal-confirm" {
+		t.Fatalf("modal focus=%q", got)
+	}
+	UIDispatchBuiltin().Fn(ctx, desktopTestDict(map[string]object.Object{"type": NewString("mouse_down"), "x": NewInteger(10), "y": NewInteger(10)}))
+	UIDispatchBuiltin().Fn(ctx, desktopTestDict(map[string]object.Object{"type": NewString("mouse_up"), "x": NewInteger(10), "y": NewInteger(10)}))
+	if backgroundClicks != 0 {
+		t.Fatalf("background received %d clicks while modal was visible", backgroundClicks)
+	}
+}

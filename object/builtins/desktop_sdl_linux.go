@@ -533,17 +533,25 @@ func (b *sdlDesktopBackend) Clipboard() (string, error) {
 	return C.GoString(p), nil
 }
 func (b *sdlDesktopBackend) PickFile(options map[string]object.Object) ([]string, error) {
+	saveMode := optionBool(options, "save", false) || strings.EqualFold(optionString(options, "mode", "open"), "save")
 	args := []string{"--file-selection"}
-	if optionBool(options, "multiple", false) {
+	if saveMode {
+		args = append(args, "--save", "--confirm-overwrite")
+	} else if optionBool(options, "multiple", false) {
 		args = append(args, "--multiple", "--separator=\n")
 	}
 	if title := optionString(options, "title", ""); title != "" {
 		args = append(args, "--title="+title)
 	}
-	if path := optionString(options, "defaultPath", ""); path != "" {
-		args = append(args, "--filename="+path)
+	defaultPath := optionString(options, "defaultPath", "")
+	if defaultPath != "" {
+		args = append(args, "--filename="+defaultPath)
 	}
-	out, err := runDialog("zenity", args, []string{"kdialog", "--getopenfilename", optionString(options, "defaultPath", "")})
+	alternateAction := "--getopenfilename"
+	if saveMode {
+		alternateAction = "--getsavefilename"
+	}
+	out, err := runDialog("zenity", args, []string{"kdialog", alternateAction, defaultPath})
 	if err != nil {
 		return nil, err
 	}

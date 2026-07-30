@@ -10,6 +10,9 @@ pub fct prepare(database, sql) { sqlitePrepare(database, sql); }
 pub fct begin(database) { sqliteBegin(database); }
 pub fct migrate(database, migrations) { sqliteMigrate(database, migrations); }
 pub fct schemaVersion(database) { sqliteSchemaVersion(database); }
+pub fct backup(database, path) { sqliteBackup(database, path); }
+pub fct restore(database, path) { sqliteRestore(database, path); }
+pub fct integrity(database) { sqliteIntegrityCheck(database); }
 pub fct close(database) { sqliteClose(database); }
 pub fct isOpen(database) { sqliteIsOpen(database); }
 pub fct path(database) { sqlitePath(database); }

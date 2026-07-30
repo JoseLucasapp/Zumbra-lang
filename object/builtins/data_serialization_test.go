@@ -75,3 +75,54 @@ func TestZ12BinarySerializationRejectsUnknownEnvelope(t *testing.T) {
 		t.Fatalf("expected corrupt-envelope error, got %T", value)
 	}
 }
+
+func TestZ16RecoverableJSONAndCSVFileOperations(t *testing.T) {
+	directory := t.TempDir()
+	missing := filepath.Join(directory, "missing.json")
+	if FileExistsBuiltin().Fn(NewString(missing)).(*object.Boolean).Value {
+		t.Fatal("missing file reported as existing")
+	}
+	missingResult := JSONReadResultBuiltin().Fn(NewString(missing)).(*object.Dict)
+	if sqliteTestDictValue(t, missingResult, "ok").(*object.Boolean).Value {
+		t.Fatal("missing JSON read should be recoverable failure")
+	}
+	if sqliteTestDictValue(t, missingResult, "error").(*object.String).Value == "" {
+		t.Fatal("missing JSON read did not report an error")
+	}
+
+	jsonPath := filepath.Join(directory, "export.json")
+	payload := z11TestDict(map[string]object.Object{"name": NewString("Final Fantasy IX"), "year": NewInteger(2000)})
+	writeResult := JSONWriteResultBuiltin().Fn(NewString(jsonPath), payload, NewBoolean(true)).(*object.Dict)
+	if !sqliteTestDictValue(t, writeResult, "ok").(*object.Boolean).Value {
+		t.Fatalf("JSON write failed: %s", sqliteTestDictValue(t, writeResult, "error").Inspect())
+	}
+	if !FileExistsBuiltin().Fn(NewString(jsonPath)).(*object.Boolean).Value {
+		t.Fatal("written JSON file was not found")
+	}
+	readResult := JSONReadResultBuiltin().Fn(NewString(jsonPath)).(*object.Dict)
+	if !sqliteTestDictValue(t, readResult, "ok").(*object.Boolean).Value {
+		t.Fatalf("JSON read failed: %s", sqliteTestDictValue(t, readResult, "error").Inspect())
+	}
+
+	csvPath := filepath.Join(directory, "collection.csv")
+	rows := &object.Array{Elements: []object.Object{
+		&object.Array{Elements: []object.Object{NewString("name"), NewString("platform"), NewString("notes")}},
+		&object.Array{Elements: []object.Object{NewString("Final Fantasy IX"), NewString("PlayStation"), NewString("comma, quote \" and newline\nkept")}},
+	}}
+	csvWrite := CSVWriteResultBuiltin().Fn(NewString(csvPath), rows).(*object.Dict)
+	if !sqliteTestDictValue(t, csvWrite, "ok").(*object.Boolean).Value {
+		t.Fatalf("CSV write failed: %s", sqliteTestDictValue(t, csvWrite, "error").Inspect())
+	}
+	csvRead := CSVReadResultBuiltin().Fn(NewString(csvPath)).(*object.Dict)
+	if !sqliteTestDictValue(t, csvRead, "ok").(*object.Boolean).Value {
+		t.Fatalf("CSV read failed: %s", sqliteTestDictValue(t, csvRead, "error").Inspect())
+	}
+	decodedRows := sqliteTestDictValue(t, csvRead, "value").(*object.Array)
+	if len(decodedRows.Elements) != 2 {
+		t.Fatalf("CSV rows=%d", len(decodedRows.Elements))
+	}
+	decodedSecond := decodedRows.Elements[1].(*object.Array)
+	if got := decodedSecond.Elements[2].(*object.String).Value; got != "comma, quote \" and newline\nkept" {
+		t.Fatalf("CSV quoted value=%q", got)
+	}
+}

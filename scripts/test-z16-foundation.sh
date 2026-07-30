@@ -11,6 +11,9 @@ go test ./mir ./nativec ./conformance ./object/builtins
 go build -o "$TMP/zumbra" .
 "$TMP/zumbra" check code_examples/core/ui_event_target.zum
 "$TMP/zumbra" check code_examples/core/ui_scroll.zum
+"$TMP/zumbra" check code_examples/core/ui_modal.zum
+"$TMP/zumbra" check code_examples/core/array_append.zum
+"$TMP/zumbra" check code_examples/core/data_exchange.zum
 
 VM_OUTPUT="$(ZUMBRA_DESKTOP_HEADLESS=1 "$TMP/zumbra" run code_examples/core/ui_event_target.zum)"
 EXPECTED=$'edit-42\nbutton'
@@ -37,6 +40,45 @@ fi
 SCROLL_NATIVE_OUTPUT="$(ZUMBRA_DESKTOP_HEADLESS=1 "$TMP/ui-scroll")"
 if [[ "$SCROLL_NATIVE_OUTPUT" != "$SCROLL_EXPECTED" ]]; then
   printf 'Unexpected scroll native output:\n%s\n' "$SCROLL_NATIVE_OUTPUT" >&2
+  exit 1
+fi
+
+MODAL_EXPECTED=$'2\n2\nmodal-confirm\n0'
+MODAL_VM_OUTPUT="$(ZUMBRA_DESKTOP_HEADLESS=1 "$TMP/zumbra" run code_examples/core/ui_modal.zum)"
+if [[ "$MODAL_VM_OUTPUT" != "$MODAL_EXPECTED" ]]; then
+  printf 'Unexpected modal VM output:\n%s\n' "$MODAL_VM_OUTPUT" >&2
+  exit 1
+fi
+"$TMP/zumbra" build --release -o "$TMP/ui-modal" code_examples/core/ui_modal.zum
+MODAL_NATIVE_OUTPUT="$(ZUMBRA_DESKTOP_HEADLESS=1 "$TMP/ui-modal")"
+if [[ "$MODAL_NATIVE_OUTPUT" != "$MODAL_EXPECTED" ]]; then
+  printf 'Unexpected modal native output:\n%s\n' "$MODAL_NATIVE_OUTPUT" >&2
+  exit 1
+fi
+
+ARRAY_EXPECTED=$'3\nfirst\nlast'
+ARRAY_VM_OUTPUT="$("$TMP/zumbra" run code_examples/core/array_append.zum)"
+if [[ "$ARRAY_VM_OUTPUT" != "$ARRAY_EXPECTED" ]]; then
+  printf 'Unexpected array VM output:\n%s\n' "$ARRAY_VM_OUTPUT" >&2
+  exit 1
+fi
+"$TMP/zumbra" build --release -o "$TMP/array-append" code_examples/core/array_append.zum
+ARRAY_NATIVE_OUTPUT="$("$TMP/array-append")"
+if [[ "$ARRAY_NATIVE_OUTPUT" != "$ARRAY_EXPECTED" ]]; then
+  printf 'Unexpected array native output:\n%s\n' "$ARRAY_NATIVE_OUTPUT" >&2
+  exit 1
+fi
+
+DATA_EXPECTED=$'true\ntrue\nFinal Fantasy IX\nfalse\ntrue\ntrue\n2\ncomma, preserved'
+DATA_VM_OUTPUT="$("$TMP/zumbra" run code_examples/core/data_exchange.zum)"
+if [[ "$DATA_VM_OUTPUT" != "$DATA_EXPECTED" ]]; then
+  printf 'Unexpected recoverable data VM output:\n%s\n' "$DATA_VM_OUTPUT" >&2
+  exit 1
+fi
+"$TMP/zumbra" build --release -o "$TMP/data-exchange" code_examples/core/data_exchange.zum
+DATA_NATIVE_OUTPUT="$("$TMP/data-exchange")"
+if [[ "$DATA_NATIVE_OUTPUT" != "$DATA_EXPECTED" ]]; then
+  printf 'Unexpected recoverable data native output:\n%s\n' "$DATA_NATIVE_OUTPUT" >&2
   exit 1
 fi
 

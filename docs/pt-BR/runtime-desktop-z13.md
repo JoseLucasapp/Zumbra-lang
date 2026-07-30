@@ -301,3 +301,18 @@ A versão esperada é `0.7.0`.
 ## Limites do Z13
 
 O Z13 fornece infraestrutura de aplicação e integração com o sistema. Componentes visuais — botões, inputs, tabelas, layouts, estado reativo e acessibilidade de widgets — pertencem ao Z14. Empacotamento AppImage, `.deb`, instalador Windows e assets incorporados pertencem ao Z15.
+
+## File picker em modo salvar
+
+```zumbra
+var selected << app.pickFile({
+    "title": "Exportar coleção",
+    "mode": "save",
+    "save": true,
+    "defaultPath": "/home/user/colecao.json"
+});
+```
+
+O runtime usa `zenity --save --confirm-overwrite` ou `kdialog --getsavefilename` no Linux, `GetSaveFileNameA` no Windows e `choose file name` no macOS. O retorno continua sendo um array; cancelamento retorna array vazio.
+
+Notificações indisponíveis retornam `false` em vez de encerrar o aplicativo, permitindo fallback visual dentro da própria janela.

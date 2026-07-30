@@ -19,6 +19,8 @@ import "C"
 import (
 	"fmt"
 	"math"
+	"os"
+	"path/filepath"
 	"regexp"
 	"sort"
 	"strings"
@@ -755,6 +757,164 @@ func (h *sqliteHandle) SchemaVersion() (int64, error) {
 	return 0, nil
 }
 
+func sqliteOpenNative(path string, flags C.int) (*C.sqlite3, error) {
+	cPath := C.CString(path)
+	defer C.free(unsafe.Pointer(cPath))
+	var database *C.sqlite3
+	if code := C.sqlite3_open_v2(cPath, &database, flags, nil); code != C.SQLITE_OK {
+		message := sqliteMessage(database)
+		if database != nil {
+			C.sqlite3_close_v2(database)
+		}
+		return nil, fmt.Errorf("open SQLite database %q: %s", path, message)
+	}
+	return database, nil
+}
+
+func sqliteBackupCopy(destination, source *C.sqlite3) error {
+	mainName := C.CString("main")
+	defer C.free(unsafe.Pointer(mainName))
+	backup := C.sqlite3_backup_init(destination, mainName, source, mainName)
+	if backup == nil {
+		return fmt.Errorf("initialize SQLite backup: %s", sqliteMessage(destination))
+	}
+	stepCode := C.sqlite3_backup_step(backup, -1)
+	finishCode := C.sqlite3_backup_finish(backup)
+	if stepCode != C.SQLITE_DONE {
+		return fmt.Errorf("copy SQLite backup: %s", sqliteMessage(destination))
+	}
+	if finishCode != C.SQLITE_OK {
+		return fmt.Errorf("finish SQLite backup: %s", sqliteMessage(destination))
+	}
+	return nil
+}
+
+func sqliteIntegrityCheckNative(database *C.sqlite3) (string, error) {
+	query := C.CString("PRAGMA quick_check")
+	defer C.free(unsafe.Pointer(query))
+	var statement *C.sqlite3_stmt
+	if code := C.sqlite3_prepare_v2(database, query, -1, &statement, nil); code != C.SQLITE_OK {
+		return "", fmt.Errorf("prepare SQLite integrity check: %s", sqliteMessage(database))
+	}
+	defer C.sqlite3_finalize(statement)
+	messages := []string{}
+	for {
+		code := C.sqlite3_step(statement)
+		if code == C.SQLITE_DONE {
+			break
+		}
+		if code != C.SQLITE_ROW {
+			return "", fmt.Errorf("run SQLite integrity check: %s", sqliteMessage(database))
+		}
+		value := C.sqlite3_column_text(statement, 0)
+		if value != nil {
+			messages = append(messages, C.GoString((*C.char)(unsafe.Pointer(value))))
+		}
+	}
+	if len(messages) == 0 {
+		return "", fmt.Errorf("SQLite integrity check returned no result")
+	}
+	result := strings.Join(messages, "; ")
+	if len(messages) != 1 || !strings.EqualFold(messages[0], "ok") {
+		return result, fmt.Errorf("SQLite integrity check failed: %s", result)
+	}
+	return "ok", nil
+}
+
+func (h *sqliteHandle) Backup(path string) error {
+	h.mu.Lock()
+	defer h.mu.Unlock()
+	if !h.open || h.db == nil {
+		return fmt.Errorf("SQLite database is closed")
+	}
+	if h.activeTx {
+		return fmt.Errorf("cannot back up SQLite database with an active transaction")
+	}
+	if strings.TrimSpace(path) == "" {
+		return fmt.Errorf("SQLite backup path is empty")
+	}
+	if h.path != sqliteMemoryPath && filepath.Clean(path) == filepath.Clean(h.path) {
+		return fmt.Errorf("SQLite backup destination must differ from the open database")
+	}
+	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+		return fmt.Errorf("create SQLite backup directory: %w", err)
+	}
+	temporary, err := os.CreateTemp(filepath.Dir(path), ".zumbra-sqlite-backup-*")
+	if err != nil {
+		return fmt.Errorf("create temporary SQLite backup: %w", err)
+	}
+	temporaryPath := temporary.Name()
+	if err := temporary.Close(); err != nil {
+		os.Remove(temporaryPath)
+		return err
+	}
+	os.Remove(temporaryPath)
+	defer os.Remove(temporaryPath)
+	target, err := sqliteOpenNative(temporaryPath, C.int(C.SQLITE_OPEN_READWRITE|C.SQLITE_OPEN_CREATE|C.SQLITE_OPEN_FULLMUTEX))
+	if err != nil {
+		return err
+	}
+	copyErr := sqliteBackupCopy(target, h.db)
+	closeCode := C.sqlite3_close_v2(target)
+	if copyErr != nil {
+		return copyErr
+	}
+	if closeCode != C.SQLITE_OK {
+		return fmt.Errorf("close SQLite backup: code %d", int(closeCode))
+	}
+	if err := os.Chmod(temporaryPath, 0o600); err != nil {
+		return fmt.Errorf("protect SQLite backup: %w", err)
+	}
+	if err := os.Rename(temporaryPath, path); err != nil {
+		return fmt.Errorf("replace SQLite backup %q: %w", path, err)
+	}
+	return nil
+}
+
+func (h *sqliteHandle) Restore(path string) error {
+	h.mu.Lock()
+	defer h.mu.Unlock()
+	if !h.open || h.db == nil {
+		return fmt.Errorf("SQLite database is closed")
+	}
+	if h.activeTx {
+		return fmt.Errorf("cannot restore SQLite database with an active transaction")
+	}
+	if strings.TrimSpace(path) == "" {
+		return fmt.Errorf("SQLite restore path is empty")
+	}
+	if h.path != sqliteMemoryPath && filepath.Clean(path) == filepath.Clean(h.path) {
+		return fmt.Errorf("SQLite restore source must differ from the open database")
+	}
+	source, err := sqliteOpenNative(path, C.int(C.SQLITE_OPEN_READONLY|C.SQLITE_OPEN_FULLMUTEX|C.SQLITE_OPEN_URI))
+	if err != nil {
+		return err
+	}
+	defer C.sqlite3_close_v2(source)
+	if _, err := sqliteIntegrityCheckNative(source); err != nil {
+		return fmt.Errorf("validate SQLite restore source: %w", err)
+	}
+	if err := sqliteBackupCopy(h.db, source); err != nil {
+		return fmt.Errorf("restore SQLite database: %w", err)
+	}
+	if _, err := sqliteIntegrityCheckNative(h.db); err != nil {
+		return fmt.Errorf("validate restored SQLite database: %w", err)
+	}
+	return nil
+}
+
+func (h *sqliteHandle) IntegrityCheck() (string, error) {
+	h.mu.Lock()
+	defer h.mu.Unlock()
+	if !h.open || h.db == nil {
+		return "", fmt.Errorf("SQLite database is closed")
+	}
+	if h.activeTx {
+		return "", fmt.Errorf("cannot check SQLite integrity with an active transaction")
+	}
+	return sqliteIntegrityCheckNative(h.db)
+}
+
 func sqliteRowsObject(rows []map[string]object.Object) object.Object {
 	elements := make([]object.Object, 0, len(rows))
 	for _, row := range rows {
@@ -1079,6 +1239,61 @@ func SQLiteSchemaVersionBuiltin() *object.Builtin {
 			return NewError("%s", err)
 		}
 		return &object.Integer{Value: version}
+	}}
+}
+
+func sqliteOperationResult(value object.Object, err error) object.Object {
+	if err != nil {
+		return dataResult(false, &object.Null{}, err.Error())
+	}
+	return dataResult(true, value, "")
+}
+
+func SQLiteBackupBuiltin() *object.Builtin {
+	return &object.Builtin{Fn: func(args ...object.Object) object.Object {
+		if len(args) != 2 {
+			return NewError("sqliteBackup expects database and path")
+		}
+		db, errObj := sqliteDatabaseArg(args[0], "sqliteBackup")
+		if errObj != nil {
+			return errObj
+		}
+		path, errObj := httpString(args[1], "sqliteBackup path")
+		if errObj != nil {
+			return errObj
+		}
+		return sqliteOperationResult(NewString(path), db.Runtime.Backup(path))
+	}}
+}
+
+func SQLiteRestoreBuiltin() *object.Builtin {
+	return &object.Builtin{Fn: func(args ...object.Object) object.Object {
+		if len(args) != 2 {
+			return NewError("sqliteRestore expects database and path")
+		}
+		db, errObj := sqliteDatabaseArg(args[0], "sqliteRestore")
+		if errObj != nil {
+			return errObj
+		}
+		path, errObj := httpString(args[1], "sqliteRestore path")
+		if errObj != nil {
+			return errObj
+		}
+		return sqliteOperationResult(NewString(path), db.Runtime.Restore(path))
+	}}
+}
+
+func SQLiteIntegrityCheckBuiltin() *object.Builtin {
+	return &object.Builtin{Fn: func(args ...object.Object) object.Object {
+		if len(args) != 1 {
+			return NewError("sqliteIntegrityCheck expects database")
+		}
+		db, errObj := sqliteDatabaseArg(args[0], "sqliteIntegrityCheck")
+		if errObj != nil {
+			return errObj
+		}
+		value, err := db.Runtime.IntegrityCheck()
+		return sqliteOperationResult(NewString(value), err)
 	}}
 }
 

@@ -365,8 +365,17 @@ static char *z_z12_read_text_file(const char *path, size_t *length_out) {
     return data;
 }
 
+static char *z_z12_heap_strdup(const char *value) {
+    if (value == NULL) value = "";
+    size_t length = strlen(value);
+    char *copy = (char *)malloc(length + 1);
+    if (copy == NULL) z_fatal("out of memory copying temporary string");
+    memcpy(copy, value, length + 1);
+    return copy;
+}
+
 static void z_z12_ensure_parent_directories(const char *path) {
-    char *copy = z_strdup(path);
+    char *copy = z_z12_heap_strdup(path);
     for (char *cursor = copy + 1; *cursor != '\0'; cursor++) {
         if (*cursor != '/') continue;
         *cursor = '\0';
@@ -421,6 +430,156 @@ static int64_t z_z12_json_write_file(const char *path, ZValue value) {
     int64_t result = (int64_t)output.len;
     z_z12_buffer_free(&output);
     return result;
+}
+
+
+static ZValue z_z12_operation_result(bool ok, ZValue value, const char *error) {
+    ZValue pairs[3] = {
+        z_pair(z_string("ok"), z_bool(ok)),
+        z_pair(z_string("value"), value),
+        z_pair(z_string("error"), z_string(error == NULL ? "" : error))
+    };
+    return z_dict_from(pairs, 3);
+}
+
+#define Z_Z12_RETURN_RESULT(expression) do { \
+    jmp_buf z12_trap; \
+    jmp_buf *z12_previous_trap = z_task_error_trap; \
+    z_task_error_trap = &z12_trap; \
+    if (setjmp(z12_trap) == 0) { \
+        ZValue z12_value = (expression); \
+        z_task_error_trap = z12_previous_trap; \
+        return z_z12_operation_result(true, z12_value, ""); \
+    } \
+    char *z12_error = z_strdup(z_task_error_message[0] == '\0' ? "operation failed" : z_task_error_message); \
+    z_task_error_trap = z12_previous_trap; \
+    return z_z12_operation_result(false, z_null(), z12_error); \
+} while (0)
+
+static bool z_z12_file_exists(const char *path) {
+    struct stat information;
+    return path != NULL && stat(path, &information) == 0;
+}
+
+static void z_z12_csv_push_value(ZValue **items, size_t *count, size_t *capacity, ZValue value) {
+    if (*count == *capacity) {
+        size_t next = *capacity == 0 ? 8 : *capacity * 2;
+        ZValue *grown = (ZValue *)realloc(*items, sizeof(ZValue) * next);
+        if (grown == NULL) z_fatal("out of memory parsing CSV");
+        *items = grown;
+        *capacity = next;
+    }
+    (*items)[(*count)++] = value;
+}
+
+static void z_z12_csv_finish_field(ZZ12Buffer *field, ZValue **cells, size_t *cell_count, size_t *cell_capacity) {
+    z_z12_csv_push_value(cells, cell_count, cell_capacity, z_string(field->data == NULL ? "" : field->data));
+    field->len = 0;
+    if (field->data != NULL) field->data[0] = '\0';
+}
+
+static ZValue z_z12_csv_parse(const char *text, size_t length) {
+    ZValue *rows = NULL;
+    size_t row_count = 0, row_capacity = 0;
+    ZValue *cells = NULL;
+    size_t cell_count = 0, cell_capacity = 0;
+    ZZ12Buffer field;
+    z_z12_buffer_init(&field);
+    bool quoted = false;
+    bool row_started = false;
+
+    for (size_t index = 0; index < length; index++) {
+        char current = text[index];
+        if (quoted) {
+            if (current == '"') {
+                if (index + 1 < length && text[index + 1] == '"') {
+                    z_z12_buffer_append_bytes(&field, "\"", 1);
+                    index++;
+                } else {
+                    quoted = false;
+                }
+            } else {
+                z_z12_buffer_append_bytes(&field, &current, 1);
+            }
+            row_started = true;
+            continue;
+        }
+        if (current == '"' && field.len == 0) {
+            quoted = true;
+            row_started = true;
+            continue;
+        }
+        if (current == ',') {
+            z_z12_csv_finish_field(&field, &cells, &cell_count, &cell_capacity);
+            row_started = true;
+            continue;
+        }
+        if (current == '\r' || current == '\n') {
+            if (current == '\r' && index + 1 < length && text[index + 1] == '\n') index++;
+            z_z12_csv_finish_field(&field, &cells, &cell_count, &cell_capacity);
+            z_z12_csv_push_value(&rows, &row_count, &row_capacity, z_array_from(cells, cell_count));
+            cell_count = 0;
+            row_started = false;
+            continue;
+        }
+        z_z12_buffer_append_bytes(&field, &current, 1);
+        row_started = true;
+    }
+    if (quoted) {
+        free(rows); free(cells); z_z12_buffer_free(&field);
+        z_fatal("csvReadFile: unterminated quoted field");
+    }
+    if (row_started || field.len != 0 || cell_count != 0) {
+        z_z12_csv_finish_field(&field, &cells, &cell_count, &cell_capacity);
+        z_z12_csv_push_value(&rows, &row_count, &row_capacity, z_array_from(cells, cell_count));
+    }
+    ZValue result = z_array_from(rows, row_count);
+    free(rows);
+    free(cells);
+    z_z12_buffer_free(&field);
+    return result;
+}
+
+static ZValue z_z12_csv_read_file(const char *path) {
+    size_t length = 0;
+    char *text = z_z12_read_text_file(path, &length);
+    ZValue result = z_z12_csv_parse(text, length);
+    free(text);
+    return result;
+}
+
+static void z_z12_csv_append_cell(ZZ12Buffer *output, ZValue value) {
+    ZValue converted = z_to_string_value(value);
+    const char *text = z_as_cstring(converted);
+    bool quoted = strchr(text, ',') != NULL || strchr(text, '"') != NULL || strchr(text, '\n') != NULL || strchr(text, '\r') != NULL;
+    if (quoted) z_z12_buffer_append_bytes(output, "\"", 1);
+    for (const char *cursor = text; *cursor != '\0'; cursor++) {
+        if (*cursor == '"') z_z12_buffer_append(output, "\"\"");
+        else z_z12_buffer_append_bytes(output, cursor, 1);
+    }
+    if (quoted) z_z12_buffer_append_bytes(output, "\"", 1);
+}
+
+static int64_t z_z12_csv_write_file(const char *path, ZValue rows) {
+    if (rows.tag != ZV_ARRAY) z_fatal("csvWriteFile rows must be an array");
+    ZZ12Buffer output;
+    z_z12_buffer_init(&output);
+    for (size_t row_index = 0; row_index < rows.as.array->len; row_index++) {
+        ZValue row = rows.as.array->items[row_index];
+        if (row.tag != ZV_ARRAY) {
+            z_z12_buffer_free(&output);
+            z_fatal("csvWriteFile row %zu must be an array", row_index + 1);
+        }
+        for (size_t column = 0; column < row.as.array->len; column++) {
+            if (column != 0) z_z12_buffer_append_bytes(&output, ",", 1);
+            z_z12_csv_append_cell(&output, row.as.array->items[column]);
+        }
+        z_z12_buffer_append_bytes(&output, "\n", 1);
+    }
+    z_z12_atomic_write(path, output.data == NULL ? "" : output.data, output.len, 0644);
+    int64_t written = (int64_t)output.len;
+    z_z12_buffer_free(&output);
+    return written;
 }
 
 static ZValue z_z12_binary_encode(ZValue value) {
@@ -1010,7 +1169,7 @@ static ZPostgresNative *z_z12_expect_postgres(ZValue value){if(value.tag!=ZV_POS
 static ZPostgresStatementNative *z_z12_expect_pg_statement(ZValue value){if(value.tag!=ZV_POSTGRES_STATEMENT||value.as.p==NULL)z_fatal("expected PostgresStatement");return(ZPostgresStatementNative*)value.as.p;}
 static ZPostgresTransactionNative *z_z12_expect_pg_transaction(ZValue value){if(value.tag!=ZV_POSTGRES_TRANSACTION||value.as.p==NULL)z_fatal("expected PostgresTransaction");return(ZPostgresTransactionNative*)value.as.p;}
 static void z_z12_pg_check(ZPostgresNative *database){if(database==NULL||!database->open||database->connection==NULL||PQstatus(database->connection)!=CONNECTION_OK)z_fatal("PostgreSQL database is closed or unavailable");}
-static void z_z12_pg_params(ZValue params,const char ***values,int **lengths,int **formats,int *count,char ***owned){if(params.tag!=ZV_ARRAY)z_fatal("PostgreSQL parameters must be array");*count=(int)params.as.array->len;*values=(const char**)calloc((size_t)*count,sizeof(char*));*lengths=(int*)calloc((size_t)*count,sizeof(int));*formats=(int*)calloc((size_t)*count,sizeof(int));*owned=(char**)calloc((size_t)*count,sizeof(char*));if((*count>0)&&(*values==NULL||*lengths==NULL||*formats==NULL||*owned==NULL))z_fatal("out of memory encoding PostgreSQL parameters");for(int i=0;i<*count;i++){ZValue value=params.as.array->items[i];if(value.tag==ZV_NULL){(*values)[i]=NULL;continue;}if(value.tag==ZV_BUFFER){size_t length=value.as.buffer->len*value.as.buffer->elem_size;if(length>INT_MAX)z_fatal("PostgreSQL blob too large");(*values)[i]=(const char*)value.as.buffer->data;(*lengths)[i]=(int)length;(*formats)[i]=1;continue;}ZValue text=z_to_string_value(value);(*owned)[i]=z_strdup(text.as.s);(*values)[i]=(*owned)[i];}}
+static void z_z12_pg_params(ZValue params,const char ***values,int **lengths,int **formats,int *count,char ***owned){if(params.tag!=ZV_ARRAY)z_fatal("PostgreSQL parameters must be array");*count=(int)params.as.array->len;*values=(const char**)calloc((size_t)*count,sizeof(char*));*lengths=(int*)calloc((size_t)*count,sizeof(int));*formats=(int*)calloc((size_t)*count,sizeof(int));*owned=(char**)calloc((size_t)*count,sizeof(char*));if((*count>0)&&(*values==NULL||*lengths==NULL||*formats==NULL||*owned==NULL))z_fatal("out of memory encoding PostgreSQL parameters");for(int i=0;i<*count;i++){ZValue value=params.as.array->items[i];if(value.tag==ZV_NULL){(*values)[i]=NULL;continue;}if(value.tag==ZV_BUFFER){size_t length=value.as.buffer->len*value.as.buffer->elem_size;if(length>INT_MAX)z_fatal("PostgreSQL blob too large");(*values)[i]=(const char*)value.as.buffer->data;(*lengths)[i]=(int)length;(*formats)[i]=1;continue;}ZValue text=z_to_string_value(value);(*owned)[i]=z_z12_heap_strdup(text.as.s);(*values)[i]=(*owned)[i];}}
 static void z_z12_pg_free_params(const char **values,int *lengths,int *formats,int count,char **owned){(void)values;(void)count;if(owned!=NULL){for(int i=0;i<count;i++)free(owned[i]);}free((void*)values);free(lengths);free(formats);free(owned);}
 static ZValue z_z12_pg_value(PGresult *result,int row,int column){if(PQgetisnull(result,row,column))return z_null();int format=PQfformat(result,column);int length=PQgetlength(result,row,column);const char *value=PQgetvalue(result,row,column);if(format==1){ZValue bytes=z_bytes((size_t)length);if(length>0)memcpy(bytes.as.buffer->data,value,(size_t)length);return bytes;}Oid type=PQftype(result,column);if(type==16)return z_bool(value[0]=='t'||strcmp(value,"1")==0);if(type==20||type==21||type==23){char*end=NULL;errno=0;long long parsed=strtoll(value,&end,10);if(errno==0&&end!=NULL&&*end=='\0')return z_int((int64_t)parsed);}if(type==700||type==701||type==1700){char*end=NULL;errno=0;double parsed=strtod(value,&end);if(errno==0&&end!=NULL&&*end=='\0')return z_float(parsed);}if(type==114||type==3802){return z_z12_json_parse(value);}return z_string(value);}
 static ZValue z_z12_pg_result_rows(PGresult *result){int rows=PQntuples(result),columns=PQnfields(result);ZValue *items=rows==0?NULL:(ZValue*)z_alloc(sizeof(ZValue)*(size_t)rows);for(int row=0;row<rows;row++){ZValue *pairs=columns==0?NULL:(ZValue*)z_alloc(sizeof(ZValue)*(size_t)columns);for(int column=0;column<columns;column++)pairs[column]=z_pair(z_string(PQfname(result,column)),z_z12_pg_value(result,row,column));items[row]=z_dict_from(pairs,(size_t)columns);}return z_array_from(items,(size_t)rows);}
@@ -1224,8 +1383,15 @@ static ZValue z_z12_call_builtin(const char *name,const ZValue *args,size_t argc
     if(strcmp(name,"rateAllow")==0){z_expect_args(name,argc,2);return z_z12_rate_allow(z_z12_expect_limiter(args[0]),z_as_cstring(args[1]));}
     if(strcmp(name,"rateReset")==0){z_expect_args(name,argc,2);return z_bool(z_z12_rate_reset(z_z12_expect_limiter(args[0]),z_as_cstring(args[1])));}
 
+    if(strcmp(name,"fileExists")==0){z_expect_args(name,argc,1);return z_bool(z_z12_file_exists(z_as_cstring(args[0])));}
     if(strcmp(name,"jsonReadFile")==0){z_expect_args(name,argc,1);return z_z12_json_read_file(z_as_cstring(args[0]));}
     if(strcmp(name,"jsonWriteFile")==0){if(argc<2||argc>3)z_fatal("jsonWriteFile expects path, value and optional pretty flag");return z_int(z_z12_json_write_file(z_as_cstring(args[0]),args[1]));}
+    if(strcmp(name,"jsonReadResult")==0){z_expect_args(name,argc,1);Z_Z12_RETURN_RESULT(z_z12_json_read_file(z_as_cstring(args[0])));}
+    if(strcmp(name,"jsonWriteResult")==0){if(argc<2||argc>3)z_fatal("jsonWriteResult expects path, value and optional pretty flag");Z_Z12_RETURN_RESULT(z_int(z_z12_json_write_file(z_as_cstring(args[0]),args[1])));}
+    if(strcmp(name,"csvReadFile")==0){z_expect_args(name,argc,1);return z_z12_csv_read_file(z_as_cstring(args[0]));}
+    if(strcmp(name,"csvWriteFile")==0){z_expect_args(name,argc,2);return z_int(z_z12_csv_write_file(z_as_cstring(args[0]),args[1]));}
+    if(strcmp(name,"csvReadResult")==0){z_expect_args(name,argc,1);Z_Z12_RETURN_RESULT(z_z12_csv_read_file(z_as_cstring(args[0])));}
+    if(strcmp(name,"csvWriteResult")==0){z_expect_args(name,argc,2);Z_Z12_RETURN_RESULT(z_int(z_z12_csv_write_file(z_as_cstring(args[0]),args[1])));}
     if(strcmp(name,"binaryEncode")==0){z_expect_args(name,argc,1);return z_z12_binary_encode(args[0]);}
     if(strcmp(name,"binaryDecode")==0){z_expect_args(name,argc,1);return z_z12_binary_decode(args[0]);}
     if(strcmp(name,"binaryWriteFile")==0){z_expect_args(name,argc,2);ZValue encoded=z_z12_binary_encode(args[1]);size_t length=encoded.as.buffer->len*encoded.as.buffer->elem_size;z_z12_atomic_write(z_as_cstring(args[0]),encoded.as.buffer->data,length,0600);return z_int((int64_t)length);}

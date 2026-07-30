@@ -1941,6 +1941,28 @@ ZValue z_call_builtin(const char *name, const ZValue *args, size_t argc) {
     if (strcmp(name,"show")==0){z_expect_args(name,argc,1);z_show(args[0]);return z_null();}
     if (strcmp(name,"toString")==0){z_expect_args(name,argc,1);return z_to_string_value(args[0]);}
     if (strcmp(name,"sizeOf")==0){z_expect_args(name,argc,1);return z_int((int64_t)z_size_of(args[0]));}
+    if (strcmp(name,"addToArrayStart")==0 || strcmp(name,"addToArrayEnd")==0) {
+        z_expect_args(name,argc,2);
+        if (args[0].tag != ZV_ARRAY) z_fatal("%s expects an array as its first argument", name);
+        ZArray *array = args[0].as.array;
+        size_t needed = array->len + 1;
+        if (array->cap < needed) {
+            size_t capacity = array->cap == 0 ? 4 : array->cap * 2;
+            if (capacity < needed) capacity = needed;
+            ZValue *items = (ZValue *)z_alloc(sizeof(ZValue) * capacity);
+            if (array->len != 0) memcpy(items, array->items, sizeof(ZValue) * array->len);
+            array->items = items;
+            array->cap = capacity;
+        }
+        if (strcmp(name,"addToArrayStart")==0) {
+            if (array->len != 0) memmove(array->items + 1, array->items, sizeof(ZValue) * array->len);
+            array->items[0] = args[1];
+        } else {
+            array->items[array->len] = args[1];
+        }
+        array->len = needed;
+        return args[0];
+    }
     if (strcmp(name,"bytes")==0){z_expect_args(name,argc,1);return z_bytes((size_t)z_as_u64(args[0]));}
     if (strcmp(name,"arrayOf")==0){z_expect_args(name,argc,2);if(args[0].tag!=ZV_STRING)z_fatal("arrayOf type must be a string");return z_array_of(args[0].as.s,(size_t)z_as_u64(args[1]));}
     if (strcmp(name,"slice")==0){z_expect_args(name,argc,3);return z_slice(args[0],(size_t)z_as_u64(args[1]),(size_t)z_as_u64(args[2]));}

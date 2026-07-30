@@ -17,6 +17,9 @@ type SQLiteDatabaseRuntime interface {
 	Begin() (SQLiteTransactionRuntime, error)
 	Migrate(migrations []SQLiteMigration) (int64, error)
 	SchemaVersion() (int64, error)
+	Backup(path string) error
+	Restore(path string) error
+	IntegrityCheck() (string, error)
 	Close() error
 	IsOpen() bool
 }

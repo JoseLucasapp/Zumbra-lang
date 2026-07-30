@@ -64,6 +64,19 @@ func layoutUINode(node *object.UINode, available object.UIRect, theme *object.UI
 		node.Mu.Unlock()
 		return
 	}
+	flowChildren := make([]*object.UINode, 0, len(children))
+	overlayChildren := make([]*object.UINode, 0, 1)
+	for _, child := range children {
+		child.Mu.RLock()
+		childKind := child.Kind
+		child.Mu.RUnlock()
+		if childKind == "modal" {
+			overlayChildren = append(overlayChildren, child)
+		} else {
+			flowChildren = append(flowChildren, child)
+		}
+	}
+
 	margin := uiBox(props, "margin", 0)
 	x := available.X + margin.left
 	y := available.Y + margin.top
@@ -112,7 +125,10 @@ func layoutUINode(node *object.UINode, available object.UIRect, theme *object.UI
 	node.ContentBounds = inner
 	node.ContentHeight = inner.Height
 	node.Mu.Unlock()
-	if len(children) == 0 {
+	if len(flowChildren) == 0 {
+		for _, overlay := range overlayChildren {
+			layoutUINode(overlay, bounds, theme, measurer)
+		}
 		return
 	}
 
@@ -131,13 +147,13 @@ func layoutUINode(node *object.UINode, available object.UIRect, theme *object.UI
 	if direction == "row" {
 		mainAvailable = inner.Width
 	}
-	mainAvailable -= gap * float64(maxInt(0, len(children)-1))
+	mainAvailable -= gap * float64(maxInt(0, len(flowChildren)-1))
 	if mainAvailable < 0 {
 		mainAvailable = 0
 	}
 	fixed := 0.0
 	totalGrow := 0.0
-	for _, child := range children {
+	for _, child := range flowChildren {
 		child.Mu.RLock()
 		cp := cloneUIProps(child.Props)
 		ck := child.Kind
@@ -158,7 +174,7 @@ func layoutUINode(node *object.UINode, available object.UIRect, theme *object.UI
 	remaining := math.Max(0, mainAvailable-fixed)
 	contentHeight := inner.Height
 	if direction == "column" {
-		used := fixed + gap*float64(maxInt(0, len(children)-1))
+		used := fixed + gap*float64(maxInt(0, len(flowChildren)-1))
 		if totalGrow > 0 {
 			used += remaining
 		}
@@ -207,12 +223,12 @@ func layoutUINode(node *object.UINode, available object.UIRect, theme *object.UI
 				cursorY += remaining
 			}
 		case "space-between":
-			if len(children) > 1 {
-				gap += remaining / float64(len(children)-1)
+			if len(flowChildren) > 1 {
+				gap += remaining / float64(len(flowChildren)-1)
 			}
 		}
 	}
-	for _, child := range children {
+	for _, child := range flowChildren {
 		child.Mu.RLock()
 		cp := cloneUIProps(child.Props)
 		ck := child.Kind
@@ -259,6 +275,10 @@ func layoutUINode(node *object.UINode, available object.UIRect, theme *object.UI
 			cursorY += ch + gap
 		}
 	}
+	for _, overlay := range overlayChildren {
+		layoutUINode(overlay, bounds, theme, measurer)
+	}
+
 }
 
 const uiScrollOverflowEpsilon = 0.5

@@ -224,6 +224,10 @@ func builtinType(name string) (*Type, bool) {
 		return FuncOf([]*Type{Simple(SQLiteDatabase), ArrayOf(DictOf(Simple(String), Simple(Unknown)))}, Simple(Int)), true
 	case "sqliteSchemaVersion":
 		return FuncOf([]*Type{Simple(SQLiteDatabase)}, Simple(Int)), true
+	case "sqliteBackup", "sqliteRestore":
+		return FuncOf([]*Type{Simple(SQLiteDatabase), Simple(String)}, DictOf(Simple(String), Simple(Unknown))), true
+	case "sqliteIntegrityCheck":
+		return FuncOf([]*Type{Simple(SQLiteDatabase)}, DictOf(Simple(String), Simple(Unknown))), true
 	case "sqliteStatementQueryStream":
 		return FuncOf([]*Type{Simple(SQLiteStatement), Simple(SQLParameters)}, Simple(SQLRows)), true
 	case "sqliteStatementParameterCount":
@@ -384,10 +388,24 @@ func builtinType(name string) (*Type, bool) {
 		return FuncOf([]*Type{Simple(RateLimiter), Simple(String)}, DictOf(Simple(String), Simple(Unknown))), true
 	case "rateReset":
 		return FuncOf([]*Type{Simple(RateLimiter), Simple(String)}, Simple(Bool)), true
+	case "fileExists":
+		return FuncOf([]*Type{Simple(String)}, Simple(Bool)), true
 	case "jsonReadFile":
 		return FuncOf([]*Type{Simple(String)}, Simple(Unknown)), true
 	case "jsonWriteFile":
 		return FuncOf([]*Type{Simple(String), Simple(Unknown), Simple(Bool)}, Simple(Int)), true
+	case "jsonReadResult":
+		return FuncOf([]*Type{Simple(String)}, DictOf(Simple(String), Simple(Unknown))), true
+	case "jsonWriteResult":
+		return FuncOf([]*Type{Simple(String), Simple(Unknown), Simple(Bool)}, DictOf(Simple(String), Simple(Unknown))), true
+	case "csvReadFile":
+		return FuncOf([]*Type{Simple(String)}, ArrayOf(ArrayOf(Simple(String)))), true
+	case "csvWriteFile":
+		return FuncOf([]*Type{Simple(String), ArrayOf(ArrayOf(Simple(Unknown)))}, Simple(Int)), true
+	case "csvReadResult":
+		return FuncOf([]*Type{Simple(String)}, DictOf(Simple(String), Simple(Unknown))), true
+	case "csvWriteResult":
+		return FuncOf([]*Type{Simple(String), ArrayOf(ArrayOf(Simple(Unknown)))}, DictOf(Simple(String), Simple(Unknown))), true
 	case "binaryEncode":
 		return FuncOf([]*Type{Simple(Unknown)}, ByteArrayOf()), true
 	case "binaryDecode":

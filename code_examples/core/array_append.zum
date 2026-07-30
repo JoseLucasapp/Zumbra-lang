@@ -1,0 +1,6 @@
+var values << ["middle"];
+addToArrayStart(values, "first");
+addToArrayEnd(values, "last");
+show(sizeOf(values));
+show(values[0]);
+show(values[2]);

@@ -1,6 +1,7 @@
 package builtins
 
 import (
+	"os"
 	"path/filepath"
 	"testing"
 
@@ -91,5 +92,38 @@ func TestZ12SQLiteFileDatabaseAndSafeParameterCount(t *testing.T) {
 	requireSQLiteValue(t, SQLiteCloseBuiltin().Fn(database))
 	if SQLiteIsOpenBuiltin().Fn(database).(*object.Boolean).Value {
 		t.Fatal("database remained open")
+	}
+}
+
+func TestZ16SQLiteBackupRestoreAndIntegrity(t *testing.T) {
+	directory := t.TempDir()
+	databasePath := filepath.Join(directory, "collection.sqlite")
+	backupPath := filepath.Join(directory, "backup", "collection.sqlite")
+	database := requireSQLiteValue(t, SQLiteOpenBuiltin().Fn(NewString(databasePath))).(*object.SQLiteDatabase)
+	defer SQLiteCloseBuiltin().Fn(database)
+
+	requireSQLiteValue(t, SQLiteExecBuiltin().Fn(database, NewString("CREATE TABLE games(id INTEGER PRIMARY KEY, name TEXT NOT NULL)"), &object.Dict{Pairs: map[object.DictKey]object.DictPair{}}))
+	requireSQLiteValue(t, SQLiteExecBuiltin().Fn(database, NewString("INSERT INTO games(name) VALUES ('Final Fantasy IX')"), &object.Dict{Pairs: map[object.DictKey]object.DictPair{}}))
+
+	integrity := SQLiteIntegrityCheckBuiltin().Fn(database).(*object.Dict)
+	if !sqliteTestDictValue(t, integrity, "ok").(*object.Boolean).Value {
+		t.Fatalf("integrity failed: %s", sqliteTestDictValue(t, integrity, "error").Inspect())
+	}
+	backup := SQLiteBackupBuiltin().Fn(database, NewString(backupPath)).(*object.Dict)
+	if !sqliteTestDictValue(t, backup, "ok").(*object.Boolean).Value {
+		t.Fatalf("backup failed: %s", sqliteTestDictValue(t, backup, "error").Inspect())
+	}
+	if _, err := os.Stat(backupPath); err != nil {
+		t.Fatalf("backup missing: %v", err)
+	}
+
+	requireSQLiteValue(t, SQLiteExecBuiltin().Fn(database, NewString("DELETE FROM games"), &object.Dict{Pairs: map[object.DictKey]object.DictPair{}}))
+	restored := SQLiteRestoreBuiltin().Fn(database, NewString(backupPath)).(*object.Dict)
+	if !sqliteTestDictValue(t, restored, "ok").(*object.Boolean).Value {
+		t.Fatalf("restore failed: %s", sqliteTestDictValue(t, restored, "error").Inspect())
+	}
+	row := requireSQLiteValue(t, SQLiteQueryOneBuiltin().Fn(database, NewString("SELECT name FROM games LIMIT 1"), &object.Dict{Pairs: map[object.DictKey]object.DictPair{}})).(*object.Dict)
+	if got := sqliteTestDictValue(t, row, "name").(*object.String).Value; got != "Final Fantasy IX" {
+		t.Fatalf("restored name=%q", got)
 	}
 }
