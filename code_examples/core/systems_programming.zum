@@ -1,0 +1,59 @@
+import "../../std/system.zum" as system;
+
+memoryResetStats();
+
+var pointer << system.allocate("i32", 4);
+pointer[0] << 10i32;
+pointer[1] << 20i32;
+pointer[2] << 30i32;
+pointer[3] << 40i32;
+show(pointer[2]);
+show(system.length(pointer));
+show(system.byteLength(pointer));
+
+var sharedView << system.borrow(pointer);
+show(system.read(sharedView, 1));
+show(system.releaseBorrowed(sharedView));
+
+pointer << system.resize(pointer, 8);
+pointer[7] << 80i32;
+show(pointer[7]);
+show(system.aligned(pointer, 4));
+
+var atom << system.allocate("u64", 1);
+system.atomicStore(atom, 4u64);
+show(system.atomicAdd(atom, 3u64));
+show(system.atomicCompareSwap(atom, 7u64, 9u64));
+show(system.atomicLoad(atom));
+show(system.release(atom));
+
+var arenaValue << system.arena();
+var temporary << system.arenaAllocate(arenaValue, "u16", 2);
+temporary[0] << 7u16;
+show(temporary[0]);
+show(system.arenaInformation(arenaValue)["allocations"]);
+show(system.resetArena(arenaValue));
+show(system.closeArena(arenaValue));
+
+var layout << system.structLayout([
+    {"name": "tag", "type": "u8"},
+    {"name": "value", "type": "u64"}
+]);
+show(layout["size"]);
+show(system.sizeOf("i32"));
+show(system.alignOf("u64"));
+
+var owned << system.allocate("u8", 1);
+owned[0] << 55u8;
+var rawAddress << system.address(owned);
+var raw << nullPointer("u8");
+unsafe {
+    raw << pointerFromAddress("u8", rawAddress, 1, true);
+    show(raw[0]);
+    raw[0] << 56u8;
+}
+show(owned[0]);
+show(system.equal(owned, raw));
+show(system.release(owned));
+
+show(system.validateMemory()["ok"]);

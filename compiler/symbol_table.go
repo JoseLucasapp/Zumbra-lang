@@ -44,7 +44,7 @@ func NewSymbolTable() *SymbolTable {
 
 func (s *SymbolTable) Define(name string) Symbol {
 	symbol := Symbol{Name: name, Index: s.numDefinitions}
-	if s.Outer == nil {
+	if !s.withinFunction() {
 		symbol.Scope = GlobalScope
 	} else {
 		symbol.Scope = LocalScope
@@ -53,6 +53,15 @@ func (s *SymbolTable) Define(name string) Symbol {
 	s.immutable[name] = false
 	s.numDefinitions++
 	return symbol
+}
+
+func (s *SymbolTable) withinFunction() bool {
+	for current := s; current != nil; current = current.Outer {
+		if current.isFunctionScope {
+			return true
+		}
+	}
+	return false
 }
 
 func (s *SymbolTable) DefineConst(name string) Symbol {

@@ -57,6 +57,116 @@ func builtinType(name string) (*Type, bool) {
 	case "fill":
 		return FuncOf([]*Type{Simple(Unknown), Simple(Unknown)}, Simple(Unknown)), true
 
+	// Z17 systems programming and explicit memory.
+	case "alloc", "calloc":
+		return FuncOf([]*Type{Simple(String), Simple(Int)}, PointerOf(Simple(Unknown))), true
+	case "nullPointer":
+		return FuncOf([]*Type{Simple(String)}, PointerOf(Simple(Unknown))), true
+	case "realloc":
+		return FuncOf([]*Type{PointerOf(Simple(Unknown)), Simple(Int)}, PointerOf(Simple(Unknown))), true
+	case "free":
+		return FuncOf([]*Type{PointerOf(Simple(Unknown))}, Simple(Bool)), true
+	case "addressOf":
+		return FuncOf([]*Type{Simple(Unknown), Simple(Int)}, PointerOf(Simple(Unknown))), true
+	case "pointerFromAddress":
+		return FuncOf([]*Type{Simple(String), Simple(U64), Simple(Int), Simple(Bool)}, PointerOf(Simple(Unknown))), true
+	case "dereference", "pointerRead", "volatileRead":
+		return FuncOf([]*Type{PointerOf(Simple(Unknown)), Simple(Int)}, Simple(Unknown)), true
+	case "pointerWrite", "volatileWrite":
+		return FuncOf([]*Type{PointerOf(Simple(Unknown)), Simple(Int), Simple(Unknown)}, PointerOf(Simple(Unknown))), true
+	case "atomicPointerLoad":
+		return FuncOf([]*Type{PointerOf(Simple(Unknown))}, Simple(Unknown)), true
+	case "atomicPointerStore":
+		return FuncOf([]*Type{PointerOf(Simple(Unknown)), Simple(Unknown)}, Simple(Null)), true
+	case "atomicPointerSwap", "atomicPointerAdd":
+		return FuncOf([]*Type{PointerOf(Simple(Unknown)), Simple(Unknown)}, Simple(Unknown)), true
+	case "atomicPointerCompareSwap":
+		return FuncOf([]*Type{PointerOf(Simple(Unknown)), Simple(Unknown), Simple(Unknown)}, Simple(Bool)), true
+	case "pointerOffset":
+		return FuncOf([]*Type{PointerOf(Simple(Unknown)), Simple(Int)}, PointerOf(Simple(Unknown))), true
+	case "pointerLength", "pointerByteLength":
+		return FuncOf([]*Type{PointerOf(Simple(Unknown))}, Simple(Int)), true
+	case "pointerType":
+		return FuncOf([]*Type{PointerOf(Simple(Unknown))}, Simple(String)), true
+	case "pointerAddress":
+		return FuncOf([]*Type{PointerOf(Simple(Unknown))}, Simple(U64)), true
+	case "pointerEqual":
+		return FuncOf([]*Type{PointerOf(Simple(Unknown)), PointerOf(Simple(Unknown))}, Simple(Bool)), true
+	case "pointerCompare":
+		return FuncOf([]*Type{PointerOf(Simple(Unknown)), PointerOf(Simple(Unknown))}, Simple(Int)), true
+	case "pointerIsAligned":
+		return FuncOf([]*Type{PointerOf(Simple(Unknown)), Simple(Int)}, Simple(Bool)), true
+	case "pointerIsNull", "pointerIsValid", "pointerOwned", "pointerBorrowed", "pointerMutable":
+		return FuncOf([]*Type{PointerOf(Simple(Unknown))}, Simple(Bool)), true
+	case "borrowPointer", "borrowPointerMut", "movePointer":
+		return FuncOf([]*Type{PointerOf(Simple(Unknown))}, PointerOf(Simple(Unknown))), true
+	case "releaseBorrow":
+		return FuncOf([]*Type{PointerOf(Simple(Unknown))}, Simple(Bool)), true
+	case "pointerCopy":
+		return FuncOf([]*Type{PointerOf(Simple(Unknown)), Simple(Int), PointerOf(Simple(Unknown)), Simple(Int), Simple(Int)}, PointerOf(Simple(Unknown))), true
+	case "pointerFill":
+		return FuncOf([]*Type{PointerOf(Simple(Unknown)), Simple(Unknown)}, PointerOf(Simple(Unknown))), true
+	case "sizeOfType", "alignOfType":
+		return FuncOf([]*Type{Simple(String)}, Simple(Int)), true
+	case "byteSizeOf":
+		return FuncOf([]*Type{Simple(Unknown)}, Simple(Int)), true
+	case "nativeStructLayout":
+		return FuncOf([]*Type{ArrayOf(DictOf(Simple(String), Simple(Unknown)))}, DictOf(Simple(String), Simple(Unknown))), true
+	case "arenaCreate":
+		return FuncOf(nil, Simple(MemoryArena)), true
+	case "arenaAlloc":
+		return FuncOf([]*Type{Simple(MemoryArena), Simple(String), Simple(Int)}, PointerOf(Simple(Unknown))), true
+	case "arenaReset", "arenaFree":
+		return FuncOf([]*Type{Simple(MemoryArena)}, Simple(Bool)), true
+	case "arenaStats":
+		return FuncOf([]*Type{Simple(MemoryArena)}, DictOf(Simple(String), Simple(Unknown))), true
+	case "memoryStats", "memoryValidate":
+		return FuncOf(nil, DictOf(Simple(String), Simple(Unknown))), true
+	case "memoryLeaks":
+		return FuncOf(nil, ArrayOf(DictOf(Simple(String), Simple(Unknown)))), true
+	case "memoryResetStats":
+		return FuncOf(nil, Simple(Bool)), true
+	case "mmapOpen":
+		return FuncOf([]*Type{Simple(String), Simple(String), Simple(Int)}, Simple(MappedMemory)), true
+	case "mmapPointer":
+		return FuncOf([]*Type{Simple(MappedMemory)}, PointerOf(Simple(U8))), true
+	case "mmapFlush", "mmapClose":
+		return FuncOf([]*Type{Simple(MappedMemory)}, Simple(Bool)), true
+	case "mmapSize":
+		return FuncOf([]*Type{Simple(MappedMemory)}, Simple(Int)), true
+	case "sharedMemoryOpen":
+		return FuncOf([]*Type{Simple(String), Simple(Int), Simple(Bool)}, Simple(SharedMemory)), true
+	case "sharedMemoryPointer":
+		return FuncOf([]*Type{Simple(SharedMemory)}, PointerOf(Simple(U8))), true
+	case "sharedMemoryClose", "sharedMemoryUnlink":
+		return FuncOf([]*Type{Simple(Unknown)}, Simple(Bool)), true
+	case "memoryFence":
+		return FuncOf([]*Type{Simple(String)}, Simple(Null)), true
+	case "memoryProtect":
+		return FuncOf([]*Type{PointerOf(Simple(Unknown)), Simple(String)}, Simple(Bool)), true
+	case "memoryLock", "memoryUnlock":
+		return FuncOf([]*Type{PointerOf(Simple(Unknown))}, Simple(Bool)), true
+	case "dynamicOpen":
+		return FuncOf([]*Type{Simple(String)}, Simple(DynamicLibrary)), true
+	case "dynamicSymbol":
+		return FuncOf([]*Type{Simple(DynamicLibrary), Simple(String)}, PointerOf(Simple(Unknown))), true
+	case "dynamicCall":
+		return FuncOf([]*Type{PointerOf(Simple(Unknown)), Simple(String), ArrayOf(Simple(Unknown))}, Simple(Unknown)), true
+	case "dynamicClose", "dynamicIsOpen":
+		return FuncOf([]*Type{Simple(DynamicLibrary)}, Simple(Bool)), true
+	case "dynamicError":
+		return FuncOf([]*Type{Simple(DynamicLibrary)}, Simple(String)), true
+	case "systemInfo":
+		return FuncOf(nil, DictOf(Simple(String), Simple(Unknown))), true
+	case "pageSize", "cpuCount":
+		return FuncOf(nil, Simple(Int)), true
+	case "rawSyscall":
+		return FuncOf([]*Type{Simple(Int), ArrayOf(Simple(Int))}, DictOf(Simple(String), Simple(Unknown))), true
+	case "profileNowNs":
+		return FuncOf(nil, Simple(U64)), true
+	case "profileElapsedNs":
+		return FuncOf([]*Type{Simple(U64)}, Simple(U64)), true
+
 	case "assetExists":
 		return FuncOf([]*Type{Simple(String)}, Simple(Bool)), true
 	case "assetText":

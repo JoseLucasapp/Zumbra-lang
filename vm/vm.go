@@ -1298,7 +1298,7 @@ func (vm *VM) executeIndexExpression(left, index object.Object) error {
 		return vm.executeArrayIndex(left, index)
 	case object.DICT_OBJ:
 		return vm.executeDictIndex(left, index)
-	case object.BYTE_ARRAY_OBJ, object.TYPED_ARRAY_OBJ, object.SLICE_OBJ:
+	case object.BYTE_ARRAY_OBJ, object.TYPED_ARRAY_OBJ, object.SLICE_OBJ, object.POINTER_OBJ:
 		value, _, err := collections.Get(left, index)
 		if err != nil {
 			return err
@@ -1355,7 +1355,7 @@ func (vm *VM) executeIndexAssignment(left, index, value object.Object) error {
 		array.Elements[i] = value
 		return nil
 
-	case object.BYTE_ARRAY_OBJ, object.TYPED_ARRAY_OBJ, object.SLICE_OBJ:
+	case object.BYTE_ARRAY_OBJ, object.TYPED_ARRAY_OBJ, object.SLICE_OBJ, object.POINTER_OBJ:
 		_, err := collections.Set(left, index, value)
 		return err
 

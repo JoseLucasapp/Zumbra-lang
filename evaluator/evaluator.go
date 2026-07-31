@@ -863,7 +863,7 @@ func evalIndexExpression(left, index object.Object) object.Object {
 		return evalArrayIndexExpression(left, index)
 	case object.DICT_OBJ:
 		return evalDictIndexExpression(left, index)
-	case object.BYTE_ARRAY_OBJ, object.TYPED_ARRAY_OBJ, object.SLICE_OBJ:
+	case object.BYTE_ARRAY_OBJ, object.TYPED_ARRAY_OBJ, object.SLICE_OBJ, object.POINTER_OBJ:
 		value, _, err := collections.Get(left, index)
 		if err != nil {
 			return newError("%s", err)
@@ -902,7 +902,7 @@ func evalIndexAssignment(left, index, value object.Object) object.Object {
 		array.Elements[i] = value
 		return value
 
-	case object.BYTE_ARRAY_OBJ, object.TYPED_ARRAY_OBJ, object.SLICE_OBJ:
+	case object.BYTE_ARRAY_OBJ, object.TYPED_ARRAY_OBJ, object.SLICE_OBJ, object.POINTER_OBJ:
 		_, err := collections.Set(left, index, value)
 		if err != nil {
 			return newError("%s", err)

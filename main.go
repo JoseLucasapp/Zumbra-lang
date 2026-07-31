@@ -19,7 +19,7 @@ import (
 	"zumbra/vm"
 )
 
-const version = "0.12.12"
+const version = "0.13.0"
 
 func main() {
 	currentUser, err := user.Current()
@@ -127,7 +127,7 @@ func printUsage() {
 	fmt.Println("Usage:")
 	fmt.Println("  zumbra <file.zum>")
 	fmt.Println("  zumbra run <file.zum>")
-	fmt.Println("  zumbra build [--release] [--emit-c] [--compiler <name>] [--link <file>] [--include <dir>] [--library-dir <dir>] [-l <name>] [-o <path>] <file.zum>")
+	fmt.Println("  zumbra build [--release] [--emit-c] [--sanitize <name>] [--compiler <name>] [--link <file>] [--include <dir>] [--library-dir <dir>] [-l <name>] [-o <path>] <file.zum>")
 	fmt.Println("  zumbra app inspect [--manifest <zumbra.toml>]")
 	fmt.Println("  zumbra app run [--manifest <zumbra.toml>]")
 	fmt.Println("  zumbra app build [--manifest <zumbra.toml>] [--target <os>] [--arch <arch>] [--release|--debug] [--compiler <name>] [-o <path>]")
@@ -344,6 +344,7 @@ type nativeBuildArguments struct {
 	IncludeDirs []string
 	LibraryDirs []string
 	Libraries   []string
+	Sanitizers  []string
 }
 
 func parseBuildArguments(arguments []string) (string, nativeBuildArguments, error) {
@@ -356,6 +357,12 @@ func parseBuildArguments(arguments []string) (string, nativeBuildArguments, erro
 			options.Release = true
 		case "--emit-c":
 			options.EmitCOnly = true
+		case "--sanitize":
+			index++
+			if index >= len(arguments) {
+				return "", options, fmt.Errorf("--sanitize requires address, undefined, thread or leak")
+			}
+			options.Sanitizers = append(options.Sanitizers, arguments[index])
 		case "--compiler":
 			index++
 			if index >= len(arguments) {
@@ -425,6 +432,7 @@ func buildZumbra(filename string, cli nativeBuildArguments) error {
 		IncludeDirs: cli.IncludeDirs,
 		LibraryDirs: cli.LibraryDirs,
 		Libraries:   cli.Libraries,
+		Sanitizers:  cli.Sanitizers,
 	})
 	if err != nil {
 		return err

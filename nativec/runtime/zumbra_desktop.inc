@@ -493,14 +493,18 @@ static bool z_desktop_notify_native(const char*title,const char*body){
 #if defined(__APPLE__)
     char*at=z_desktop_applescript_string(title);char*ab=z_desktop_applescript_string(body);char script[3072];snprintf(script,sizeof(script),"display notification %s with title %s",ab,at);char*quoted=z_desktop_shell_quote(script);char command[4096];snprintf(command,sizeof(command),"osascript -e %s",quoted);free(at);free(ab);free(quoted);return system(command)==0;
 #else
-    if(!z_desktop_command_exists("notify-send"))return false;z_desktop_spawn_detached("notify-send",title,body);return true;
+    if (!z_desktop_command_exists("notify-send")) return false;
+    z_desktop_spawn_detached("notify-send", title, body);
+    return true;
 #endif
 }
 static bool z_desktop_open_external_native(const char*target){
 #if defined(__APPLE__)
     if(!z_desktop_command_exists("open"))return false;z_desktop_spawn_detached("open",target,NULL);return true;
 #else
-    if(!z_desktop_command_exists("xdg-open"))return false;z_desktop_spawn_detached("xdg-open",target,NULL);return true;
+    if (!z_desktop_command_exists("xdg-open")) return false;
+    z_desktop_spawn_detached("xdg-open", target, NULL);
+    return true;
 #endif
 }
 static ZValue z_desktop_process_spawn(const char*command,ZValue options){if(command==NULL||*command=='\0')z_fatal("desktopSpawn command cannot be empty");ZValue arg_value=z_desktop_dict_get(options,"args");size_t extra=(arg_value.tag==ZV_ARRAY?arg_value.as.array->len:0);char**argv=(char**)calloc(extra+2,sizeof(char*));if(argv==NULL)z_fatal("out of memory");argv[0]=(char*)command;for(size_t i=0;i<extra;i++){ZValue value=arg_value.as.array->items[i];if(value.tag!=ZV_STRING)z_fatal("desktopSpawn args must contain strings");argv[i+1]=(char*)value.as.s;}argv[extra+1]=NULL;pid_t pid=fork();if(pid<0){free(argv);z_fatal("desktopSpawn failed: %s",strerror(errno));}if(pid==0){const char*cwd=z_desktop_opt_string(options,"cwd","");if(*cwd&&z_desktop_chdir(cwd)!=0)_exit(126);ZValue env=z_desktop_dict_get(options,"env");if(env.tag==ZV_DICT){for(size_t i=0;i<env.as.dict->len;i++){ZValue k=env.as.dict->keys[i],v=env.as.dict->values[i];if(k.tag==ZV_STRING&&v.tag==ZV_STRING)setenv(k.as.s,v.as.s,1);}}execvp(command,argv);_exit(127);}free(argv);ZDesktopProcessNative*p=(ZDesktopProcessNative*)z_alloc(sizeof(*p));p->pid=pid;p->running=true;p->waited=false;p->exit_code=0;return z_desktop_object(ZV_DESKTOP_PROCESS,ZK_DESKTOP_PROCESS,p);}

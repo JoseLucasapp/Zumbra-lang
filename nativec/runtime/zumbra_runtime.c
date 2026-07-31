@@ -114,6 +114,18 @@ static ZValue z_asset_call_builtin(const char *name, const ZValue *args, size_t 
 #endif
 
 
+#if defined(ZUMBRA_ENABLE_SYSTEMS)
+static void z_systems_runtime_init(void);
+static void z_systems_runtime_shutdown(void);
+static ZValue z_systems_call_builtin(const char *name, const ZValue *args, size_t argc, bool *handled);
+static void *z_systems_as_pointer(ZValue value, bool *handled);
+static ZValue z_systems_pointer_get(ZValue value, size_t index, bool *handled);
+static void z_systems_pointer_set(ZValue value, size_t index, ZValue item, bool *handled);
+static size_t z_systems_pointer_size(ZValue value, bool *handled);
+static void z_systems_show(ZValue value, bool *handled);
+static ZValue z_systems_to_string(ZValue value, bool *handled);
+#endif
+
 #if defined(ZUMBRA_ENABLE_Z12)
 static void z_z12_runtime_init(void);
 static void z_z12_runtime_shutdown(void);
@@ -157,6 +169,9 @@ static ZValue z_http_call_native_method(ZValue callable, const ZValue *args, siz
 void z_runtime_init(void) {
     z_allocations = NULL;
     z_active_tasks = 0;
+#if defined(ZUMBRA_ENABLE_SYSTEMS)
+    z_systems_runtime_init();
+#endif
 #if defined(ZUMBRA_ENABLE_DESKTOP)
     z_desktop_runtime_init();
 #endif
@@ -196,6 +211,9 @@ void z_runtime_shutdown(void) {
     pthread_mutex_lock(&z_task_count_mutex);
     while (z_active_tasks != 0) pthread_cond_wait(&z_task_count_condition, &z_task_count_mutex);
     pthread_mutex_unlock(&z_task_count_mutex);
+#if defined(ZUMBRA_ENABLE_SYSTEMS)
+    z_systems_runtime_shutdown();
+#endif
     pthread_mutex_lock(&z_allocation_mutex);
     ZAllocation *current = z_allocations;
     while (current != NULL) {
@@ -329,6 +347,11 @@ const char *z_as_cstring(ZValue value) {
 
 void *z_as_pointer(ZValue value) {
     if (value.tag == ZV_NULL) return NULL;
+#if defined(ZUMBRA_ENABLE_SYSTEMS)
+    bool systems_handled = false;
+    void *systems_pointer = z_systems_as_pointer(value, &systems_handled);
+    if (systems_handled) return systems_pointer;
+#endif
     if (value.tag != ZV_POINTER) z_fatal("expected ptr for C FFI");
     return value.as.p;
 }
@@ -598,6 +621,11 @@ ZValue z_index(ZValue collection, ZValue index) {
         return collection.as.array->items[position];
     }
     if (collection.tag == ZV_BUFFER) return z_buffer_get(collection.as.buffer, position);
+#if defined(ZUMBRA_ENABLE_SYSTEMS)
+    bool systems_handled = false;
+    ZValue systems_value = z_systems_pointer_get(collection, position, &systems_handled);
+    if (systems_handled) return systems_value;
+#endif
     if (collection.tag == ZV_STRING) {
         size_t length = strlen(collection.as.s);
         if (position >= length) z_fatal("string index %zu out of range", position);
@@ -644,6 +672,11 @@ void z_set_index(ZValue collection, ZValue index, ZValue value) {
         z_buffer_set(collection.as.buffer, position, value);
         return;
     }
+#if defined(ZUMBRA_ENABLE_SYSTEMS)
+    bool systems_handled = false;
+    z_systems_pointer_set(collection, position, value, &systems_handled);
+    if (systems_handled) return;
+#endif
     z_fatal("value does not support index assignment");
 }
 
@@ -694,7 +727,11 @@ size_t z_size_of(ZValue value) {
     case ZV_DICT: return value.as.dict->len;
     case ZV_BUFFER: return value.as.buffer->len;
     case ZV_STRUCT: return value.as.structure->field_count;
-    default: z_fatal("sizeOf does not support this value"); return 0;
+    default:
+#if defined(ZUMBRA_ENABLE_SYSTEMS)
+        { bool systems_handled = false; size_t systems_size = z_systems_pointer_size(value, &systems_handled); if (systems_handled) return systems_size; }
+#endif
+        z_fatal("sizeOf does not support this value"); return 0;
     }
 }
 
@@ -1058,7 +1095,11 @@ static void z_show_inner(ZValue value) {
         }
         fputc('}', stdout);
         break;
-    default: fputs("<value>", stdout); break;
+    default:
+#if defined(ZUMBRA_ENABLE_SYSTEMS)
+        { bool systems_handled = false; z_systems_show(value, &systems_handled); if (systems_handled) break; }
+#endif
+        fputs("<value>", stdout); break;
     }
 }
 
@@ -1091,6 +1132,9 @@ static ZValue z_to_string_value(ZValue value) {
         snprintf(buffer, sizeof(buffer), "AtomicInt<%" PRId64 ">", atomic_load((_Atomic int64_t *)value.as.p));
         return z_string(buffer);
     default:
+#if defined(ZUMBRA_ENABLE_SYSTEMS)
+        { bool systems_handled = false; ZValue systems_value = z_systems_to_string(value, &systems_handled); if (systems_handled) return systems_value; }
+#endif
         return z_string("<value>");
     }
 }
@@ -1837,6 +1881,11 @@ static bool z_udp_close_native(ZValue value) {
 #endif
 
 ZValue z_call_builtin(const char *name, const ZValue *args, size_t argc) {
+#if defined(ZUMBRA_ENABLE_SYSTEMS)
+    bool systems_handled = false;
+    ZValue systems_value = z_systems_call_builtin(name, args, argc, &systems_handled);
+    if (systems_handled) return systems_value;
+#endif
 #if defined(ZUMBRA_ENABLE_ASSETS)
     bool asset_handled = false;
     ZValue asset_result = z_asset_call_builtin(name, args, argc, &asset_handled);

@@ -1,0 +1,6 @@
+var library << dynamicOpen("libc.so.6");
+unsafe {
+    var functionPointer << dynamicSymbol(library, "getpid");
+    show(dynamicCall(functionPointer, "i32", []) > 0i32);
+}
+show(dynamicClose(library));

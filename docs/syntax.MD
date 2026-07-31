@@ -1046,3 +1046,42 @@ zumbra app package --target macos --format app,zip
 
 `app doctor` verifica compilador, runtime, formato do binário e ferramentas externas antes de criar artefatos. O empacotador rejeita binários cujo sistema ou arquitetura não correspondam ao alvo. Consulte `docs/pt-BR/distribuicao-desktop-z15.md` e `docs/releases/0.10.4.md`.
 
+
+---
+
+## Z17 — Programação de sistemas
+
+```zumbra
+import "../std/system.zum" as system;
+
+var pointer << system.allocate("i32", 4);
+pointer[0] << 10i32;
+pointer[1] << 20i32;
+show(pointer[1]);
+
+var view << system.borrow(pointer);
+show(system.read(view, 0));
+system.releaseBorrowed(view);
+
+pointer << system.resize(pointer, 8);
+system.release(pointer);
+```
+
+O type checker representa o valor como `ptr<i32>` e mantém o tipo do elemento durante indexação e chamadas de memória.
+
+Operações que aceitam endereços externos ou alteram proteção de páginas exigem `unsafe`:
+
+```zumbra
+unsafe {
+    var raw << pointerFromAddress("u8", address, length, true);
+    volatileWrite(raw, 0, 42u8);
+}
+```
+
+Builds nativos podem habilitar sanitizers:
+
+```bash
+zumbra build --release --sanitize address,undefined app.zum
+```
+
+Consulte [`docs/pt-BR/programacao-de-sistemas-z17.md`](./pt-BR/programacao-de-sistemas-z17.md) para ownership, arenas, memória mapeada, memória compartilhada, atomics, bibliotecas dinâmicas, syscalls e profiling.

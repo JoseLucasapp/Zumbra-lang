@@ -65,6 +65,8 @@ func Length(value object.Object) (int, bool) {
 		return value.Length, true
 	case *object.Slice:
 		return value.Length, true
+	case *object.Pointer:
+		return value.Length, true
 	case *object.String:
 		return len(value.Value), true
 	case *object.Dict:
@@ -78,7 +80,7 @@ func Get(container, index object.Object) (object.Object, bool, error) {
 	i, err := IntegerValue(index)
 	if err != nil {
 		switch container.Type() {
-		case object.BYTE_ARRAY_OBJ, object.TYPED_ARRAY_OBJ, object.SLICE_OBJ:
+		case object.BYTE_ARRAY_OBJ, object.TYPED_ARRAY_OBJ, object.SLICE_OBJ, object.POINTER_OBJ:
 			return nil, true, err
 		default:
 			return nil, false, nil
@@ -106,6 +108,12 @@ func Get(container, index object.Object) (object.Object, bool, error) {
 			return nil, true, fmt.Errorf("slice index out of bounds: %d (length %d)", i, value.Length)
 		}
 		return Get(value.Source, &object.Integer{Value: int64(value.Start) + i})
+	case *object.Pointer:
+		result, readErr := value.Read(int(i))
+		if readErr != nil {
+			return nil, true, readErr
+		}
+		return result, true, nil
 	default:
 		return nil, false, nil
 	}
@@ -115,7 +123,7 @@ func Set(container, index, value object.Object) (bool, error) {
 	i, err := IntegerValue(index)
 	if err != nil {
 		switch container.Type() {
-		case object.ARRAY_OBJ, object.BYTE_ARRAY_OBJ, object.TYPED_ARRAY_OBJ, object.SLICE_OBJ:
+		case object.ARRAY_OBJ, object.BYTE_ARRAY_OBJ, object.TYPED_ARRAY_OBJ, object.SLICE_OBJ, object.POINTER_OBJ:
 			return true, err
 		default:
 			return false, nil
@@ -154,6 +162,8 @@ func Set(container, index, value object.Object) (bool, error) {
 			return true, fmt.Errorf("slice index out of bounds: %d (length %d)", i, target.Length)
 		}
 		return Set(target.Source, &object.Integer{Value: int64(target.Start) + i}, value)
+	case *object.Pointer:
+		return true, target.Write(int(i), value)
 	default:
 		return false, nil
 	}

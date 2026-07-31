@@ -1,0 +1,14 @@
+import "../../std/system.zum" as system;
+
+var path << "/tmp/zumbra-z17-mapping.bin";
+writeBytes(path, bytes(8));
+var mapping << system.mapFile(path, "readwrite", 8);
+var view << system.mappedPointer(mapping);
+view[0] << 42u8;
+view[7] << 99u8;
+show(system.mappingSize(mapping));
+show(system.flushMapping(mapping));
+show(system.closeMapping(mapping));
+var content << readBytes(path);
+show(content[0]);
+show(content[7]);

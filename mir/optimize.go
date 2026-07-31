@@ -21,22 +21,26 @@ func Optimize(module *Module) error {
 		return fmt.Errorf("cannot optimize nil MIR module")
 	}
 	for _, fn := range module.Functions {
-		optimizeRegion(fn.Body, nil)
+		optimizeRegion(fn.Body, nil, nil)
 		eliminateDeadValues(fn.Body)
 	}
-	optimizeRegion(module.Entry, nil)
+	optimizeRegion(module.Entry, nil, nil)
 	eliminateDeadValues(module.Entry)
 	module.Optimized = true
 	return Verify(module)
 }
 
-func optimizeRegion(region *Region, inherited map[ValueID]constant) {
+func optimizeRegion(region *Region, inherited map[ValueID]constant, inheritedLoads map[ValueID]string) {
 	if region == nil {
 		return
 	}
 	constants := map[ValueID]constant{}
 	for key, value := range inherited {
 		constants[key] = value
+	}
+	loads := map[ValueID]string{}
+	for key, value := range inheritedLoads {
+		loads[key] = value
 	}
 	optimized := make([]*Instruction, 0, len(region.Instructions))
 	terminated := false
@@ -46,9 +50,9 @@ func optimizeRegion(region *Region, inherited map[ValueID]constant) {
 			continue
 		}
 		for _, nested := range inst.Regions {
-			optimizeRegion(nested, constants)
+			optimizeRegion(nested, constants, loads)
 		}
-		if folded, ok := foldInstruction(inst, constants); ok {
+		if folded, ok := foldInstruction(inst, constants, loads); ok {
 			inst.Op = OpConst
 			inst.Operator = ""
 			inst.Args = nil
@@ -57,6 +61,9 @@ func optimizeRegion(region *Region, inherited map[ValueID]constant) {
 			constants[inst.Result] = folded
 		} else if inst.Op == OpConst && inst.Result != 0 && inst.Type != nil {
 			constants[inst.Result] = constant{kind: inst.Type.Kind, text: inst.Literal}
+		}
+		if inst.Op == OpLoad && inst.Result != 0 {
+			loads[inst.Result] = inst.Name
 		}
 		if inst.Op == OpIf && len(inst.Args) == 1 {
 			if value, ok := constants[inst.Args[0]]; ok && value.kind == types.Bool {
@@ -80,7 +87,7 @@ func optimizeRegion(region *Region, inherited map[ValueID]constant) {
 	}
 }
 
-func foldInstruction(inst *Instruction, constants map[ValueID]constant) (constant, bool) {
+func foldInstruction(inst *Instruction, constants map[ValueID]constant, loads map[ValueID]string) (constant, bool) {
 	if inst == nil || inst.Result == 0 {
 		return constant{}, false
 	}
@@ -104,8 +111,47 @@ func foldInstruction(inst *Instruction, constants map[ValueID]constant) (constan
 			return constant{}, false
 		}
 		return foldBinary(inst.Operator, left, right, inst.Type)
+	case OpCall:
+		return foldSystemLayoutCall(inst, constants, loads)
 	}
 	return constant{}, false
+}
+
+func foldSystemLayoutCall(inst *Instruction, constants map[ValueID]constant, loads map[ValueID]string) (constant, bool) {
+	if inst == nil || len(inst.Args) != 2 {
+		return constant{}, false
+	}
+	callee, ok := loads[inst.Args[0]]
+	if !ok || (callee != "sizeOfType" && callee != "alignOfType") {
+		return constant{}, false
+	}
+	typeName, ok := constants[inst.Args[1]]
+	if !ok || typeName.kind != types.String {
+		return constant{}, false
+	}
+	size, alignment, ok := nativeSystemLayout(typeName.text)
+	if !ok {
+		return constant{}, false
+	}
+	value := size
+	if callee == "alignOfType" {
+		value = alignment
+	}
+	return constant{kind: types.Int, text: strconv.Itoa(value)}, true
+}
+
+func nativeSystemLayout(name string) (size int, alignment int, ok bool) {
+	switch strings.ToLower(strings.TrimSpace(name)) {
+	case "u8", "i8", "bool":
+		return 1, 1, true
+	case "u16", "i16":
+		return 2, 2, true
+	case "u32", "i32":
+		return 4, 4, true
+	case "u64", "i64", "int", "float":
+		return 8, 8, true
+	}
+	return 0, 0, false
 }
 
 func foldUnary(operator string, value constant) (constant, bool) {

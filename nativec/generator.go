@@ -18,7 +18,7 @@ import (
 	"zumbra/types"
 )
 
-//go:embed runtime/zumbra_runtime.c runtime/zumbra_runtime.h runtime/zumbra_http.inc runtime/zumbra_z12.inc runtime/zumbra_sqlite.inc runtime/zumbra_desktop.inc runtime/zumbra_ui.inc
+//go:embed runtime/zumbra_runtime.c runtime/zumbra_runtime.h runtime/zumbra_http.inc runtime/zumbra_z12.inc runtime/zumbra_sqlite.inc runtime/zumbra_desktop.inc runtime/zumbra_ui.inc runtime/zumbra_systems.inc
 var runtimeFiles embed.FS
 
 type Sources struct {
@@ -48,6 +48,21 @@ var supportedBuiltins = map[string]bool{
 	"checkedAdd": true, "checkedSub": true, "checkedMul": true,
 	"satAdd": true, "satSub": true, "satMul": true,
 	"bytes": true, "arrayOf": true, "slice": true, "fill": true,
+	"alloc": true, "calloc": true, "nullPointer": true, "realloc": true, "free": true,
+	"addressOf": true, "pointerFromAddress": true, "dereference": true, "pointerRead": true, "pointerWrite": true, "pointerOffset": true,
+	"pointerLength": true, "pointerByteLength": true, "pointerType": true, "pointerAddress": true, "pointerEqual": true, "pointerCompare": true, "pointerIsAligned": true,
+	"pointerIsNull": true, "pointerIsValid": true, "pointerOwned": true, "pointerBorrowed": true, "pointerMutable": true,
+	"borrowPointer": true, "borrowPointerMut": true, "releaseBorrow": true, "movePointer": true, "pointerCopy": true, "pointerFill": true,
+	"sizeOfType": true, "alignOfType": true, "byteSizeOf": true, "nativeStructLayout": true,
+	"arenaCreate": true, "arenaAlloc": true, "arenaReset": true, "arenaFree": true, "arenaStats": true,
+	"memoryStats": true, "memoryLeaks": true, "memoryValidate": true, "memoryResetStats": true,
+	"mmapOpen": true, "mmapPointer": true, "mmapFlush": true, "mmapClose": true, "mmapSize": true,
+	"sharedMemoryOpen": true, "sharedMemoryPointer": true, "sharedMemoryClose": true, "sharedMemoryUnlink": true,
+	"volatileRead": true, "volatileWrite": true, "memoryFence": true,
+	"atomicPointerLoad": true, "atomicPointerStore": true, "atomicPointerAdd": true, "atomicPointerSwap": true, "atomicPointerCompareSwap": true,
+	"memoryProtect": true, "memoryLock": true, "memoryUnlock": true,
+	"dynamicOpen": true, "dynamicSymbol": true, "dynamicCall": true, "dynamicClose": true, "dynamicIsOpen": true, "dynamicError": true,
+	"systemInfo": true, "pageSize": true, "cpuCount": true, "rawSyscall": true, "profileNowNs": true, "profileElapsedNs": true,
 	"readBytes": true, "writeBytes": true,
 	"readU16LE": true, "readU16BE": true, "readU32LE": true, "readU32BE": true,
 	"readU64LE": true, "readU64BE": true,
@@ -304,6 +319,9 @@ func Generate(module *mir.Module) (*Sources, []Diagnostic) {
 	if UsesAssets(module) {
 		prefix += "#define ZUMBRA_ENABLE_ASSETS 1\n"
 	}
+	if UsesSystems(module) {
+		prefix += "#define ZUMBRA_ENABLE_SYSTEMS 1\n"
+	}
 	if UsesDesktop(module) || UsesUI(module) {
 		prefix += "#define ZUMBRA_ENABLE_DESKTOP 1\n"
 	}
@@ -330,6 +348,14 @@ func Generate(module *mir.Module) (*Sources, []Diagnostic) {
 	}
 	if UsesSQLite(module) {
 		prefix += "#define ZUMBRA_ENABLE_SQLITE 1\n"
+	}
+	if UsesSystems(module) {
+		systemsRuntime, readErr := runtimeFiles.ReadFile("runtime/zumbra_systems.inc")
+		if readErr != nil {
+			return nil, []Diagnostic{{Message: "could not load embedded systems runtime: " + readErr.Error()}}
+		}
+		runtimeSource = append(runtimeSource, '\n')
+		runtimeSource = append(runtimeSource, systemsRuntime...)
 	}
 	if UsesDesktop(module) || UsesUI(module) {
 		desktopRuntime, readErr := runtimeFiles.ReadFile("runtime/zumbra_desktop.inc")
@@ -477,7 +503,7 @@ func (g *generator) emitProgram() {
 	g.line("#include \"zumbra_runtime.h\"")
 	g.line("#include <stdio.h>")
 	g.line("#include <string.h>")
-	g.line("_Static_assert(ZUMBRA_NATIVE_ABI_VERSION == 6u, \"unsupported Zumbra native ABI\");")
+	g.line("_Static_assert(ZUMBRA_NATIVE_ABI_VERSION == 7u, \"unsupported Zumbra native ABI\");")
 	g.line("")
 	g.emitFFIDeclarations()
 	for _, name := range sortedKeys(g.globals) {
@@ -1183,6 +1209,14 @@ func cKind(value *types.Type) string {
 		return "ZK_FUNCTION"
 	case types.Pointer:
 		return "ZK_POINTER"
+	case types.MemoryArena:
+		return "ZK_MEMORY_ARENA"
+	case types.MappedMemory:
+		return "ZK_MAPPED_MEMORY"
+	case types.SharedMemory:
+		return "ZK_SHARED_MEMORY"
+	case types.DynamicLibrary:
+		return "ZK_DYNAMIC_LIBRARY"
 	case types.Task:
 		return "ZK_TASK"
 	case types.Channel:
@@ -1287,6 +1321,27 @@ func max(a, b int) int {
 	}
 	return b
 }
+
+var systemsBuiltins = map[string]bool{
+	"alloc": true, "calloc": true, "nullPointer": true, "realloc": true, "free": true,
+	"addressOf": true, "pointerFromAddress": true, "dereference": true, "pointerRead": true, "pointerWrite": true, "pointerOffset": true,
+	"pointerLength": true, "pointerByteLength": true, "pointerType": true, "pointerAddress": true, "pointerEqual": true, "pointerCompare": true, "pointerIsAligned": true,
+	"pointerIsNull": true, "pointerIsValid": true, "pointerOwned": true, "pointerBorrowed": true, "pointerMutable": true,
+	"borrowPointer": true, "borrowPointerMut": true, "releaseBorrow": true, "movePointer": true, "pointerCopy": true, "pointerFill": true,
+	"sizeOfType": true, "alignOfType": true, "byteSizeOf": true, "nativeStructLayout": true,
+	"arenaCreate": true, "arenaAlloc": true, "arenaReset": true, "arenaFree": true, "arenaStats": true,
+	"memoryStats": true, "memoryLeaks": true, "memoryValidate": true, "memoryResetStats": true,
+	"mmapOpen": true, "mmapPointer": true, "mmapFlush": true, "mmapClose": true, "mmapSize": true,
+	"sharedMemoryOpen": true, "sharedMemoryPointer": true, "sharedMemoryClose": true, "sharedMemoryUnlink": true,
+	"volatileRead": true, "volatileWrite": true, "memoryFence": true,
+	"atomicPointerLoad": true, "atomicPointerStore": true, "atomicPointerAdd": true, "atomicPointerSwap": true, "atomicPointerCompareSwap": true,
+	"memoryProtect": true, "memoryLock": true, "memoryUnlock": true,
+	"dynamicOpen": true, "dynamicSymbol": true, "dynamicCall": true, "dynamicClose": true, "dynamicIsOpen": true, "dynamicError": true,
+	"systemInfo": true, "pageSize": true, "cpuCount": true, "rawSyscall": true, "profileNowNs": true, "profileElapsedNs": true,
+}
+
+// UsesSystems reports whether the MIR references Z17 systems APIs.
+func UsesSystems(module *mir.Module) bool { return moduleUsesAnyBuiltin(module, systemsBuiltins) }
 
 var networkBuiltins = map[string]bool{
 	"tcpListen": true, "tcpConnect": true, "tcpConnectTimeout": true,

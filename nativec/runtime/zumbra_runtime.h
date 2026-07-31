@@ -1,7 +1,7 @@
 #ifndef ZUMBRA_RUNTIME_H
 #define ZUMBRA_RUNTIME_H
 
-#define ZUMBRA_NATIVE_ABI_VERSION 6u
+#define ZUMBRA_NATIVE_ABI_VERSION 7u
 
 #include <stdbool.h>
 #include <stddef.h>
@@ -31,6 +31,10 @@ typedef enum {
     ZK_ENUM,
     ZK_FUNCTION,
     ZK_POINTER,
+    ZK_MEMORY_ARENA,
+    ZK_MAPPED_MEMORY,
+    ZK_SHARED_MEMORY,
+    ZK_DYNAMIC_LIBRARY,
     ZK_TASK,
     ZK_CHANNEL,
     ZK_MUTEX,
@@ -92,6 +96,11 @@ typedef enum {
     ZV_STRUCT_TYPE,
     ZV_ENUM_TYPE,
     ZV_POINTER,
+    ZV_MEMORY_POINTER,
+    ZV_MEMORY_ARENA,
+    ZV_MAPPED_MEMORY,
+    ZV_SHARED_MEMORY,
+    ZV_DYNAMIC_LIBRARY,
     ZV_TASK,
     ZV_CHANNEL,
     ZV_MUTEX,

@@ -183,11 +183,13 @@ O bloco não desativa o type checker. Ele apenas declara que o programador aceit
 
 Uma chamada externa fora de `unsafe` falha durante a análise semântica.
 
-## Ponteiros opacos
+## Ponteiros opacos e ponteiros de memória
 
-`ptr` representa `void *`. No Z8 ele pode ser recebido de C, comparado, armazenado e devolvido para C, mas não pode ser desreferenciado diretamente em Zumbra.
+`ptr` continua representando `void *` na fronteira FFI do Z8. Ele pode ser recebido de C, comparado, armazenado e devolvido para C.
 
-Isso permite usar handles de SDL, bancos e APIs do sistema sem introduzir ainda aritmética de ponteiros. Leitura, escrita, alocação manual e `Pointer<T>` pertencem ao marco posterior de systems programming.
+O Z17 adiciona `ptr<T>` gerenciado para memória explicitamente tipada. `alloc`, `addressOf`, `pointerFromAddress`, indexação, ownership, empréstimos e arenas são descritos em [`programacao-de-sistemas-z17.md`](./programacao-de-sistemas-z17.md).
+
+Ponteiros retornados por declarações `extern "C"` permanecem opacos até serem convertidos explicitamente em um bloco `unsafe`. Para chamadas por símbolo sem uma declaração FFI estática, o Z17 também fornece `dynamicSymbol` e uma ABI mínima `dynamicCall` para argumentos inteiros, booleanos e ponteiros.
 
 ## Callbacks síncronos
 

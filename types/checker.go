@@ -2,6 +2,7 @@ package types
 
 import (
 	"fmt"
+	"strings"
 	"zumbra/ast"
 )
 
@@ -547,7 +548,7 @@ func (c *Checker) checkIndexAssignment(stmt *ast.IndexAssignStatement) {
 			c.addError(fmt.Errorf("array element expects %s, got %s", containerType.Elem.Kind, valueType.Kind))
 		}
 
-	case ByteArray, TypedArray, Slice:
+	case ByteArray, TypedArray, Slice, Pointer:
 		if indexType.Kind != Unknown && !IsInteger(indexType) {
 			c.addError(fmt.Errorf("collection index must be int, got %s", indexType.Kind))
 		}
@@ -771,7 +772,318 @@ func (c *Checker) inferHandlerBlockType(block *ast.BlockStatement) *Type {
 }
 
 func (c *Checker) checkBuiltinCall(name string, args []ast.Expression) *Type {
+	if c.unsafeDepth == 0 {
+		switch name {
+		case "pointerFromAddress", "volatileRead", "volatileWrite", "memoryProtect", "rawSyscall", "dynamicSymbol", "dynamicCall":
+			c.addError(fmt.Errorf("%s requires an unsafe block", name))
+		}
+	}
 	switch name {
+	case "alloc", "calloc", "nullPointer":
+		expected := 2
+		if name == "nullPointer" {
+			expected = 1
+		}
+		if len(args) != expected {
+			c.addError(fmt.Errorf("%s expects %d arguments, got %d", name, expected, len(args)))
+		}
+		if len(args) > 0 {
+			c.requireTypeArgument(name+" type", c.inferExpression(args[0]), String)
+		}
+		if len(args) > 1 {
+			c.requireIntegerArgument(name+" count", c.inferExpression(args[1]))
+		}
+		elem := Simple(Unknown)
+		if len(args) > 0 {
+			if literal, ok := args[0].(*ast.StringLiteral); ok {
+				elem = c.systemMemoryType(literal.Value, name)
+			}
+		}
+		return PointerOf(elem)
+	case "realloc":
+		if len(args) != 2 {
+			c.addError(fmt.Errorf("realloc expects 2 arguments, got %d", len(args)))
+		}
+		pointer := Simple(Unknown)
+		if len(args) > 0 {
+			pointer = c.inferExpression(args[0])
+			if pointer.Kind != Unknown && pointer.Kind != Pointer {
+				c.addError(fmt.Errorf("realloc expects Pointer, got %s", pointer.String()))
+			}
+		}
+		if len(args) > 1 {
+			c.requireIntegerArgument("realloc count", c.inferExpression(args[1]))
+		}
+		if pointer.Kind == Pointer {
+			return pointer
+		}
+		return PointerOf(Simple(Unknown))
+	case "free", "releaseBorrow", "pointerIsNull", "pointerIsValid", "pointerOwned", "pointerBorrowed", "pointerMutable", "memoryLock", "memoryUnlock":
+		if len(args) != 1 {
+			c.addError(fmt.Errorf("%s expects 1 argument, got %d", name, len(args)))
+		} else {
+			c.requirePointer(name, c.inferExpression(args[0]))
+		}
+		return Simple(Bool)
+	case "addressOf":
+		if len(args) < 1 || len(args) > 2 {
+			c.addError(fmt.Errorf("addressOf expects 1 or 2 arguments, got %d", len(args)))
+			return PointerOf(Simple(Unknown))
+		}
+		container := c.inferExpression(args[0])
+		if len(args) == 2 {
+			c.requireIntegerArgument("addressOf index", c.inferExpression(args[1]))
+		}
+		switch container.Kind {
+		case ByteArray:
+			return PointerOf(Simple(U8))
+		case TypedArray, Slice, Pointer:
+			return PointerOf(Clone(container.Elem))
+		case Unknown:
+			return PointerOf(Simple(Unknown))
+		default:
+			c.addError(fmt.Errorf("addressOf expects compact memory or Pointer, got %s", container.String()))
+			return PointerOf(Simple(Unknown))
+		}
+	case "pointerFromAddress":
+		if len(args) < 3 || len(args) > 4 {
+			c.addError(fmt.Errorf("pointerFromAddress expects 3 or 4 arguments, got %d", len(args)))
+		}
+		if len(args) > 0 {
+			c.requireTypeArgument("pointerFromAddress type", c.inferExpression(args[0]), String)
+		}
+		if len(args) > 1 {
+			c.requireIntegerArgument("pointerFromAddress address", c.inferExpression(args[1]))
+		}
+		if len(args) > 2 {
+			c.requireIntegerArgument("pointerFromAddress length", c.inferExpression(args[2]))
+		}
+		if len(args) > 3 {
+			c.requireTypeArgument("pointerFromAddress mutable", c.inferExpression(args[3]), Bool)
+		}
+		elem := Simple(Unknown)
+		if len(args) > 0 {
+			if literal, ok := args[0].(*ast.StringLiteral); ok {
+				elem = c.systemMemoryType(literal.Value, name)
+			}
+		}
+		return PointerOf(elem)
+	case "dereference", "pointerRead", "volatileRead":
+		if len(args) < 1 || len(args) > 2 {
+			c.addError(fmt.Errorf("%s expects 1 or 2 arguments, got %d", name, len(args)))
+			return Simple(Unknown)
+		}
+		pointer := c.inferExpression(args[0])
+		c.requirePointer(name, pointer)
+		if len(args) == 2 {
+			c.requireIntegerArgument(name+" index", c.inferExpression(args[1]))
+		}
+		if pointer.Kind == Pointer && pointer.Elem != nil {
+			return pointer.Elem
+		}
+		return Simple(Unknown)
+	case "pointerWrite", "volatileWrite":
+		if len(args) != 2 && len(args) != 3 {
+			c.addError(fmt.Errorf("%s expects 2 or 3 arguments, got %d", name, len(args)))
+			return PointerOf(Simple(Unknown))
+		}
+		pointer := c.inferExpression(args[0])
+		c.requirePointer(name, pointer)
+		valueIndex := 1
+		if len(args) == 3 {
+			c.requireIntegerArgument(name+" index", c.inferExpression(args[1]))
+			valueIndex = 2
+		}
+		value := c.inferExpression(args[valueIndex])
+		if pointer.Kind == Pointer && pointer.Elem != nil && pointer.Elem.Kind != Unknown && value.Kind != Unknown && !Compatible(pointer.Elem, value) && !(IsInteger(pointer.Elem) && IsInteger(value)) {
+			c.addError(fmt.Errorf("%s expects %s, got %s", name, pointer.Elem.String(), value.String()))
+		}
+		return pointer
+	case "atomicPointerLoad":
+		if len(args) != 1 {
+			c.addError(fmt.Errorf("atomicPointerLoad expects 1 argument, got %d", len(args)))
+		}
+		pointer := PointerOf(Simple(Unknown))
+		if len(args) > 0 {
+			pointer = c.inferExpression(args[0])
+			c.requirePointer(name, pointer)
+		}
+		if pointer.Kind == Pointer && pointer.Elem != nil {
+			return pointer.Elem
+		}
+		return Simple(Unknown)
+	case "atomicPointerStore", "atomicPointerSwap", "atomicPointerAdd":
+		if len(args) != 2 {
+			c.addError(fmt.Errorf("%s expects 2 arguments, got %d", name, len(args)))
+		}
+		pointer := PointerOf(Simple(Unknown))
+		if len(args) > 0 {
+			pointer = c.inferExpression(args[0])
+			c.requirePointer(name, pointer)
+		}
+		if len(args) > 1 {
+			c.inferExpression(args[1])
+		}
+		if name == "atomicPointerStore" {
+			return Simple(Null)
+		}
+		if pointer.Kind == Pointer && pointer.Elem != nil {
+			return pointer.Elem
+		}
+		return Simple(Unknown)
+	case "atomicPointerCompareSwap":
+		if len(args) != 3 {
+			c.addError(fmt.Errorf("atomicPointerCompareSwap expects 3 arguments, got %d", len(args)))
+		}
+		if len(args) > 0 {
+			c.requirePointer(name, c.inferExpression(args[0]))
+		}
+		for index := 1; index < len(args); index++ {
+			c.inferExpression(args[index])
+		}
+		return Simple(Bool)
+	case "pointerOffset":
+		if len(args) != 2 {
+			c.addError(fmt.Errorf("pointerOffset expects 2 arguments, got %d", len(args)))
+		}
+		pointer := PointerOf(Simple(Unknown))
+		if len(args) > 0 {
+			pointer = c.inferExpression(args[0])
+			c.requirePointer(name, pointer)
+		}
+		if len(args) > 1 {
+			c.requireIntegerArgument("pointerOffset offset", c.inferExpression(args[1]))
+		}
+		return pointer
+	case "borrowPointer", "borrowPointerMut", "movePointer":
+		if len(args) != 1 {
+			c.addError(fmt.Errorf("%s expects 1 argument, got %d", name, len(args)))
+			return PointerOf(Simple(Unknown))
+		}
+		pointer := c.inferExpression(args[0])
+		c.requirePointer(name, pointer)
+		return pointer
+	case "pointerLength", "pointerByteLength":
+		if len(args) != 1 {
+			c.addError(fmt.Errorf("%s expects 1 argument, got %d", name, len(args)))
+		} else {
+			c.requirePointer(name, c.inferExpression(args[0]))
+		}
+		return Simple(Int)
+	case "pointerType":
+		if len(args) == 1 {
+			c.requirePointer(name, c.inferExpression(args[0]))
+		}
+		return Simple(String)
+	case "pointerAddress":
+		if len(args) == 1 {
+			c.requirePointer(name, c.inferExpression(args[0]))
+		}
+		return Simple(U64)
+	case "pointerEqual", "pointerCompare":
+		if len(args) != 2 {
+			c.addError(fmt.Errorf("%s expects 2 arguments, got %d", name, len(args)))
+		}
+		for _, arg := range args {
+			c.requirePointer(name, c.inferExpression(arg))
+		}
+		if name == "pointerEqual" {
+			return Simple(Bool)
+		}
+		return Simple(Int)
+	case "pointerIsAligned":
+		if len(args) != 2 {
+			c.addError(fmt.Errorf("pointerIsAligned expects 2 arguments, got %d", len(args)))
+		}
+		if len(args) > 0 {
+			c.requirePointer(name, c.inferExpression(args[0]))
+		}
+		if len(args) > 1 {
+			c.requireIntegerArgument(name+" alignment", c.inferExpression(args[1]))
+		}
+		return Simple(Bool)
+	case "pointerCopy":
+		for index, arg := range args {
+			t := c.inferExpression(arg)
+			if index == 0 || index == 2 {
+				c.requirePointer(name, t)
+			} else {
+				c.requireIntegerArgument(name, t)
+			}
+		}
+		if len(args) > 0 {
+			return c.inferExpression(args[0])
+		}
+		return PointerOf(Simple(Unknown))
+	case "pointerFill":
+		if len(args) == 2 {
+			pointer := c.inferExpression(args[0])
+			c.requirePointer(name, pointer)
+			c.inferExpression(args[1])
+			return pointer
+		}
+		return PointerOf(Simple(Unknown))
+	case "arenaAlloc":
+		if len(args) != 3 {
+			c.addError(fmt.Errorf("arenaAlloc expects 3 arguments, got %d", len(args)))
+		}
+		if len(args) > 0 {
+			c.requireTypeArgument("arenaAlloc arena", c.inferExpression(args[0]), MemoryArena)
+		}
+		if len(args) > 1 {
+			c.requireTypeArgument("arenaAlloc type", c.inferExpression(args[1]), String)
+		}
+		if len(args) > 2 {
+			c.requireIntegerArgument("arenaAlloc count", c.inferExpression(args[2]))
+		}
+		elem := Simple(Unknown)
+		if len(args) > 1 {
+			if literal, ok := args[1].(*ast.StringLiteral); ok {
+				elem = c.systemMemoryType(literal.Value, name)
+			}
+		}
+		return PointerOf(elem)
+	case "mmapPointer", "sharedMemoryPointer":
+		for _, arg := range args {
+			c.inferExpression(arg)
+		}
+		return PointerOf(Simple(U8))
+	case "dynamicSymbol":
+		for _, arg := range args {
+			c.inferExpression(arg)
+		}
+		return PointerOf(Simple(Unknown))
+	case "dynamicCall":
+		if len(args) != 3 {
+			c.addError(fmt.Errorf("dynamicCall expects 3 arguments, got %d", len(args)))
+			return Simple(Unknown)
+		}
+		c.requirePointer(name, c.inferExpression(args[0]))
+		c.requireTypeArgument("dynamicCall return type", c.inferExpression(args[1]), String)
+		argumentTypes := c.inferExpression(args[2])
+		if argumentTypes.Kind != Unknown && argumentTypes.Kind != Array {
+			c.addError(fmt.Errorf("dynamicCall arguments must be Array, got %s", argumentTypes.String()))
+		}
+		if literal, ok := args[1].(*ast.StringLiteral); ok {
+			normalized := strings.ToLower(strings.TrimSpace(literal.Value))
+			if normalized == "void" || normalized == "null" {
+				return Simple(Null)
+			}
+			return c.systemMemoryType(normalized, name)
+		}
+		return Simple(Unknown)
+	case "profileNowNs":
+		if len(args) != 0 {
+			c.addError(fmt.Errorf("profileNowNs expects 0 arguments, got %d", len(args)))
+		}
+		return Simple(U64)
+	case "profileElapsedNs":
+		if len(args) != 1 {
+			c.addError(fmt.Errorf("profileElapsedNs expects 1 argument, got %d", len(args)))
+		} else {
+			c.inferExpression(args[0])
+		}
+		return Simple(U64)
 	case "join":
 		if len(args) != 1 {
 			c.addError(fmt.Errorf("join expects 1 argument, got %d", len(args)))
@@ -2727,7 +3039,7 @@ func (c *Checker) inferExpressionImpl(exp ast.Expression) *Type {
 		left := c.inferExpression(e.Left)
 		index := c.inferExpression(e.Index)
 
-		if left.Kind == Array || left.Kind == ByteArray || left.Kind == TypedArray || left.Kind == Slice {
+		if left.Kind == Array || left.Kind == ByteArray || left.Kind == TypedArray || left.Kind == Slice || left.Kind == Pointer {
 			if index.Kind != Unknown && !IsInteger(index) {
 				c.addError(fmt.Errorf("array index must be int, got %s", index.Kind))
 			}
@@ -3304,6 +3616,26 @@ func endianReadType(name string) *Type {
 	}
 }
 
+func (c *Checker) requirePointer(label string, value *Type) {
+	if value != nil && value.Kind != Unknown && value.Kind != Pointer {
+		c.addError(fmt.Errorf("%s expects Pointer, got %s", label, value.String()))
+	}
+}
+
+func (c *Checker) systemMemoryType(name, label string) *Type {
+	normalized := Kind(strings.ToLower(strings.TrimSpace(name)))
+	switch normalized {
+	case Int, U8, U16, U32, U64, I8, I16, I32, I64, Float, Bool, Pointer:
+		if normalized == Pointer {
+			return PointerOf(Simple(Unknown))
+		}
+		return Simple(normalized)
+	default:
+		c.addError(fmt.Errorf("%s uses unsupported native type %q", label, name))
+		return Simple(Unknown)
+	}
+}
+
 func (c *Checker) typeFromName(name string) *Type {
 	if alias, ok := c.aliases[name]; ok {
 		return alias
@@ -3315,7 +3647,7 @@ func (c *Checker) typeFromName(name string) *Type {
 		return value
 	}
 	switch Kind(name) {
-	case Int, U8, U16, U32, U64, I8, I16, I32, I64, Float, Bool, String, Pointer, Null, Task, Channel, Mutex, RWMutex, WaitGroup, Semaphore, AtomicInt, NetListener, NetStream, UDPSocket, HttpApp, HttpServer, HttpRequest, HttpResponse, HttpClientResponse, HttpStream, HttpFile, WebSocket, SQLiteDatabase, SQLiteStatement, SQLiteTransaction, SQLRows, SQLParameters, PostgresDatabase, PostgresStatement, PostgresTransaction, RedisClient, Config, Logger, MetricsRegistry, TraceSpan, SessionStore, RateLimiter, DesktopApp, DesktopWindow, DesktopTray, DesktopProcess, UINode, UIState, UITheme, UIContext:
+	case Int, U8, U16, U32, U64, I8, I16, I32, I64, Float, Bool, String, Pointer, MemoryArena, MappedMemory, SharedMemory, DynamicLibrary, Null, Task, Channel, Mutex, RWMutex, WaitGroup, Semaphore, AtomicInt, NetListener, NetStream, UDPSocket, HttpApp, HttpServer, HttpRequest, HttpResponse, HttpClientResponse, HttpStream, HttpFile, WebSocket, SQLiteDatabase, SQLiteStatement, SQLiteTransaction, SQLRows, SQLParameters, PostgresDatabase, PostgresStatement, PostgresTransaction, RedisClient, Config, Logger, MetricsRegistry, TraceSpan, SessionStore, RateLimiter, DesktopApp, DesktopWindow, DesktopTray, DesktopProcess, UINode, UIState, UITheme, UIContext:
 		return Simple(Kind(name))
 	default:
 		return Simple(Unknown)

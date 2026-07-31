@@ -26,6 +26,10 @@ const (
 	Struct              Kind = "struct"
 	Enum                Kind = "enum"
 	Pointer             Kind = "ptr"
+	MemoryArena         Kind = "memory_arena"
+	MappedMemory        Kind = "mapped_memory"
+	SharedMemory        Kind = "shared_memory"
+	DynamicLibrary      Kind = "dynamic_library"
 	Task                Kind = "task"
 	Channel             Kind = "channel"
 	Mutex               Kind = "mutex"
@@ -103,6 +107,10 @@ func SliceOf(elem *Type) *Type {
 	return &Type{Kind: Slice, Elem: elem}
 }
 
+func PointerOf(elem *Type) *Type {
+	return &Type{Kind: Pointer, Elem: elem}
+}
+
 func TaskOf(result *Type) *Type  { return &Type{Kind: Task, Elem: result} }
 func ChannelOf(elem *Type) *Type { return &Type{Kind: Channel, Elem: elem} }
 
@@ -132,7 +140,7 @@ func Same(a, b *Type) bool {
 	}
 
 	switch a.Kind {
-	case Array, ByteArray, TypedArray, Slice, Task, Channel:
+	case Array, ByteArray, TypedArray, Slice, Pointer, Task, Channel:
 		if a.Elem == nil || b.Elem == nil {
 			return a.Elem == b.Elem
 		}
@@ -187,7 +195,7 @@ func Compatible(expected, actual *Type) bool {
 		return false
 	}
 	switch expected.Kind {
-	case Array, ByteArray, TypedArray, Slice, Task, Channel:
+	case Array, ByteArray, TypedArray, Slice, Pointer, Task, Channel:
 		if expected.Elem == nil || actual.Elem == nil {
 			return true
 		}
@@ -266,7 +274,7 @@ func (t *Type) String() string {
 		return string(Unknown)
 	}
 	switch t.Kind {
-	case Array, ByteArray, TypedArray, Slice, Task, Channel:
+	case Array, ByteArray, TypedArray, Slice, Pointer, Task, Channel:
 		if t.Elem == nil {
 			return string(t.Kind)
 		}

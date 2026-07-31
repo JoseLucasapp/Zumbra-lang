@@ -32,6 +32,7 @@ type BuildOptions struct {
 	ApplicationIdentifier string
 	WindowsIcon           string
 	WindowsConsole        bool
+	Sanitizers            []string
 }
 
 type BuildResult struct {
@@ -142,6 +143,31 @@ func CompilerInstallHint(targetOS, targetArch string) string {
 	}
 }
 
+func normalizeSanitizers(values []string) ([]string, error) {
+	allowed := map[string]bool{"address": true, "undefined": true, "thread": true, "leak": true}
+	seen := map[string]bool{}
+	result := []string{}
+	for _, value := range values {
+		for _, item := range strings.Split(value, ",") {
+			name := strings.ToLower(strings.TrimSpace(item))
+			if name == "" {
+				continue
+			}
+			if !allowed[name] {
+				return nil, fmt.Errorf("unsupported sanitizer %q; use address, undefined, thread or leak", name)
+			}
+			if !seen[name] {
+				seen[name] = true
+				result = append(result, name)
+			}
+		}
+	}
+	if seen["thread"] && (seen["address"] || seen["leak"]) {
+		return nil, fmt.Errorf("thread sanitizer cannot be combined with address or leak sanitizer")
+	}
+	return result, nil
+}
+
 func Build(module *mir.Module, options BuildOptions) (*BuildResult, []Diagnostic, error) {
 	targetOS := strings.ToLower(strings.TrimSpace(options.TargetOS))
 	targetArch := strings.ToLower(strings.TrimSpace(options.TargetArch))
@@ -239,6 +265,13 @@ func Build(module *mir.Module, options BuildOptions) (*BuildResult, []Diagnostic
 	} else {
 		args = append(args, "-O0", "-g3")
 	}
+	if len(options.Sanitizers) > 0 {
+		sanitizers, sanitizeErr := normalizeSanitizers(options.Sanitizers)
+		if sanitizeErr != nil {
+			return nil, nil, sanitizeErr
+		}
+		args = append(args, "-fsanitize="+strings.Join(sanitizers, ","), "-fno-omit-frame-pointer")
+	}
 	links := append([]string{}, NativeLinks(module)...)
 	links = append(links, options.Links...)
 	links = uniqueStrings(links)
@@ -284,7 +317,7 @@ func Build(module *mir.Module, options BuildOptions) (*BuildResult, []Diagnostic
 	for _, library := range options.Libraries {
 		args = append(args, "-l"+library)
 	}
-	if UsesDesktop(module) && targetOS == "linux" {
+	if (UsesDesktop(module) || UsesSystems(module)) && targetOS == "linux" {
 		args = append(args, "-ldl")
 	}
 	if UsesDesktop(module) && targetOS == "windows" {
