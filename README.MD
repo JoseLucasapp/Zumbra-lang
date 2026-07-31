@@ -21,6 +21,10 @@ Designed for clarity, simplicity, and extensibility, Zumbra is the perfect playg
 
 The rebuild now follows a clear direction: systems, emulation, and game development without abandoning Zumbra's simplicity. See the Portuguese design and feature documentation in [`docs/pt-BR/`](./docs/pt-BR/).
 
+**Zumbra 0.12.12** restores native C11 scrollbar visibility when `scrollbarAvoidContent` reserves a gutter. The renderer now paints the thumb with the inherited viewport clip instead of clipping it to `content_bounds`, so reserved right-side space is always visibly occupied by the scrollbar. See [`docs/releases/0.12.12.md`](./docs/releases/0.12.12.md).
+
+**Zumbra 0.12.11** fixes a native C11 shutdown double-free caused by releasing temporary fitted text with `free()` after allocating it through the runtime-owned `z_alloc()` registry. Temporary paint strings now use a matching system allocation and are covered by an AddressSanitizer regression test. See [`docs/releases/0.12.11.md`](./docs/releases/0.12.11.md).
+
 **Zumbra 0.12.10** fixes nested clipping for buttons and editable controls in scrolling layouts. Partially visible button labels remain inside the scroll viewport, and input/select text cannot overlap adjacent controls. See [`docs/releases/0.12.10.md`](./docs/releases/0.12.10.md).
 
 **Zumbra 0.12.9** hardens native C11 UI rendering performance with persistent text/image texture caches, cached modal backdrops and redundant mouse-motion repaint suppression. Packaged desktop applications no longer rebuild every text texture, reload every cover image or recompute blur on each interaction. See [`docs/releases/0.12.9.md`](./docs/releases/0.12.9.md).
@@ -357,3 +361,12 @@ The native C11 UI renderer now caches text textures, image textures and blurred 
 ## Zumbra 0.12.8 — SDL3 poll sentinel
 
 The native C11 runtime now treats `SDL_EVENT_POLL_SENTINEL` as the end of a non-blocking poll cycle instead of dispatching it as an ordinary event. Event draining is bounded and the main loop returns to `SDL_WaitEvent` after queued events are processed. See [`docs/releases/0.12.8.md`](./docs/releases/0.12.8.md).
+
+## Zumbra 0.12.11 — native shutdown ownership fix
+
+Temporary strings used for ellipsis and control text fitting now use `malloc/free` consistently instead of mixing `z_alloc()` with manual `free()`. This removes the `double free or corruption (fasttop)` abort that occurred when native desktop applications exited after rendering controls. See [`docs/releases/0.12.11.md`](./docs/releases/0.12.11.md).
+
+
+## Zumbra 0.12.12 — visible reserved scrollbar gutters
+
+The native C11 renderer now restores the inherited viewport clip before drawing vertical scrollbars. Scrollbars placed in a reserved `scrollbarAvoidContent` gutter are visible instead of being clipped by `content_bounds`, eliminating the unexplained right-side gap in packaged desktop applications. See [`docs/releases/0.12.12.md`](./docs/releases/0.12.12.md).

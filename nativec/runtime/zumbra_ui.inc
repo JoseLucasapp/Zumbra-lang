@@ -390,26 +390,37 @@ static void z_ui_text(SDL_Renderer*r,double x,double y,const char*text,const cha
     if(z_desktop_sdl.RenderDebugText){z_desktop_sdl.SetRenderDrawColor(r,red,green,blue,alpha);z_desktop_sdl.RenderDebugText(r,(float)x,(float)y,text);}
 }
 static size_t z_ui_utf8_byte_offset(const char*text,size_t index);
+/* Temporary fitted strings are released immediately after painting. They must
+ * use the system allocator rather than z_alloc(), whose allocations are owned
+ * by the runtime and released together during z_runtime_shutdown(). */
+static char*z_ui_temporary_string(const char*text){
+    if(text==NULL)text="";
+    size_t length=strlen(text);
+    char*copy=(char*)malloc(length+1);
+    if(copy==NULL)return NULL;
+    memcpy(copy,text,length+1);
+    return copy;
+}
 static char*z_ui_fit_text_native(const char*text,double max_width,ZValue props,ZUIThemeNative*theme){
     if(!text)text="";
     double width=0,height=0;z_ui_measure_text_native(text,props,theme,z_ui_prop_number(props,"wrapWidth",0),&width,&height);
-    if(max_width<=0)return z_strdup("");
-    if(width<=max_width||strcasecmp(z_ui_prop_string(props,"textOverflow","ellipsis"),"visible")==0)return z_strdup(text);
+    if(max_width<=0)return z_ui_temporary_string("");
+    if(width<=max_width||strcasecmp(z_ui_prop_string(props,"textOverflow","ellipsis"),"visible")==0)return z_ui_temporary_string(text);
     const char*ellipsis="…";double ellipsis_width=0;z_ui_measure_text_native(ellipsis,props,theme,0,&ellipsis_width,&height);
-    if(ellipsis_width>max_width)return z_strdup("");
+    if(ellipsis_width>max_width)return z_ui_temporary_string("");
     size_t count=z_ui_utf8_count(text),ellipsis_bytes=strlen(ellipsis);
     while(count>0){
         size_t bytes=z_ui_utf8_byte_offset(text,count);char*candidate=(char*)malloc(bytes+ellipsis_bytes+1);
-        if(!candidate)return z_strdup(ellipsis);
+        if(!candidate)return z_ui_temporary_string(ellipsis);
         memcpy(candidate,text,bytes);memcpy(candidate+bytes,ellipsis,ellipsis_bytes+1);
         z_ui_measure_text_native(candidate,props,theme,0,&width,&height);
         if(width<=max_width)return candidate;
         free(candidate);count--;
     }
-    return z_strdup(ellipsis);
+    return z_ui_temporary_string(ellipsis);
 }
 static void z_ui_text_aligned(SDL_Renderer*r,ZUIRectNative bounds,double padding,const char*text,const char*color,ZValue props,ZUIThemeNative*theme,const char*default_align){
-    double available=fmax(0,bounds.width-padding*2);char*fitted=z_ui_fit_text_native(text,available,props,theme);double width=0,height=0;
+    double available=fmax(0,bounds.width-padding*2);char*fitted=z_ui_fit_text_native(text,available,props,theme);if(fitted==NULL)return;double width=0,height=0;
     z_ui_measure_text_native(fitted,props,theme,z_ui_prop_number(props,"wrapWidth",0),&width,&height);
     double y=bounds.y+fmax(0,(bounds.height-height)/2),x=bounds.x+padding;const char*align=z_ui_prop_string(props,"textAlign",default_align);
     if(strcmp(align,"center")==0)x=bounds.x+fmax(padding,(bounds.width-width)/2);else if(strcmp(align,"right")==0)x=bounds.x+fmax(padding,bounds.width-padding-width);
@@ -607,7 +618,11 @@ static void z_ui_render_node(SDL_Renderer*r,ZUINodeNative*n,ZUIContextNative*ctx
     if(ctx->focus_id&&strcmp(ctx->focus_id,n->id)==0){double inset=fmax(1,z_ui_prop_number(n->props,"focusInset",1));z_ui_stroke(r,(ZUIRectNative){b.x+inset,b.y+inset,fmax(0,b.width-inset*2),fmax(0,b.height-inset*2)},z_ui_theme_string(ctx->theme,"focus","#6e95ff"));}
     bool child_has_clip=has_clip;ZUIRectNative child_clip=clip;if(z_ui_clips_children(n)){if(has_clip){if(!z_ui_rect_intersection(clip,n->content_bounds,&child_clip))return;}else child_clip=n->content_bounds;child_has_clip=true;}
     for(size_t i=0;i<n->children.as.array->len;i++)z_ui_render_node(r,z_ui_expect_node(n->children.as.array->items[i]),ctx,child_has_clip,child_clip);
-    z_ui_set_clip(r,child_has_clip,child_clip);
+    /* A scrollbar with scrollbarAvoidContent=true lives in the reserved gutter
+     * beside content_bounds. Restore the inherited viewport before painting it;
+     * keeping the child-content clip here hides the thumb while still reserving
+     * its width, which leaves an unexplained empty strip on the right. */
+    z_ui_set_clip(r,has_clip,clip);
     if(z_ui_scrollable_y(n)&&n->content_height>n->content_bounds.height+0.5&&n->content_bounds.height>0){double bar=fmax(4,z_ui_prop_number(n->props,"scrollbarWidth",8)),gutter=fmax(0,z_ui_prop_number(n->props,"scrollbarGutter",4));double track_x=n->content_bounds.x+n->content_bounds.width+fmax(2,gutter);if(z_ui_prop_bool(n->props,"scrollbarOverlay",false)&&!z_ui_prop_bool(n->props,"scrollbarAvoidContent",false))track_x=n->content_bounds.x+n->content_bounds.width-bar-gutter;ZUIRectNative track={track_x,n->content_bounds.y,bar,n->content_bounds.height};z_ui_fill(r,track,z_ui_prop_string(n->props,"scrollbarTrack","transparent"));double thumb_h=fmax(24,track.height*n->content_bounds.height/n->content_height);if(thumb_h>track.height)thumb_h=track.height;double max_offset=n->content_height-n->content_bounds.height,thumb_y=track.y;if(max_offset>0)thumb_y+=(track.height-thumb_h)*n->scroll_offset_y/max_offset;z_ui_fill(r,(ZUIRectNative){track.x,thumb_y,track.width,thumb_h},z_ui_prop_string(n->props,"scrollbarThumb","#9aa7ba"));}
     z_ui_set_clip(r,has_clip,clip);
 }
