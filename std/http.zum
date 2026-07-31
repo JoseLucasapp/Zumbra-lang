@@ -1,0 +1,93 @@
+pub fct app() {
+    httpApp();
+}
+
+pub fct route(app, method, path, handler) {
+    httpRoute(app, method, path, handler);
+}
+
+pub fct get(app, path, handler) {
+    httpRoute(app, "GET", path, handler);
+}
+
+pub fct post(app, path, handler) {
+    httpRoute(app, "POST", path, handler);
+}
+
+pub fct put(app, path, handler) {
+    httpRoute(app, "PUT", path, handler);
+}
+
+pub fct patch(app, path, handler) {
+    httpRoute(app, "PATCH", path, handler);
+}
+
+pub fct delete(app, path, handler) {
+    httpRoute(app, "DELETE", path, handler);
+}
+
+pub fct use(app, handler) {
+    httpUse(app, handler);
+}
+
+pub fct static(app, prefix, directory) {
+    httpStatic(app, prefix, directory);
+}
+
+pub fct bodyLimit(app, bytes) {
+    httpLimitBody(app, bytes);
+}
+
+pub fct compression(app, enabled) {
+    httpCompression(app, enabled);
+}
+
+pub fct cors(app, origins, methods, headers, credentials, maxAgeSeconds) {
+    httpCors(app, origins, methods, headers, credentials, maxAgeSeconds);
+}
+
+pub fct listen(app, host, port) {
+    httpServe(app, host, port);
+}
+
+pub fct listenTls(app, host, port, certificate, key) {
+    httpServeTLS(app, host, port, certificate, key);
+}
+
+pub fct text(status, body) { httpText(status, body); }
+pub fct json(status, body) { httpJson(status, body); }
+pub fct html(status, body) { httpHtml(status, body); }
+pub fct redirect(status, location) { httpRedirect(status, location); }
+pub fct file(status, path) { httpFile(status, path); }
+pub fct header(response, name, value) { httpHeader(response, name, value); }
+pub fct cookie(response, name, value, options) { httpCookie(response, name, value, options); }
+pub fct stream(status, contentType, messages) { httpStream(status, contentType, messages); }
+pub fct sse(status, messages) { httpSSE(status, messages); }
+pub fct event(data, eventName, id, retryMs) { sseEvent(data, eventName, id, retryMs); }
+pub fct request(method, url, headers, body, timeoutMs) { httpRequest(method, url, headers, body, timeoutMs); }
+pub fct getUrl(url, timeoutMs) { httpRequest("GET", url, {}, "", timeoutMs); }
+pub fct postJson(url, headers, body, timeoutMs) { httpRequest("POST", url, headers, body, timeoutMs); }
+pub fct status(response) { httpStatus(response); }
+pub fct body(response) { httpBody(response); }
+pub fct bytes(response) { httpBodyBytes(response); }
+pub fct bodyJson(response) { httpBodyJSON(response); }
+pub fct headers(response) { httpHeaders(response); }
+pub fct stringify(value) { jsonStringify(value); }
+pub fct parse(text) { jsonParse(text); }
+pub fct signJwt(claims, secret, expiresSeconds) { jwtSignHS256(claims, secret, expiresSeconds); }
+pub fct verifyJwt(token, secret) { jwtVerifyHS256(token, secret); }
+pub fct shutdown(server, timeoutMs) { httpShutdown(server, timeoutMs); }
+pub fct serverPort(server) { httpServerPort(server); }
+pub fct serverAddress(server) { httpServerAddress(server); }
+pub fct serverRunning(server) { httpServerRunning(server); }
+pub fct upgradeWebSocket(request) { webSocketUpgrade(request); }
+pub fct connectWebSocket(url, headers, timeoutMs) { webSocketConnect(url, headers, timeoutMs); }
+pub fct readWebSocket(socket) { webSocketRead(socket); }
+pub fct readWebSocketTimeout(socket, timeoutMs) { webSocketReadTimeout(socket, timeoutMs); }
+pub fct writeWebSocketText(socket, text) { webSocketWriteText(socket, text); }
+pub fct writeWebSocketBytes(socket, data) { webSocketWriteBinary(socket, data); }
+pub fct pingWebSocket(socket, data) { webSocketPing(socket, data); }
+pub fct closeWebSocket(socket, code, reason) { webSocketClose(socket, code, reason); }
+pub fct webSocketClosed(socket) { webSocketClosed(socket); }
+pub fct session(claims, secret, expiresSeconds) { jwtSignHS256(claims, secret, expiresSeconds); }
+pub fct verifySession(token, secret) { jwtVerifyHS256(token, secret); }

@@ -1,0 +1,15 @@
+var memory << bytes(8);
+memory[2] << 0xA9u8;
+
+var page << slice(memory, 2, 6);
+page[1] << 0x42u8;
+
+var registers << arrayOf("u16", 4);
+fill(registers, 0x10u16);
+registers[1] << 0xABCDu16;
+
+show(memory[2]);
+show(memory[3]);
+show(registers[0]);
+show(registers[1]);
+show(sizeOf(page));

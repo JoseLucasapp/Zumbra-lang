@@ -1,0 +1,23 @@
+import "../../std/http.zum" as http;
+
+var api << http.app();
+
+api.get("/socket", fct(request, response) {
+    response;
+    var socket << http.upgradeWebSocket(request);
+    var message << http.readWebSocket(socket);
+    http.writeWebSocketText(socket, "echo:" + message[1]);
+    http.closeWebSocket(socket, 1000, "complete");
+    return;
+});
+
+var server << api.listen("127.0.0.1", 0);
+var url << "ws://127.0.0.1:" + toString(http.serverPort(server)) + "/socket";
+var socket << http.connectWebSocket(url, {}, 2000);
+http.writeWebSocketText(socket, "ping");
+var response << http.readWebSocket(socket);
+show(response[0]);
+show(response[1]);
+var closed << http.readWebSocket(socket);
+show(closed[0]);
+show(http.shutdown(server, 2000));

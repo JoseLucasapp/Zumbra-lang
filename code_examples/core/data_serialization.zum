@@ -1,0 +1,16 @@
+import "../../std/data.zum" as data;
+
+var payload << {"name": "Lucas", "score": 42, "raw": bytes(2)};
+payload["raw"][0] << 0xABu8;
+payload["raw"][1] << 0xCDu8;
+
+var encoded << data.encodeBinary(payload);
+show(sizeOf(encoded) > 4);
+var decoded << data.decodeBinary(encoded);
+show(decoded["name"]);
+show(readU16BE(decoded["raw"], 0));
+
+data.writeJson("build/z12-data.json", {"ok": true, "count": 2}, true);
+show(data.readJson("build/z12-data.json")["ok"]);
+data.writeBinary("build/z12-data.zb", payload);
+show(data.readBinary("build/z12-data.zb")["score"]);

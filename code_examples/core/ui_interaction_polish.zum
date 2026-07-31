@@ -1,0 +1,50 @@
+import "../../std/desktop.zum" as desktop;
+import "../../std/ui.zum" as ui;
+
+var application << desktop.app({"backend": "headless", "quitOnLastWindow": false});
+var window << application.window({"title": "Interaction polish", "width": 900, "height": 500});
+var sidebarVisible << ui.boolState(true);
+var sidebarSize << ui.intState(280);
+var layoutGap << ui.intState(16);
+
+var sidebar << ui.navigation({
+    "id": "polish-sidebar",
+    "placement": "left",
+    "expandedSize": 280,
+    "border": true
+}, [ui.text("Menu")]);
+ui.bind(sidebar, "visible", sidebarVisible);
+ui.bind(sidebar, "expandedSize", sidebarSize);
+
+var input << ui.input({"id": "polish-input", "value": "Zumbra", "cursor": "text", "height": 40});
+var button << ui.buttonWith({"id": "polish-button", "text": "", "icon": "menu", "cursor": "pointer", "width": 40, "height": 36});
+var content << ui.columnWith({"id": "polish-content", "grow": 1, "gap": 8}, [input, button]);
+var layout << ui.rowWith({"id": "polish-layout", "grow": 1, "gap": 16}, [sidebar, content]);
+ui.bind(layout, "gap", layoutGap);
+var context << ui.mount(application, window, layout, {});
+
+fct itemById(items, id) {
+    for item in items {
+        if (item["id"] == id) { return item; }
+    }
+    {};
+}
+
+var items << ui.snapshot(context)["items"];
+var before << itemById(items, "polish-content");
+show(before["x"]);
+show(before["width"]);
+
+show(context.focus(input));
+
+sidebarSize.set(0);
+layoutGap.set(0);
+sidebarVisible.set(false);
+items << ui.snapshot(context)["items"];
+var after << itemById(items, "polish-content");
+show(after["x"]);
+show(after["width"]);
+show(ui.get(sidebar, "visible"));
+
+context.close();
+application.close();

@@ -1,0 +1,7 @@
+import "../../std/system.zum" as system;
+
+var process << system.spawnProcess("/bin/sh", {
+    "args": ["-c", "exit 7"]
+});
+show(system.processId(process) > 0);
+show(system.waitProcess(process));

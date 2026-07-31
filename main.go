@@ -3,19 +3,23 @@ package main
 import (
 	"fmt"
 	"os"
-	"os/exec"
 	"os/user"
 	"path/filepath"
+	"sort"
+	"strings"
 
+	"zumbra/cbinding"
 	"zumbra/compiler"
-	"zumbra/lexer"
+	"zumbra/modules"
+	"zumbra/nativec"
 	"zumbra/object"
 	"zumbra/object/builtins"
-	"zumbra/parser"
+	"zumbra/pipeline"
 	"zumbra/repl"
-	"zumbra/transpiler"
 	"zumbra/vm"
 )
+
+const version = "0.13.0"
 
 func main() {
 	currentUser, err := user.Current()
@@ -23,25 +27,95 @@ func main() {
 		panic(err)
 	}
 
-	if len(os.Args) > 1 && os.Args[1] == "build" {
-		if len(os.Args) < 3 {
-			fmt.Println("usage: zumbra build <file.zum>")
-			os.Exit(1)
+	args := os.Args[1:]
+
+	if len(args) > 0 {
+		switch args[0] {
+		case "build":
+			filename, buildOptions, err := parseBuildArguments(args[1:])
+			if err != nil {
+				fmt.Printf("Build arguments error: %s\n", err)
+				printUsage()
+				os.Exit(1)
+			}
+			if err := buildZumbra(filename, buildOptions); err != nil {
+				fmt.Printf("Native build error: %s\n", err)
+				os.Exit(1)
+			}
+			return
+
+		case "app":
+			if err := handleAppCommand(args[1:]); err != nil {
+				fmt.Printf("Application error: %s\n", err)
+				if isAppUsageError(err) {
+					printUsage()
+				}
+				os.Exit(1)
+			}
+			return
+
+		case "run":
+			if len(args) < 2 {
+				printUsage()
+				os.Exit(1)
+			}
+			runFile(args[1])
+			return
+
+		case "ir":
+			if len(args) < 2 {
+				printUsage()
+				os.Exit(1)
+			}
+			mode := "optimized"
+			if len(args) > 2 {
+				mode = args[2]
+			}
+			dumpIR(args[1], mode)
+			return
+
+		case "check":
+			if len(args) < 2 {
+				printUsage()
+				os.Exit(1)
+			}
+			checkFile(args[1])
+			return
+
+		case "modules":
+			if len(args) < 2 {
+				printUsage()
+				os.Exit(1)
+			}
+			dumpModules(args[1])
+			return
+
+		case "bind-c":
+			header, output, options, err := parseBindCArguments(args[1:])
+			if err != nil {
+				fmt.Printf("Binding arguments error: %s\n", err)
+				printUsage()
+				os.Exit(1)
+			}
+			if err := generateCBinding(header, output, options); err != nil {
+				fmt.Printf("C binding error: %s\n", err)
+				os.Exit(1)
+			}
+			return
+
+		case "version", "--version", "-v":
+			fmt.Println(version)
+			return
+
+		case "help", "--help", "-h":
+			printUsage()
+			return
+
+		default:
+			runFile(args[0])
+			return
 		}
-
-		if err := buildZumbra(os.Args[2]); err != nil {
-			fmt.Printf("Error when trying to build the file: %s\n", err)
-			os.Exit(1)
-		}
-		return
 	}
-
-	if len(os.Args) > 1 {
-		runFile(os.Args[1])
-		return
-	}
-
-	version := "0.1.0"
 
 	fmt.Printf("\nHello %s!\n", currentUser.Username)
 	fmt.Printf("This is the ZUMBRA programming language, version: %s!\n", version)
@@ -49,119 +123,341 @@ func main() {
 	repl.Start(os.Stdin, os.Stdout)
 }
 
+func printUsage() {
+	fmt.Println("Usage:")
+	fmt.Println("  zumbra <file.zum>")
+	fmt.Println("  zumbra run <file.zum>")
+	fmt.Println("  zumbra build [--release] [--emit-c] [--sanitize <name>] [--compiler <name>] [--link <file>] [--include <dir>] [--library-dir <dir>] [-l <name>] [-o <path>] <file.zum>")
+	fmt.Println("  zumbra app inspect [--manifest <zumbra.toml>]")
+	fmt.Println("  zumbra app run [--manifest <zumbra.toml>]")
+	fmt.Println("  zumbra app build [--manifest <zumbra.toml>] [--target <os>] [--arch <arch>] [--release|--debug] [--compiler <name>] [-o <path>]")
+	fmt.Println("  zumbra app package [--manifest <zumbra.toml>] [--target <linux|windows|macos>] [--arch <amd64|arm64>] [--format <format>] [--binary <path>] [--output-dir <dir>] [--appimagetool <path>] [--appimage-runtime <path>] [--makensis <path>] [--symbols] [--sign <identity>]")
+	fmt.Println("  zumbra app doctor [--manifest <zumbra.toml>] [--target <os>] [--arch <arch>] [--format <format>] [--binary <path>] [--appimagetool <path>] [--appimage-runtime <path>] [--makensis <path>] [--json]")
+	fmt.Println("  zumbra check <file.zum>")
+	fmt.Println("  zumbra modules <file.zum>")
+	fmt.Println("  zumbra ir <file.zum> [hir|mir|optimized]")
+	fmt.Println("  zumbra bind-c [--link <path>] [--pub] [-o <file.zum>] <header.h>")
+	fmt.Println("  zumbra version")
+}
+
 func runFile(filename string) {
-	data, err := os.ReadFile(filename)
-	if err != nil {
-		fmt.Printf("Error when trying to read the file: %s\n", err)
-		os.Exit(1)
+	result, diagnostics := pipeline.BuildFile(filename, pipeline.Options{Optimize: true})
+	if len(diagnostics) > 0 {
+		printPipelineDiagnostics(filename, diagnostics)
+		return
+	}
+	for _, warning := range result.Warnings {
+		fmt.Printf("%s warning in %s: %s\n", warning.Stage, filename, warning.Message)
 	}
 
-	source := string(data)
 	constants := []object.Object{}
 	globals := make([]object.Object, vm.GlobalSize)
 	symbolTable := compiler.NewSymbolTable()
-
 	for i, v := range builtins.Builtins {
 		symbolTable.DefineBuiltin(i, v.Name)
 	}
-
-	builtins.SetRouteInvoker(func(handler object.Object, args ...object.Object) (object.Object, error) {
-		return vm.InvokeFunction(handler, args, constants, globals)
-	})
-
-	l := lexer.New(source)
-	p := parser.New(l)
-	program := p.ParseProgram()
-
-	if len(p.Errors()) != 0 {
-		fmt.Println("Parsing errors:")
-		for _, msg := range p.Errors() {
-			fmt.Println("\t" + msg)
-		}
-		return
-	}
-
 	absPath, err := filepath.Abs(filename)
 	if err != nil {
 		fmt.Printf("Path error: %s\n", err)
 		return
 	}
-
-	dir := filepath.Dir(absPath)
-
-	comp := compiler.NewWithStateAndDir(symbolTable, constants, dir)
-	if err := comp.Compile(program); err != nil {
+	comp := compiler.NewWithStateAndDir(symbolTable, constants, filepath.Dir(absPath))
+	if err := comp.CompilePipeline(result); err != nil {
 		fmt.Printf("Compilation error: %s\n", err)
 		return
 	}
-
-	code := comp.Bytecode()
-	constants = code.Constants
-
-	machine := vm.NewWithGlobalsStore(code, globals)
-	if err := machine.Run(); err != nil {
-		fmt.Printf("Error on VM execution: %s\n", err)
-		return
-	}
-}
-
-func buildZumbra(filename string) error {
-	data, err := os.ReadFile(filename)
-	if err != nil {
-		return fmt.Errorf("error when trying to read the file: %w", err)
-	}
-
-	source := string(data)
-	goCode, err := transpiler.ZumbraTranspiler(source)
-	if err != nil {
-		return fmt.Errorf("error when transpiling: %w", err)
-	}
-
-	if _, err := os.Stat("build"); err == nil {
-		if err := os.RemoveAll("build"); err != nil {
-			return fmt.Errorf("error when trying to remove build: %w", err)
+	if diags := comp.Warnings(); len(diags) > 0 {
+		fmt.Printf("Compiler diagnostics in %s:\n", filename)
+		for _, d := range diags {
+			fmt.Println("\t" + d.Message)
 		}
 	}
 
-	if err := os.MkdirAll("build", 0755); err != nil {
-		return fmt.Errorf("error when trying to create build dir: %w", err)
+	code := comp.Bytecode()
+	callbackInvoker := func(handler object.Object, args ...object.Object) (object.Object, error) {
+		return vm.InvokeFunction(handler, args, code.Constants, globals)
 	}
-
-	if err := os.WriteFile("build/main.go", []byte(goCode), 0644); err != nil {
-		return fmt.Errorf("error when trying to write main.go: %w", err)
+	builtins.SetRouteInvoker(callbackInvoker)
+	builtins.SetDesktopInvoker(callbackInvoker)
+	machine := vm.NewWithGlobalsStore(code, globals)
+	if err := machine.Run(); err != nil {
+		fmt.Printf("Error on VM execution: %s\n", err)
 	}
+}
 
-	goModContent := `
-module zumbra-generated
-
-go 1.21
-
-require (
-	github.com/go-sql-driver/mysql v1.9.2
-	github.com/golang-jwt/jwt/v5 v5.2.2
-	github.com/lib/pq v1.10.9
-	github.com/redis/go-redis/v9 v9.6.1
-)
-`
-	if err := os.WriteFile("build/go.mod", []byte(goModContent), 0644); err != nil {
-		return fmt.Errorf("error when trying to write go.mod: %w", err)
+func checkFile(filename string) {
+	result, diagnostics := pipeline.BuildFile(filename, pipeline.Options{Optimize: true})
+	if len(diagnostics) > 0 {
+		printPipelineDiagnostics(filename, diagnostics)
+		return
 	}
-
-	cmd := exec.Command("go", "mod", "tidy")
-	cmd.Dir = "build"
-	cmd.Stdout = os.Stdout
-	cmd.Stderr = os.Stderr
-	if err := cmd.Run(); err != nil {
-		return fmt.Errorf("error running go mod tidy: %w", err)
+	for _, warning := range result.Warnings {
+		fmt.Printf("%s warning: %s\n", warning.Stage, warning.Message)
 	}
+	fmt.Printf("OK: %s\n", filename)
+}
 
-	cmd = exec.Command("go", "build", "-o", "zumbra-app", "main.go")
-	cmd.Dir = "build"
-	cmd.Stdout = os.Stdout
-	cmd.Stderr = os.Stderr
-	if err := cmd.Run(); err != nil {
-		return fmt.Errorf("error running go build: %w", err)
+func dumpIR(filename, mode string) {
+	optimize := mode == "optimized"
+	result, diagnostics := pipeline.BuildFile(filename, pipeline.Options{Optimize: optimize})
+	if len(diagnostics) > 0 {
+		printPipelineDiagnostics(filename, diagnostics)
+		return
 	}
+	switch mode {
+	case "hir":
+		fmt.Print(result.DumpHIR())
+	case "mir", "optimized":
+		fmt.Print(result.DumpMIR())
+	default:
+		fmt.Printf("Unknown IR mode %q. Use hir, mir or optimized.\n", mode)
+	}
+}
 
+func dumpModules(filename string) {
+	result, diagnostics := pipeline.BuildFile(filename, pipeline.Options{Optimize: false})
+	if len(diagnostics) > 0 {
+		printPipelineDiagnostics(filename, diagnostics)
+		return
+	}
+	if result == nil || result.Modules == nil {
+		fmt.Printf("No module graph for %s\n", filename)
+		return
+	}
+	base, _ := filepath.Abs(".")
+	fmt.Printf("module graph %s\n", displayPath(result.Modules.Entry, base))
+	for _, unit := range result.Modules.Units {
+		kind := "module"
+		if unit.Entry {
+			kind = "entry"
+		}
+		fmt.Printf("  %s %s\n", kind, displayPath(unit.Path, base))
+		imports := append([]modules.Import(nil), unit.Imports...)
+		sort.Slice(imports, func(i, j int) bool { return imports[i].Path < imports[j].Path })
+		for _, imported := range imports {
+			label := imported.Alias
+			if label == "" {
+				label = "<legacy>"
+			}
+			fmt.Printf("    import %s as %s\n", displayPath(imported.Path, base), label)
+		}
+		exports := make([]string, 0, len(unit.Exports))
+		for name := range unit.Exports {
+			exports = append(exports, name)
+		}
+		sort.Strings(exports)
+		if len(exports) > 0 {
+			fmt.Printf("    exports %s\n", strings.Join(exports, ", "))
+		}
+	}
+	for _, link := range result.Modules.Links {
+		fmt.Printf("  link %s\n", displayPath(link, base))
+	}
+}
+
+func displayPath(path, base string) string {
+	if relative, err := filepath.Rel(base, path); err == nil && !strings.HasPrefix(relative, "..") {
+		return filepath.ToSlash(relative)
+	}
+	return filepath.ToSlash(path)
+}
+
+type bindCArguments struct {
+	Link   string
+	Public bool
+}
+
+func parseBindCArguments(arguments []string) (string, string, bindCArguments, error) {
+	options := bindCArguments{}
+	header := ""
+	output := ""
+	for index := 0; index < len(arguments); index++ {
+		switch argument := arguments[index]; argument {
+		case "--link":
+			index++
+			if index >= len(arguments) {
+				return "", "", options, fmt.Errorf("--link requires a source, object or library path")
+			}
+			options.Link = arguments[index]
+		case "--pub":
+			options.Public = true
+		case "-o", "--output":
+			index++
+			if index >= len(arguments) {
+				return "", "", options, fmt.Errorf("%s requires an output path", argument)
+			}
+			output = arguments[index]
+		default:
+			if strings.HasPrefix(argument, "-") {
+				return "", "", options, fmt.Errorf("unknown bind-c option %s", argument)
+			}
+			if header != "" {
+				return "", "", options, fmt.Errorf("multiple C headers are not supported in one invocation")
+			}
+			header = argument
+		}
+	}
+	if header == "" {
+		return "", "", options, fmt.Errorf("missing C header")
+	}
+	return header, output, options, nil
+}
+
+func generateCBinding(header, output string, cli bindCArguments) error {
+	result, err := cbinding.GenerateFile(header, cbinding.Options{Link: cli.Link, Public: cli.Public})
+	if err != nil {
+		return err
+	}
+	for _, diagnostic := range result.Diagnostics {
+		fmt.Printf("binding warning: %s\n", diagnostic.Error())
+	}
+	if len(result.Functions) == 0 {
+		return fmt.Errorf("no supported C functions found in %s", header)
+	}
+	if output == "" {
+		fmt.Print(result.Source)
+		return nil
+	}
+	if err := os.MkdirAll(filepath.Dir(output), 0o755); err != nil && filepath.Dir(output) != "." {
+		return fmt.Errorf("create binding output directory: %w", err)
+	}
+	if err := os.WriteFile(output, []byte(result.Source), 0o644); err != nil {
+		return fmt.Errorf("write binding: %w", err)
+	}
+	fmt.Printf("Generated Zumbra C binding: %s\n", output)
+	return nil
+}
+
+func printPipelineDiagnostics(filename string, diagnostics []pipeline.Diagnostic) {
+	fmt.Printf("Pipeline errors in %s:\n", filename)
+	for _, diagnostic := range diagnostics {
+		fmt.Println("\t" + diagnostic.Error())
+	}
+}
+
+type nativeBuildArguments struct {
+	Release     bool
+	EmitCOnly   bool
+	Compiler    string
+	Output      string
+	Links       []string
+	IncludeDirs []string
+	LibraryDirs []string
+	Libraries   []string
+	Sanitizers  []string
+}
+
+func parseBuildArguments(arguments []string) (string, nativeBuildArguments, error) {
+	options := nativeBuildArguments{Compiler: "auto"}
+	filename := ""
+	for index := 0; index < len(arguments); index++ {
+		argument := arguments[index]
+		switch argument {
+		case "--release":
+			options.Release = true
+		case "--emit-c":
+			options.EmitCOnly = true
+		case "--sanitize":
+			index++
+			if index >= len(arguments) {
+				return "", options, fmt.Errorf("--sanitize requires address, undefined, thread or leak")
+			}
+			options.Sanitizers = append(options.Sanitizers, arguments[index])
+		case "--compiler":
+			index++
+			if index >= len(arguments) {
+				return "", options, fmt.Errorf("--compiler requires clang, gcc, cc or auto")
+			}
+			options.Compiler = arguments[index]
+		case "--link":
+			index++
+			if index >= len(arguments) {
+				return "", options, fmt.Errorf("--link requires a source, object or library path")
+			}
+			options.Links = append(options.Links, arguments[index])
+		case "--include":
+			index++
+			if index >= len(arguments) {
+				return "", options, fmt.Errorf("--include requires a directory")
+			}
+			options.IncludeDirs = append(options.IncludeDirs, arguments[index])
+		case "--library-dir":
+			index++
+			if index >= len(arguments) {
+				return "", options, fmt.Errorf("--library-dir requires a directory")
+			}
+			options.LibraryDirs = append(options.LibraryDirs, arguments[index])
+		case "-l", "--library":
+			index++
+			if index >= len(arguments) {
+				return "", options, fmt.Errorf("%s requires a library name", argument)
+			}
+			options.Libraries = append(options.Libraries, arguments[index])
+		case "-o", "--output":
+			index++
+			if index >= len(arguments) {
+				return "", options, fmt.Errorf("%s requires an output path", argument)
+			}
+			options.Output = arguments[index]
+		default:
+			if strings.HasPrefix(argument, "-") {
+				return "", options, fmt.Errorf("unknown build option %s", argument)
+			}
+			if filename != "" {
+				return "", options, fmt.Errorf("multiple input files are not supported yet")
+			}
+			filename = argument
+		}
+	}
+	if filename == "" {
+		return "", options, fmt.Errorf("missing .zum input file")
+	}
+	return filename, options, nil
+}
+
+func buildZumbra(filename string, cli nativeBuildArguments) error {
+	result, diagnostics := pipeline.BuildFile(filename, pipeline.Options{Optimize: true})
+	if len(diagnostics) > 0 {
+		return fmt.Errorf("pipeline failed:\n%s", pipeline.FormatDiagnostics(diagnostics))
+	}
+	baseName := strings.TrimSuffix(filepath.Base(filename), filepath.Ext(filename))
+	buildDir := filepath.Join("build", "native", baseName)
+	buildResult, nativeDiagnostics, err := nativec.Build(result.MIR, nativec.BuildOptions{
+		Release:     cli.Release,
+		EmitCOnly:   cli.EmitCOnly,
+		Compiler:    cli.Compiler,
+		Output:      cli.Output,
+		BuildDir:    buildDir,
+		Links:       cli.Links,
+		IncludeDirs: cli.IncludeDirs,
+		LibraryDirs: cli.LibraryDirs,
+		Libraries:   cli.Libraries,
+		Sanitizers:  cli.Sanitizers,
+	})
+	if err != nil {
+		return err
+	}
+	if len(nativeDiagnostics) != 0 {
+		var messages strings.Builder
+		for _, diagnostic := range nativeDiagnostics {
+			messages.WriteString("\t")
+			messages.WriteString(diagnostic.Error())
+			messages.WriteByte('\n')
+		}
+		return fmt.Errorf("native backend rejected the program:\n%s", messages.String())
+	}
+	if buildResult == nil {
+		return fmt.Errorf("native backend returned no build result")
+	}
+	if cli.EmitCOnly {
+		fmt.Printf("Generated native C sources in %s\n", buildResult.SourceDir)
+		return nil
+	}
+	mode := "debug"
+	if cli.Release {
+		mode = "release"
+	}
+	fmt.Printf("Built %s native executable: %s\n", mode, buildResult.Output)
+	fmt.Printf("C compiler: %s\n", buildResult.Compiler)
 	return nil
 }

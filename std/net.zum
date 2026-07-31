@@ -1,0 +1,111 @@
+pub fct listen(host, port) {
+    tcpListen(host, port);
+}
+
+pub fct listenTls(host, port, certificate, key) {
+    tlsListen(host, port, certificate, key);
+}
+
+pub fct connect(host, port) {
+    tcpConnect(host, port);
+}
+
+pub fct connectTimeout(host, port, timeoutMs) {
+    tcpConnectTimeout(host, port, timeoutMs);
+}
+
+pub fct connectTls(host, port, serverName, insecure) {
+    tlsConnect(host, port, serverName, insecure);
+}
+
+pub fct connectTlsTimeout(host, port, serverName, insecure, timeoutMs) {
+    tlsConnectTimeout(host, port, serverName, insecure, timeoutMs);
+}
+
+pub fct accept(listener) {
+    listenerAccept(listener);
+}
+
+pub fct acceptTimeout(listener, timeoutMs) {
+    listenerAcceptTimeout(listener, timeoutMs);
+}
+
+pub fct listenerHost(listener) {
+    listenerAddress(listener);
+}
+
+pub fct listenerPortNumber(listener) {
+    listenerPort(listener);
+}
+
+pub fct closeListener(listener) {
+    listenerClose(listener);
+}
+
+pub fct read(stream, maximumBytes) {
+    streamRead(stream, maximumBytes);
+}
+
+pub fct readExact(stream, amount) {
+    streamReadExact(stream, amount);
+}
+
+pub fct readTimeout(stream, maximumBytes, timeoutMs) {
+    streamReadTimeout(stream, maximumBytes, timeoutMs);
+}
+
+pub fct writeText(stream, text) {
+    streamWriteAll(stream, text);
+}
+
+pub fct writeBytes(stream, data) {
+    streamWriteAll(stream, data);
+}
+
+pub fct closeStream(stream) {
+    streamClose(stream);
+}
+
+pub fct shutdownRead(stream) {
+    streamShutdownRead(stream);
+}
+
+pub fct shutdownWrite(stream) {
+    streamShutdownWrite(stream);
+}
+
+pub fct lookup(host) {
+    dnsLookup(host);
+}
+
+pub fct lookupTimeout(host, timeoutMs) {
+    dnsLookupTimeout(host, timeoutMs);
+}
+
+pub fct bindUdp(host, port) {
+    udpBind(host, port);
+}
+
+pub fct udpPortNumber(socket) {
+    udpPort(socket);
+}
+
+pub fct sendUdpText(socket, host, port, text) {
+    udpSendTo(socket, host, port, text);
+}
+
+pub fct sendUdpBytes(socket, host, port, data) {
+    udpSendTo(socket, host, port, data);
+}
+
+pub fct receiveUdp(socket, maximumBytes) {
+    udpReceiveFrom(socket, maximumBytes);
+}
+
+pub fct receiveUdpTimeout(socket, maximumBytes, timeoutMs) {
+    udpReceiveFromTimeout(socket, maximumBytes, timeoutMs);
+}
+
+pub fct closeUdp(socket) {
+    udpClose(socket);
+}

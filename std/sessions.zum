@@ -1,0 +1,14 @@
+pub fct sqlite(path) { sessionSQLite(path); }
+pub fct redis(client, prefix) { sessionRedis(client, prefix); }
+pub fct create(store, data, ttlMs) { sessionCreate(store, data, ttlMs); }
+pub fct get(store, id) { sessionGet(store, id); }
+pub fct set(store, id, data, ttlMs) { sessionSet(store, id, data, ttlMs); }
+pub fct delete(store, id) { sessionDelete(store, id); }
+pub fct rotate(store, id, ttlMs) { sessionRotate(store, id, ttlMs); }
+pub fct touch(store, id, ttlMs) { sessionTouch(store, id, ttlMs); }
+pub fct cleanup(store) { sessionCleanup(store); }
+pub fct close(store) { sessionClose(store); }
+
+pub fct limiter(limit, windowMs) { rateLimiter(limit, windowMs); }
+pub fct allow(limiterValue, key) { rateAllow(limiterValue, key); }
+pub fct reset(limiterValue, key) { rateReset(limiterValue, key); }

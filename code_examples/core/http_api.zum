@@ -1,0 +1,83 @@
+import "../../std/http.zum" as http;
+
+var api << http.app();
+api.bodyLimit(1048576);
+api.compression(true);
+api.cors(["*"], ["GET", "POST", "OPTIONS"], ["Content-Type", "Authorization"], false, 300);
+
+api.use(fct(request, response) {
+    request;
+    response.header("X-Zumbra", "0.10.4");
+    true;
+});
+
+api.get("/health", fct(request, response) {
+    request;
+    response;
+    http.json(200, {
+        "status": "ok",
+        "runtime": "zumbra"
+    });
+});
+
+api.get("/hello/:name", fct(request, response) {
+    response;
+    http.json(200, {
+        "message": "hello " + request.params["name"]
+    });
+});
+
+api.post("/echo", fct(request, response) {
+    response;
+    http.cookie(
+        http.json(201, request.body),
+        "session",
+        "local",
+        {
+            "httpOnly": true,
+            "sameSite": "Strict"
+        }
+    );
+});
+
+api.get("/events", fct(request, response) {
+    request;
+    response;
+    var events << channel(2);
+    send(events, http.event("ready", "status", "1", 1000));
+    send(events, http.event("complete", "status", "2", 0));
+    closeChannel(events);
+    http.sse(200, events);
+});
+
+var server << api.listen("127.0.0.1", 0);
+var baseUrl << "http://127.0.0.1:" + toString(http.serverPort(server));
+
+var health << http.getUrl(baseUrl + "/health", 2000);
+var healthBody << http.bodyJson(health);
+show(http.status(health));
+show(healthBody["status"]);
+show(http.headers(health)["x-zumbra"]);
+
+var hello << http.getUrl(baseUrl + "/hello/zumbra", 2000);
+show(http.bodyJson(hello)["message"]);
+
+var echoed << http.postJson(
+    baseUrl + "/echo",
+    {"Content-Type": "application/json"},
+    {"value": 42},
+    2000
+);
+show(http.status(echoed));
+show(http.bodyJson(echoed)["value"]);
+show(echoed.cookies["session"]);
+
+var events << http.getUrl(baseUrl + "/events", 2000);
+show(http.body(events));
+
+var token << http.signJwt({"sub": "local-user"}, "development-secret", 60);
+var verified << http.verifyJwt(token, "development-secret");
+show(verified[0]);
+show(verified[1]["sub"]);
+
+show(http.shutdown(server, 2000));

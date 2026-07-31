@@ -4,12 +4,16 @@ import (
 	"bufio"
 	"fmt"
 	"io"
+	"os"
+	"strings"
 
 	"zumbra/compiler"
 	"zumbra/lexer"
 	"zumbra/object"
 	"zumbra/object/builtins"
 	"zumbra/parser"
+	"zumbra/semantic"
+	"zumbra/types"
 	"zumbra/vm"
 )
 
@@ -21,20 +25,34 @@ func Start(in io.Reader, out io.Writer) {
 	constants := []object.Object{}
 	globals := make([]object.Object, vm.GlobalSize)
 	symbolTable := compiler.NewSymbolTable()
+	importedFiles := map[string]bool{}
+
+	baseDir, err := os.Getwd()
+	if err != nil {
+		baseDir = "."
+	}
 
 	for i, v := range builtins.Builtins {
 		symbolTable.DefineBuiltin(i, v.Name)
 	}
-	builtins.SetRouteInvoker(func(handler object.Object, args ...object.Object) (object.Object, error) {
-		return vm.InvokeFunction(handler, args, constants, globals)
-	})
+
+	semanticResolver := semantic.NewResolver()
+	typeChecker := types.NewChecker()
 
 	for {
 		var lines string
 		var openBraces int
 
-		fmt.Printf(PROMPT)
-		for scanner.Scan() {
+		_, _ = io.WriteString(out, PROMPT)
+
+		for {
+			if !scanner.Scan() {
+				if err := scanner.Err(); err != nil {
+					fmt.Fprintf(out, "repl error: %s\n", err)
+				}
+				return
+			}
+
 			line := scanner.Text()
 			lines += line + "\n"
 
@@ -44,7 +62,12 @@ func Start(in io.Reader, out io.Writer) {
 			if openBraces <= 0 {
 				break
 			}
-			fmt.Printf(".. ")
+
+			_, _ = io.WriteString(out, ".. ")
+		}
+
+		if strings.TrimSpace(lines) == "" {
+			continue
 		}
 
 		l := lexer.New(lines)
@@ -56,7 +79,32 @@ func Start(in io.Reader, out io.Writer) {
 			continue
 		}
 
-		comp := compiler.NewWithState(symbolTable, constants)
+		_, semErrs := semantic.AnalyzeWithResolver(semanticResolver, program)
+		if len(semErrs) != 0 {
+			printSemanticErrors(out, semErrs)
+			continue
+		}
+
+		typeErrs := types.AnalyzeWithChecker(typeChecker, program)
+		if len(typeErrs) != 0 {
+			printTypeErrors(out, typeErrs)
+			continue
+		}
+
+		comp := compiler.NewWithStateAndDirAndImports(symbolTable, constants, baseDir, importedFiles)
+
+		if diagProvider, ok := any(comp).(interface {
+			Diagnostics() []error
+		}); ok {
+			diags := diagProvider.Diagnostics()
+			if len(diags) > 0 {
+				io.WriteString(out, "Compiler diagnostics:\n")
+				for _, d := range diags {
+					io.WriteString(out, "\t"+d.Error()+"\n")
+				}
+			}
+		}
+
 		err := comp.Compile(program)
 		if err != nil {
 			fmt.Fprintf(out, "compiler error: %s\n", err)
@@ -65,6 +113,11 @@ func Start(in io.Reader, out io.Writer) {
 
 		code := comp.Bytecode()
 		constants = code.Constants
+		callbackInvoker := func(handler object.Object, args ...object.Object) (object.Object, error) {
+			return vm.InvokeFunction(handler, args, code.Constants, globals)
+		}
+		builtins.SetRouteInvoker(callbackInvoker)
+		builtins.SetDesktopInvoker(callbackInvoker)
 
 		machine := vm.NewWithGlobalsStore(code, globals)
 		err = machine.Run()
@@ -74,11 +127,10 @@ func Start(in io.Reader, out io.Writer) {
 		}
 
 		lastPopped := machine.LastPoppedStackElem()
-		if lastPopped.Type() != object.NULL_OBJ {
-			io.WriteString(out, lastPopped.Inspect())
-			io.WriteString(out, "\n")
+		if lastPopped != nil && lastPopped.Type() != object.NULL_OBJ {
+			_, _ = io.WriteString(out, lastPopped.Inspect())
+			_, _ = io.WriteString(out, "\n")
 		}
-
 	}
 }
 
@@ -98,6 +150,24 @@ func printParserErrors(out io.Writer, errors []string) {
 	io.WriteString(out, "Parser errors:\n")
 	for _, msg := range errors {
 		io.WriteString(out, "\t"+msg+"\n")
+	}
+}
+
+func printSemanticErrors(out io.Writer, errors []error) {
+	io.WriteString(out, beer)
+	io.WriteString(out, "Woops! Semantic analysis found some issues here!\n")
+	io.WriteString(out, "Semantic errors:\n")
+	for _, err := range errors {
+		io.WriteString(out, "\t"+err.Error()+"\n")
+	}
+}
+
+func printTypeErrors(out io.Writer, errors []error) {
+	io.WriteString(out, beer)
+	io.WriteString(out, "Woops! Type checking found some issues here!\n")
+	io.WriteString(out, "Type errors:\n")
+	for _, err := range errors {
+		io.WriteString(out, "\t"+err.Error()+"\n")
 	}
 }
 

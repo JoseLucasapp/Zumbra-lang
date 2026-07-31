@@ -1,10 +1,59 @@
-zumbra.exe
-build.bat
-build.sh
-zumbra-linux
-zumbra-macos
-test.zum
-index.html
+# Local configuration and editor files
 .env
+.env.*
+!.env.example
+.DS_Store
+.idea/
+.vscode/
+
+# Compiler, test and coverage output
 /build/
 /dist/
+/out/
+/release/
+/delivery/
+/tmp/
+/.cache/
+*.test
+*.prof
+coverage.out
+coverage-*.out
+
+# Locally built Zumbra executables
+/zumbra
+/zumbra.exe
+/zumbra-linux
+/zumbra-macos
+/zumbra-*
+
+# Generated output from examples and packaged applications
+/code_examples/**/build/
+/code_examples/**/dist/
+/code_examples/**/out/
+
+# Downloaded third-party packaging tools and runtimes
+/tools/
+
+# Legacy generated files
+build.bat
+build.sh
+test.zum
+index.html
+
+# Generated directories anywhere in the repository
+**/build/
+**/dist/
+**/out/
+**/release/
+**/.cache/
+**/tmp/
+
+# Desktop distribution artifacts
+*.AppImage
+*.deb
+*.dmg
+*.pkg
+*-setup.exe
+*-installer.exe
+*-portable.zip
+*-macos-*.zip

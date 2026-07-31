@@ -1,0 +1,29 @@
+import "../../std/desktop.zum" as desktop;
+import "../../std/ui.zum" as ui;
+
+var application << desktop.app({"backend": "headless", "quitOnLastWindow": false});
+var window << application.window({"title": "Modal", "width": 400, "height": 260});
+var modalVisible << ui.boolState(false);
+var backgroundClicks << 0;
+var background << ui.buttonWith({
+    "id": "background-action",
+    "text": "Ação de fundo",
+    "onClick": fct(event) { event; backgroundClicks << backgroundClicks + 1; },
+    "accessibilityLabel": "Ação de fundo"
+});
+var confirm << ui.buttonWith({"id": "modal-confirm", "text": "Confirmar", "accessibilityLabel": "Confirmar diálogo"});
+var modal << ui.modal({"id": "test-modal", "visible": false, "width": 240, "height": 160}, [confirm]);
+ui.bind(modal, "visible", modalVisible);
+var root << ui.rowWith({"padding": 8}, [background, modal]);
+var context << ui.mount(application, window, root, {});
+
+show(sizeOf(ui.accessibility(context)));
+modalVisible.set(true);
+show(sizeOf(ui.accessibility(context)));
+show(ui.get(context.focusNext(false), "id"));
+ui.dispatch(context, {"type": "mouse_down", "x": 10, "y": 10});
+ui.dispatch(context, {"type": "mouse_up", "x": 10, "y": 10});
+show(backgroundClicks);
+
+context.close();
+application.close();

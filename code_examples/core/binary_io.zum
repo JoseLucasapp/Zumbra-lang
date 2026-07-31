@@ -1,0 +1,20 @@
+var data << bytes(16);
+
+writeU16LE(data, 0, 0x1234u16);
+writeU32BE(data, 2, 0x89ABCDEFu32);
+writeU64LE(data, 6, 0x0102030405060708u64);
+
+var clone << bytes(16);
+copyBytes(clone, 0, data, 0, sizeOf(data));
+
+show(readU16LE(clone, 0));
+show(readU32BE(clone, 2));
+show(readU64LE(clone, 6));
+show(bytesEqual(data, clone));
+show(sha256(clone));
+
+var written << writeBytes("tmp/z4-example.bin", clone);
+var loaded << readBytes("tmp/z4-example.bin");
+
+show(written);
+show(bytesEqual(clone, loaded));

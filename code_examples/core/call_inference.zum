@@ -1,0 +1,44 @@
+fct identity(value) {
+    value;
+}
+
+fct publish(messages, value) {
+    send(messages, value);
+    closeChannel(messages);
+    return;
+}
+
+fct count(counter, amount) {
+    var index << 0;
+    while (index < amount) {
+        atomicAdd(counter, 1);
+        index << index + 1;
+    }
+    return;
+}
+
+struct Box {
+    value: int;
+
+    fct echo(input) {
+        self.value;
+        input;
+    }
+}
+
+show(identity(42));
+
+var messages << channel(1);
+var producer << spawn publish(messages, 7);
+show(receive(messages));
+await producer;
+
+var counter << atomicInt(0);
+var first << spawn count(counter, 1000);
+var second << spawn count(counter, 1000);
+await first;
+await second;
+show(atomicLoad(counter));
+
+var box << Box(1);
+show(box.echo(9));

@@ -1,0 +1,67 @@
+import "../../std/desktop.zum" as desktop;
+import "../../std/ui.zum" as ui;
+
+var application << desktop.app({
+    "backend": "headless",
+    "name": "Zumbra UI",
+    "version": "0.10.4",
+    "quitOnLastWindow": false
+});
+var window << application.window({"title": "Zumbra UI", "width": 640, "height": 480});
+
+var status << ui.state("ready");
+var statusText << ui.text("");
+ui.bind(statusText, "text", status);
+
+var clicked << false;
+var action << ui.button("Run", fct(event) {
+    event;
+    clicked << true;
+    ui.update(status, "clicked");
+});
+
+var drawing << ui.canvas({"id": "drawing", "height": 72, "background": "#eef2f7"});
+ui.draw(drawing, "fillRect", {"x": 8, "y": 8, "width": 40, "height": 24, "color": "#3867e8"});
+ui.draw(drawing, "line", {"x": 8, "y": 44, "x2": 120, "y2": 44, "color": "#172033"});
+ui.draw(drawing, "text", {"x": 56, "y": 12, "text": "canvas", "color": "#172033"});
+
+var root << ui.columnWith({"padding": 12, "gap": 8}, [
+    ui.textWith("Zumbra GUI Toolkit", {"fontSize": 18, "accessibilityLabel": "Title"}),
+    action,
+    statusText,
+    ui.rowWith({"gap": 8}, [
+        ui.input({"id": "name", "placeholder": "Name", "value": "Lucas"}),
+        ui.select({"options": ["One", "Two"], "value": "One"})
+    ]),
+    ui.row([
+        ui.checkbox({"text": "Enabled", "checked": true}),
+        ui.radio({"text": "Choice A", "checked": true}),
+        ui.radio({"text": "Choice B", "checked": false})
+    ]),
+    ui.tabs({"tabs": ["General", "Advanced"], "selectedIndex": 0}, []),
+    ui.progress({"value": 65, "max": 100}),
+    drawing,
+    ui.list({"items": ["Alpha", "Beta", "Gamma"]}),
+    ui.tree({"items": ["Root", "Child"]}),
+    ui.table({"columns": ["Name", "Value"], "rows": ["A | 1", "B | 2"]}),
+    ui.menu({"text": "File"}, []),
+    ui.tooltip({"text": "Helpful text"}, []),
+    ui.custom("status-card", {"border": true, "padding": 4}, [ui.text("Custom component")])
+]);
+
+var context << ui.mount(application, window, root, {"theme": ui.theme("light")});
+ui.dispatch(context, {"type": "mouse_down", "x": 20, "y": 70});
+ui.dispatch(context, {"type": "mouse_up", "x": 20, "y": 70});
+var snapshot << ui.snapshot(context);
+var accessibility << ui.accessibility(context);
+
+show(application.backend());
+show(window.title());
+show(clicked);
+show(statusText.get("text"));
+show(snapshot["width"]);
+show(sizeOf(snapshot["items"]) > 10);
+show(sizeOf(accessibility) > 10);
+
+context.close();
+application.close();

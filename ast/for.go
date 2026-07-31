@@ -144,13 +144,12 @@ func (fel *ForEverLoop) String() string {
 	return out.String()
 }
 
-// for i in start..end <where cond> { }
 type ForEachDotRange struct {
 	Token    token.Token
 	Var      string
 	StartIdx Expression
 	EndIdx   Expression
-	Cond     Expression //conditional clause(nil if there is no 'WHERE' clause)
+	Cond     Expression
 	Block    *BlockStatement
 }
 

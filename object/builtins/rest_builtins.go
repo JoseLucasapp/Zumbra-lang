@@ -1,9 +1,6 @@
 package builtins
 
-import (
-	"strings"
-	"zumbra/object"
-)
+import "zumbra/object"
 
 func RestGetBuiltin() *object.Builtin    { return methodRouteBuiltin("GET") }
 func RestPostBuiltin() *object.Builtin   { return methodRouteBuiltin("POST") }
@@ -16,19 +13,9 @@ func methodRouteBuiltin(method string) *object.Builtin {
 		if len(args) != 2 {
 			return NewError("wrong number of arguments. got=%d, want=2", len(args))
 		}
-
-		path, ok := args[0].(*object.String)
-		if !ok {
+		if _, ok := args[0].(*object.String); !ok {
 			return NewError("path must be STRING, got %s", args[0].Type())
 		}
-
-		registerRoutes = append(registerRoutes, Route{
-			Method:      strings.ToUpper(method),
-			Path:        path.Value,
-			HandlerBody: args[1],
-			Middlewares: nil,
-		})
-
-		return nil
+		return HTTPRouteBuiltin().Fn(legacyHTTPApp, &object.String{Value: method}, args[0], args[1])
 	}}
 }

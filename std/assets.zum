@@ -1,0 +1,5 @@
+// Z15 embedded application assets.
+pub fct exists(name) { assetExists(name); }
+pub fct text(name) { assetText(name); }
+pub fct bytes(name) { assetBytes(name); }
+pub fct list() { assetList(); }

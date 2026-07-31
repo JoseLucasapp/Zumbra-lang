@@ -2,6 +2,9 @@ package compiler
 
 import (
 	"fmt"
+	"os"
+	"path/filepath"
+	"strings"
 	"testing"
 	"zumbra/ast"
 	"zumbra/code"
@@ -1075,4 +1078,134 @@ func builtinIndexByName(t *testing.T, name string) int {
 
 	t.Fatalf("builtin %q not found", name)
 	return -1
+}
+
+func TestImportStatementIsOnlyCompiledOnceAcrossSharedCompilerState(t *testing.T) {
+	dir := t.TempDir()
+
+	modulePath := filepath.Join(dir, "module.zum")
+	err := os.WriteFile(modulePath, []byte(`var importedValue << 10;`), 0o644)
+	if err != nil {
+		t.Fatalf("failed to write module: %s", err)
+	}
+
+	symbolTable := NewSymbolTable()
+	for i, v := range builtins.Builtins {
+		symbolTable.DefineBuiltin(i, v.Name)
+	}
+
+	constants := []object.Object{}
+	importedFiles := map[string]bool{}
+
+	program1 := parse(`import "module.zum"; importedValue;`)
+	compiler1 := NewWithStateAndDirAndImports(symbolTable, constants, dir, importedFiles)
+
+	err = compiler1.Compile(program1)
+	if err != nil {
+		t.Fatalf("compiler1 error: %s", err)
+	}
+
+	symbol, ok := symbolTable.Resolve("importedValue")
+	if !ok {
+		t.Fatalf("importedValue was not defined after first import")
+	}
+
+	if symbol.Index != 0 {
+		t.Fatalf("wrong symbol index after first import. got=%d", symbol.Index)
+	}
+
+	program2 := parse(`import "module.zum"; importedValue;`)
+	compiler2 := NewWithStateAndDirAndImports(symbolTable, compiler1.Bytecode().Constants, dir, importedFiles)
+
+	err = compiler2.Compile(program2)
+	if err != nil {
+		t.Fatalf("compiler2 error: %s", err)
+	}
+
+	symbol, ok = symbolTable.Resolve("importedValue")
+	if !ok {
+		t.Fatalf("importedValue was not defined after second import")
+	}
+
+	if symbol.Index != 0 {
+		t.Fatalf("module was compiled twice; expected symbol index 0, got=%d", symbol.Index)
+	}
+}
+
+func TestResolveShadowedLocalOverGlobal(t *testing.T) {
+	global := NewSymbolTable()
+	global.Define("x")
+
+	local := NewEnclosedSymbolTable(global)
+	symbol := local.Define("x")
+
+	if symbol.Scope != LocalScope {
+		t.Fatalf("shadowed symbol scope wrong. got=%s", symbol.Scope)
+	}
+
+	if symbol.Index != 0 {
+		t.Fatalf("shadowed symbol index wrong. got=%d", symbol.Index)
+	}
+
+	resolved, ok := local.Resolve("x")
+	if !ok {
+		t.Fatalf("name x not resolvable in local scope")
+	}
+
+	if resolved.Scope != LocalScope {
+		t.Fatalf("resolved shadowed symbol wrong scope. got=%s", resolved.Scope)
+	}
+}
+
+func TestResolveOuterGlobalFromLocalScope(t *testing.T) {
+	global := NewSymbolTable()
+	expected := global.Define("x")
+
+	local := NewEnclosedSymbolTable(global)
+	resolved, ok := local.Resolve("x")
+	if !ok {
+		t.Fatalf("name x not resolvable from enclosed scope")
+	}
+
+	if resolved != expected {
+		t.Fatalf("resolved symbol wrong. want=%+v, got=%+v", expected, resolved)
+	}
+}
+
+func TestCompilerImportCycleDetection(t *testing.T) {
+	dir := t.TempDir()
+
+	err := os.WriteFile(filepath.Join(dir, "a.zum"), []byte(`
+import "b.zum";
+var aValue << 1;
+`), 0o644)
+	if err != nil {
+		t.Fatalf("write a.zum failed: %s", err)
+	}
+
+	err = os.WriteFile(filepath.Join(dir, "b.zum"), []byte(`
+import "a.zum";
+var bValue << 2;
+`), 0o644)
+	if err != nil {
+		t.Fatalf("write b.zum failed: %s", err)
+	}
+
+	program := parse(`import "a.zum";`)
+
+	symbolTable := NewSymbolTable()
+	for i, v := range builtins.Builtins {
+		symbolTable.DefineBuiltin(i, v.Name)
+	}
+
+	comp := NewWithStateAndDir(symbolTable, []object.Object{}, dir)
+	err = comp.Compile(program)
+	if err == nil {
+		t.Fatalf("expected cyclic import compile error, got nil")
+	}
+
+	msg := err.Error()
+	if !strings.Contains(msg, "cyclic import") && !strings.Contains(msg, "import cycle") {
+		t.Fatalf("wrong cyclic import error: %q", msg)
+	}
 }

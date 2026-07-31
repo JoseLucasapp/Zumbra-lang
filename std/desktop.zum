@@ -1,0 +1,31 @@
+pub fct app(options) { desktopApp(options); }
+pub fct backend(application) { desktopBackend(application); }
+pub fct window(application, options) { desktopWindow(application, options); }
+pub fct on(application, eventName, handler) { desktopOn(application, eventName, handler); }
+pub fct shortcut(application, accelerator, handler) { desktopShortcut(application, accelerator, handler); }
+pub fct poll(application, timeoutMs) { desktopPoll(application, timeoutMs); }
+pub fct run(application) { desktopRun(application); }
+pub fct quit(application) { desktopQuit(application); }
+pub fct running(application) { desktopRunning(application); }
+pub fct close(application) { desktopClose(application); }
+pub fct emit(application, event) { desktopEmit(application, event); }
+
+pub fct setClipboard(application, text) { desktopSetClipboard(application, text); }
+pub fct clipboard(application) { desktopClipboard(application); }
+pub fct pickFile(application, options) { desktopPickFile(application, options); }
+pub fct pickFolder(application, options) { desktopPickFolder(application, options); }
+pub fct notify(application, options) { desktopNotify(application, options); }
+pub fct paths(application) { desktopPaths(application); }
+pub fct openExternal(application, target) { desktopOpenExternal(application, target); }
+
+pub fct tray(application, options) { desktopTray(application, options); }
+pub fct trayAdd(trayValue, id, label, handler) { desktopTrayAdd(trayValue, id, label, handler); }
+pub fct trayTooltip(trayValue, text) { desktopTrayTooltip(trayValue, text); }
+pub fct trayClose(trayValue) { desktopTrayClose(trayValue); }
+pub fct trayOpen(trayValue) { desktopTrayOpen(trayValue); }
+
+pub fct startProcess(command, options) { desktopSpawn(command, options); }
+pub fct wait(process) { desktopProcessWait(process); }
+pub fct kill(process) { desktopProcessKill(process); }
+pub fct processRunning(process) { desktopProcessRunning(process); }
+pub fct processId(process) { desktopProcessId(process); }

@@ -527,35 +527,22 @@ func TestCallingFunctionsWithArgumentsAndBindings(t *testing.T) {
 }
 
 func TestCallingFunctionsWithWrongArguments(t *testing.T) {
-	tests := []vmTestCase{
-		{
-			input:    `fct() { 1; }(1);`,
-			expected: `wrong number of arguments: want=0, got=1`,
-		},
-		{
-			input:    `fct(a) { a; }();`,
-			expected: `wrong number of arguments: want=1, got=0`,
-		},
-		{
-			input:    `fct(a, b) { a + b; }(1);`,
-			expected: `wrong number of arguments: want=2, got=1`,
-		},
+	input := `
+	var f << fct() { 1; };
+	f(1);
+	`
+
+	program := parse(input)
+
+	comp := compiler.New()
+	err := comp.Compile(program)
+	if err == nil {
+		t.Fatalf("expected compile error, got nil")
 	}
-	for _, tt := range tests {
-		program := parse(tt.input)
-		comp := compiler.New()
-		err := comp.Compile(program)
-		if err != nil {
-			t.Fatalf("compiler error: %s", err)
-		}
-		vm := New(comp.Bytecode())
-		err = vm.Run()
-		if err == nil {
-			t.Fatalf("expected VM error but resulted in none.")
-		}
-		if err.Error() != tt.expected {
-			t.Fatalf("wrong VM error: want=%q, got=%q", tt.expected, err)
-		}
+
+	expected := "wrong number of arguments for f: want=0, got=1"
+	if err.Error() != expected {
+		t.Fatalf("wrong compile error. want=%q, got=%q", expected, err.Error())
 	}
 }
 
@@ -799,15 +786,741 @@ func TestWhileLoops(t *testing.T) {
 	runVmTests(t, tests)
 }
 
-func TestAttributeAccess(t *testing.T) {
+func TestCallingNonFunctionObject(t *testing.T) {
+	program := parse(`1(2);`)
+
+	comp := compiler.New()
+	err := comp.Compile(program)
+	if err != nil {
+		t.Fatalf("compiler error: %s", err)
+	}
+
+	vm := New(comp.Bytecode())
+	err = vm.Run()
+	if err == nil {
+		t.Fatalf("expected VM error but got nil")
+	}
+
+	expected := "calling non-function and non-built-in object: INTEGER"
+	if err.Error() != expected {
+		t.Fatalf("wrong VM error. want=%q, got=%q", expected, err.Error())
+	}
+}
+
+func TestVariableShadowingInFunction(t *testing.T) {
 	tests := []vmTestCase{
 		{
 			input: `
-				var a << date();
-				a.hour;
+			var x << 10;
+			var f << fct() {
+				var x << 20;
+				x;
+			};
+			f();
+			`,
+			expected: 20,
+		},
+		{
+			input: `
+			var x << 10;
+			var f << fct() {
+				var x << 20;
+				x;
+			};
+			f();
+			x;
+			`,
+			expected: 10,
+		},
+	}
+
+	runVmTests(t, tests)
+}
+
+func TestReassignGlobalVariableFromFunction(t *testing.T) {
+	tests := []vmTestCase{
+		{
+			input: `
+			var x << 10;
+			var f << fct() {
+				x << 20;
+			};
+			f();
+			x;
+			`,
+			expected: 20,
+		},
+	}
+
+	runVmTests(t, tests)
+}
+
+func TestReadOuterVariableInsideFunction(t *testing.T) {
+	tests := []vmTestCase{
+		{
+			input: `
+			var x << 10;
+			var f << fct() {
+				x;
+			};
+			f();
+			`,
+			expected: 10,
+		},
+	}
+
+	runVmTests(t, tests)
+}
+
+func TestUndefinedVariableStillFails(t *testing.T) {
+	program := parse(`unknownVar;`)
+
+	comp := compiler.New()
+	err := comp.Compile(program)
+	if err == nil {
+		t.Fatalf("expected compiler error for undefined variable, got nil")
+	}
+
+	expected := "undefined variable unknownVar"
+	if err.Error() != expected {
+		t.Fatalf("wrong compiler error. want=%q, got=%q", expected, err.Error())
+	}
+}
+
+func TestIfBlockScopeSemantics(t *testing.T) {
+	tests := []vmTestCase{
+		{
+			input: `
+			var x << 10;
+			if (true) {
+				var x << 20;
+			}
+			x;
+			`,
+			expected: 10,
+		},
+		{
+			input: `
+			var x << 10;
+			if (true) {
+				x << 20;
+			}
+			x;
+			`,
+			expected: 20,
+		},
+	}
+
+	runVmTests(t, tests)
+}
+
+func TestWhileBlockScopeReassignsOuter(t *testing.T) {
+	tests := []vmTestCase{
+		{
+			input: `
+			var x << 10;
+			var done << false;
+			while (done == false) {
+				x << 20;
+				done << true;
+			}
+			x;
+			`,
+			expected: 20,
+		},
+	}
+
+	runVmTests(t, tests)
+}
+
+func TestForBlockScopeReassignsOuter(t *testing.T) {
+	tests := []vmTestCase{
+		{
+			input: `
+			var x << 0;
+			for i in 1..3 {
+				x << i;
+			}
+			x;
 			`,
 			expected: 3,
 		},
 	}
+
+	runVmTests(t, tests)
+}
+
+func TestFunctionReturnSemantics(t *testing.T) {
+	tests := []vmTestCase{
+		{
+			input: `
+			var f << fct() {
+				10;
+			};
+			f();
+			`,
+			expected: 10,
+		},
+		{
+			input: `
+			var f << fct() {
+				return 20;
+			};
+			f();
+			`,
+			expected: 20,
+		},
+		{
+			input: `
+			var f << fct() {
+				10;
+				20;
+			};
+			f();
+			`,
+			expected: 20,
+		},
+	}
+
+	runVmTests(t, tests)
+}
+
+func TestClosureCapturesOuterVariable(t *testing.T) {
+	tests := []vmTestCase{
+		{
+			input: `
+			var x << 10;
+			var f << fct() {
+				x;
+			};
+			f();
+			`,
+			expected: 10,
+		},
+		{
+			input: `
+			var outer << fct(a) {
+				fct(b) {
+					a + b;
+				};
+			};
+
+			var addTwo << outer(2);
+			addTwo(3);
+			`,
+			expected: 5,
+		},
+	}
+
+	runVmTests(t, tests)
+}
+
+func TestNestedClosureCapture(t *testing.T) {
+	tests := []vmTestCase{
+		{
+			input: `
+			var outer << fct(a) {
+				fct(b) {
+					fct(c) {
+						a + b + c;
+					};
+				};
+			};
+
+			var level1 << outer(1);
+			var level2 << level1(2);
+			level2(3);
+			`,
+			expected: 6,
+		},
+	}
+
+	runVmTests(t, tests)
+}
+
+func TestArithmeticAndComparisonSemantics(t *testing.T) {
+	tests := []vmTestCase{
+		{input: `1 + 2;`, expected: 3},
+		{input: `10 - 3;`, expected: 7},
+		{input: `2 * 3;`, expected: 6},
+		{input: `8 / 2;`, expected: 4},
+		{input: `7 % 4;`, expected: 3},
+		{input: `2 ** 3;`, expected: 8},
+
+		{input: `1 < 2;`, expected: true},
+		{input: `1 <= 1;`, expected: true},
+		{input: `2 > 1;`, expected: true},
+		{input: `2 >= 2;`, expected: true},
+		{input: `1 == 1;`, expected: true},
+		{input: `1 != 2;`, expected: true},
+
+		{input: `true == true;`, expected: true},
+		{input: `true != false;`, expected: true},
+		{input: `"a" == "a";`, expected: true},
+		{input: `"a" != "b";`, expected: true},
+	}
+
+	runVmTests(t, tests)
+}
+
+func TestOperatorPrecedenceSemantics(t *testing.T) {
+	tests := []vmTestCase{
+		{input: `1 + 2 * 3;`, expected: 7},
+		{input: `(1 + 2) * 3;`, expected: 9},
+		{input: `2 ** 3 ** 2;`, expected: 512},
+		{input: `1 + 2 < 4;`, expected: true},
+		{input: `1 + 2 == 3;`, expected: true},
+		{input: `!(true == true);`, expected: false},
+	}
+
+	runVmTests(t, tests)
+}
+
+func TestLogicalOperatorSemantics(t *testing.T) {
+	tests := []vmTestCase{
+		{input: `true and true;`, expected: true},
+		{input: `true and false;`, expected: false},
+		{input: `true or false;`, expected: true},
+		{input: `false or false;`, expected: false},
+		{input: `!true;`, expected: false},
+		{input: `!false;`, expected: true},
+	}
+
+	runVmTests(t, tests)
+}
+
+func TestConditionalTruthinessSemantics(t *testing.T) {
+	tests := []vmTestCase{
+		{input: `if (true) { 10; } else { 20; }`, expected: 10},
+		{input: `if (false) { 10; } else { 20; }`, expected: 20},
+		{input: `if (1 < 2) { 10; } else { 20; }`, expected: 10},
+		{input: `if (!(1 < 2)) { 10; } else { 20; }`, expected: 20},
+	}
+
+	runVmTests(t, tests)
+}
+func TestTryAndErrorHandlerSemantics(t *testing.T) {
+	tests := []vmTestCase{
+		{
+			input: `
+			try 10;
+			`,
+			expected: 10,
+		},
+		{
+			input: `
+			try error("boom") or {
+				20;
+			};
+			`,
+			expected: 20,
+		},
+		{
+			input: `
+			try 10 or {
+				20;
+			};
+			`,
+			expected: 10,
+		},
+	}
+
+	runVmTests(t, tests)
+
+	input := `
+	try error("boom") or err {
+		err;
+	};
+	`
+
+	program := parse(input)
+
+	comp := compiler.New()
+	err := comp.Compile(program)
+	if err != nil {
+		t.Fatalf("compiler error: %s", err)
+	}
+
+	vm := New(comp.Bytecode())
+	err = vm.Run()
+	if err != nil {
+		t.Fatalf("vm error: %s", err)
+	}
+
+	stackElem := vm.LastPoppedStackElem()
+
+	errObj, ok := stackElem.(*object.Error)
+	if !ok {
+		t.Fatalf("object is not Error. got=%T (%+v)", stackElem, stackElem)
+	}
+
+	if errObj.Message != "boom" {
+		t.Fatalf("wrong error message. want=%q, got=%q", "boom", errObj.Message)
+	}
+}
+
+func TestErrorPropagationThroughFunction(t *testing.T) {
+	tests := []vmTestCase{
+		{
+			input: `
+			var f << fct() {
+				try error("boom") or {
+					30;
+				};
+			};
+			f();
+			`,
+			expected: 30,
+		},
+	}
+
+	runVmTests(t, tests)
+
+	input := `
+	var f << fct() {
+		error("boom");
+	};
+	f();
+	`
+
+	program := parse(input)
+
+	comp := compiler.New()
+	err := comp.Compile(program)
+	if err != nil {
+		t.Fatalf("compiler error: %s", err)
+	}
+
+	vm := New(comp.Bytecode())
+	err = vm.Run()
+	if err != nil {
+		t.Fatalf("vm error: %s", err)
+	}
+
+	stackElem := vm.LastPoppedStackElem()
+
+	errObj, ok := stackElem.(*object.Error)
+	if !ok {
+		t.Fatalf("object is not Error. got=%T (%+v)", stackElem, stackElem)
+	}
+
+	if errObj.Message != "boom" {
+		t.Fatalf("wrong error message. want=%q, got=%q", "boom", errObj.Message)
+	}
+}
+
+func TestAsyncAndAwaitSemantics(t *testing.T) {
+	tests := []vmTestCase{
+		{
+			input: `
+			var task << async fct() {
+				10;
+			};
+			await task();
+			`,
+			expected: 10,
+		},
+		{
+			input: `
+			var task << async fct() {
+				return 20;
+			};
+			await task();
+			`,
+			expected: 20,
+		},
+		{
+			input: `
+			var task << async fct() {
+				10 + 20;
+			};
+			await task();
+			`,
+			expected: 30,
+		},
+		{
+			input: `
+			var task << async fct(a, b) {
+				a + b;
+			};
+			await task(2, 3);
+			`,
+			expected: 5,
+		},
+		{
+			input: `
+			var task << async fct() {
+				10;
+			};
+			await task() + 5;
+			`,
+			expected: 15,
+		},
+	}
+
+	runVmTests(t, tests)
+}
+
+func TestAsyncErrorHandlingSemantics(t *testing.T) {
+	tests := []vmTestCase{
+		{
+			input: `
+			var task << async fct() {
+				error("boom");
+			};
+			try await task() or {
+				30;
+			};
+			`,
+			expected: 30,
+		},
+	}
+
+	runVmTests(t, tests)
+
+	input := `
+	var task << async fct() {
+		error("boom");
+	};
+	await task();
+	`
+
+	program := parse(input)
+
+	comp := compiler.New()
+	err := comp.Compile(program)
+	if err != nil {
+		t.Fatalf("compiler error: %s", err)
+	}
+
+	vm := New(comp.Bytecode())
+	err = vm.Run()
+	if err != nil {
+		t.Fatalf("vm error: %s", err)
+	}
+
+	stackElem := vm.LastPoppedStackElem()
+
+	errObj, ok := stackElem.(*object.Error)
+	if !ok {
+		t.Fatalf("object is not Error. got=%T (%+v)", stackElem, stackElem)
+	}
+
+	if errObj.Message != "boom" {
+		t.Fatalf("wrong error message. want=%q, got=%q", "boom", errObj.Message)
+	}
+}
+
+func TestArrayAndIndexSemantics(t *testing.T) {
+	tests := []vmTestCase{
+		{
+			input: `
+			var arr << [1, 2, 3];
+			arr[0];
+			`,
+			expected: 1,
+		},
+		{
+			input: `
+			var arr << [1, 2, 3];
+			arr[2];
+			`,
+			expected: 3,
+		},
+		{
+			input: `
+			var arr << [1, 2, 3];
+			arr[1] + arr[2];
+			`,
+			expected: 5,
+		},
+	}
+
+	runVmTests(t, tests)
+}
+
+func TestDictAndIndexSemantics(t *testing.T) {
+	tests := []vmTestCase{
+		{
+			input: `
+			var user << {"name": "Lucas", "age": 25};
+			user["name"];
+			`,
+			expected: "Lucas",
+		},
+		{
+			input: `
+			var user << {"name": "Lucas", "age": 25};
+			user["age"];
+			`,
+			expected: 25,
+		},
+	}
+
+	runVmTests(t, tests)
+}
+
+func TestAttributeAccessSemantics(t *testing.T) {
+	tests := []vmTestCase{
+		{
+			input: `
+			var user << {"name": "Lucas", "age": 25};
+			user.name;
+			`,
+			expected: "Lucas",
+		},
+		{
+			input: `
+			var user << {"profile": {"name": "Lucas"}};
+			user.profile.name;
+			`,
+			expected: "Lucas",
+		},
+		{
+			input: `
+			var user << {"profile": {"name": "Lucas"}};
+			user["profile"]["name"];
+			`,
+			expected: "Lucas",
+		},
+	}
+
+	runVmTests(t, tests)
+}
+
+func TestMixedAccessSemantics(t *testing.T) {
+	tests := []vmTestCase{
+		{
+			input: `
+			var user << {"profile": {"name": "Lucas"}};
+			user.profile["name"];
+			`,
+			expected: "Lucas",
+		},
+		{
+			input: `
+			var user << {"items": [{"name": "a"}, {"name": "b"}]};
+			user.items[1].name;
+			`,
+			expected: "b",
+		},
+	}
+
+	runVmTests(t, tests)
+}
+
+func TestLoopBreakAndContinueSemantics(t *testing.T) {
+	tests := []vmTestCase{
+		{
+			input: `
+			var x << 0;
+			for i in 1..10 {
+				if (i == 4) {
+					break;
+				}
+				x << i;
+			}
+			x;
+			`,
+			expected: 3,
+		},
+		{
+			input: `
+			var x << 0;
+			for i in 1..5 {
+				if (i == 3) {
+					continue;
+				}
+				x << i;
+			}
+			x;
+			`,
+			expected: 5,
+		},
+		{
+			input: `
+			var done << false;
+			var x << 0;
+			for {
+				x << x + 1;
+				done << true;
+				if (done == true) {
+					break;
+				}
+			}
+			x;
+			`,
+			expected: 1,
+		},
+	}
+
+	runVmTests(t, tests)
+}
+
+func TestForArrayAndDictLoopSemantics(t *testing.T) {
+	tests := []vmTestCase{
+		{
+			input: `
+			var total << 0;
+			var arr << [1, 2, 3];
+			for item in arr {
+				total << total + item;
+			}
+			total;
+			`,
+			expected: 6,
+		},
+		{
+			input: `
+			var total << 0;
+			var dict << {"a": 1, "b": 2};
+			for key, value in dict {
+				total << total + value;
+			}
+			total;
+			`,
+			expected: 3,
+		},
+	}
+
+	runVmTests(t, tests)
+}
+
+func TestWhereLoopSemantics(t *testing.T) {
+	tests := []vmTestCase{
+		{
+			input: `
+			var total << 0;
+			for i in 1..5 where i > 2 {
+				total << total + i;
+			}
+			total;
+			`,
+			expected: 12,
+		},
+		{
+			input: `
+			var total << 0;
+			var arr << [1, 2, 3, 4];
+			for item in arr where item > 2 {
+				total << total + item;
+			}
+			total;
+			`,
+			expected: 7,
+		},
+		{
+			input: `
+			var total << 0;
+			var dict << {"a": 1, "b": 2, "c": 3};
+			for key, value in dict where value > 1 {
+				total << total + value;
+			}
+			total;
+			`,
+			expected: 5,
+		},
+	}
+
 	runVmTests(t, tests)
 }

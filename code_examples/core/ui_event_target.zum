@@ -1,0 +1,30 @@
+import "../../std/desktop.zum" as desktop;
+import "../../std/ui.zum" as ui;
+
+var application << desktop.app({
+    "backend": "headless",
+    "quitOnLastWindow": false
+});
+var window << application.window({
+    "title": "UI event target",
+    "width": 320,
+    "height": 180
+});
+
+var button << ui.buttonWith({
+    "id": "edit-42",
+    "text": "Edit",
+    "onClick": fct(event) {
+        show(event["targetId"]);
+        show(event["targetKind"]);
+    }
+});
+
+var root << ui.columnWith({"padding": 8}, [button]);
+var context << ui.mount(application, window, root, {});
+
+ui.dispatch(context, {"type": "mouse_down", "x": 12, "y": 12});
+ui.dispatch(context, {"type": "mouse_up", "x": 12, "y": 12});
+
+context.close();
+application.close();

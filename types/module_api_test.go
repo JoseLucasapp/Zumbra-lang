@@ -1,0 +1,70 @@
+package types
+
+import (
+	"os"
+	"path/filepath"
+	"strings"
+	"testing"
+
+	"zumbra/lexer"
+	"zumbra/parser"
+)
+
+func parseTypesModuleProgram(t *testing.T, input string) *parser.Parser {
+	t.Helper()
+	l := lexer.New(input)
+	return parser.New(l)
+}
+
+func parseTypesModuleOrFatal(t *testing.T, input string) *parser.Parser {
+	t.Helper()
+	p := parseTypesModuleProgram(t, input)
+	if len(p.Errors()) > 0 {
+		t.Fatalf("parser errors: %v", p.Errors())
+	}
+	return p
+}
+
+func TestAnalyzeModuleLoadsImportedTypes(t *testing.T) {
+	dir := t.TempDir()
+
+	err := os.WriteFile(filepath.Join(dir, "module.zum"), []byte(`var importedValue << 10;`), 0o644)
+	if err != nil {
+		t.Fatalf("failed to write module: %s", err)
+	}
+
+	p := parseTypesModuleOrFatal(t, `import "module.zum"; var x << importedValue + 1;`)
+	program := p.ParseProgram()
+
+	errs := AnalyzeModule(filepath.Join(dir, "main.zum"), program)
+	if len(errs) != 0 {
+		t.Fatalf("expected 0 errors, got %d: %v", len(errs), errs)
+	}
+}
+
+func TestAnalyzeModuleDetectsCycle(t *testing.T) {
+	dir := t.TempDir()
+
+	err := os.WriteFile(filepath.Join(dir, "a.zum"), []byte(`import "b.zum"; var aValue << 1;`), 0o644)
+	if err != nil {
+		t.Fatalf("write a.zum failed: %s", err)
+	}
+
+	err = os.WriteFile(filepath.Join(dir, "b.zum"), []byte(`import "a.zum"; var bValue << 2;`), 0o644)
+	if err != nil {
+		t.Fatalf("write b.zum failed: %s", err)
+	}
+
+	p := parseTypesModuleOrFatal(t, `import "a.zum";`)
+	program := p.ParseProgram()
+
+	errs := AnalyzeModule(filepath.Join(dir, "main.zum"), program)
+	if len(errs) == 0 {
+		t.Fatalf("expected cycle error, got none")
+	}
+
+	msg := errs[0].Error()
+	if !strings.Contains(msg, "cyclic import") {
+		t.Fatalf("unexpected cycle error: %s", msg)
+	}
+}

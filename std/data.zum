@@ -1,0 +1,13 @@
+pub fct exists(path) { fileExists(path); }
+pub fct readJson(path) { jsonReadFile(path); }
+pub fct writeJson(path, value, pretty) { jsonWriteFile(path, value, pretty); }
+pub fct readJsonResult(path) { jsonReadResult(path); }
+pub fct writeJsonResult(path, value, pretty) { jsonWriteResult(path, value, pretty); }
+pub fct readCsv(path) { csvReadFile(path); }
+pub fct writeCsv(path, rows) { csvWriteFile(path, rows); }
+pub fct readCsvResult(path) { csvReadResult(path); }
+pub fct writeCsvResult(path, rows) { csvWriteResult(path, rows); }
+pub fct encodeBinary(value) { binaryEncode(value); }
+pub fct decodeBinary(data) { binaryDecode(data); }
+pub fct readBinary(path) { binaryReadFile(path); }
+pub fct writeBinary(path, value) { binaryWriteFile(path, value); }

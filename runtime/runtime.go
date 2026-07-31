@@ -3,12 +3,369 @@ package runtime
 func Runtime() string {
 	return `
 
+type zAnyInteger interface {
+	~int | ~int8 | ~int16 | ~int32 | ~int64 |
+		~uint | ~uint8 | ~uint16 | ~uint32 | ~uint64
+}
+
+func zIntegerBig[T zAnyInteger](value T) *big.Int {
+	reflected := reflect.ValueOf(value)
+	switch reflected.Kind() {
+	case reflect.Int, reflect.Int8, reflect.Int16, reflect.Int32, reflect.Int64:
+		return big.NewInt(reflected.Int())
+	default:
+		return new(big.Int).SetUint64(reflected.Uint())
+	}
+}
+
+func zIntegerBigDynamic(value interface{}) *big.Int {
+	reflected := reflect.ValueOf(value)
+	switch reflected.Kind() {
+	case reflect.Int, reflect.Int8, reflect.Int16, reflect.Int32, reflect.Int64:
+		return big.NewInt(reflected.Int())
+	case reflect.Uint, reflect.Uint8, reflect.Uint16, reflect.Uint32, reflect.Uint64:
+		return new(big.Int).SetUint64(reflected.Uint())
+	default:
+		panic(fmt.Sprintf("expected integer, got %T", value))
+	}
+}
+
+func zIntegerBounds(signed bool, bits uint) (*big.Int, *big.Int) {
+	if signed {
+		max := new(big.Int).Sub(new(big.Int).Lsh(big.NewInt(1), bits-1), big.NewInt(1))
+		min := new(big.Int).Neg(new(big.Int).Lsh(big.NewInt(1), bits-1))
+		return min, max
+	}
+	return big.NewInt(0), new(big.Int).Sub(new(big.Int).Lsh(big.NewInt(1), bits), big.NewInt(1))
+}
+
+func zRequireIntegerRange[T zAnyInteger](value T, name string, signed bool, bits uint) *big.Int {
+	number := zIntegerBig(value)
+	min, max := zIntegerBounds(signed, bits)
+	if number.Cmp(min) < 0 || number.Cmp(max) > 0 {
+		panic(fmt.Sprintf("value %s is outside %s range", number.String(), name))
+	}
+	return number
+}
+
+func zU8[T zAnyInteger](value T) uint8 { return uint8(zRequireIntegerRange(value, "u8", false, 8).Uint64()) }
+func zU16[T zAnyInteger](value T) uint16 { return uint16(zRequireIntegerRange(value, "u16", false, 16).Uint64()) }
+func zU32[T zAnyInteger](value T) uint32 { return uint32(zRequireIntegerRange(value, "u32", false, 32).Uint64()) }
+func zU64[T zAnyInteger](value T) uint64 { return zRequireIntegerRange(value, "u64", false, 64).Uint64() }
+func zI8[T zAnyInteger](value T) int8 { return int8(zRequireIntegerRange(value, "i8", true, 8).Int64()) }
+func zI16[T zAnyInteger](value T) int16 { return int16(zRequireIntegerRange(value, "i16", true, 16).Int64()) }
+func zI32[T zAnyInteger](value T) int32 { return int32(zRequireIntegerRange(value, "i32", true, 32).Int64()) }
+func zI64[T zAnyInteger](value T) int64 { return zRequireIntegerRange(value, "i64", true, 64).Int64() }
+
+func wrapAdd[T zAnyInteger](left, right T) T { return left + right }
+func wrapSub[T zAnyInteger](left, right T) T { return left - right }
+func wrapMul[T zAnyInteger](left, right T) T { return left * right }
+
+func zFixedTypeInfo[T zAnyInteger]() (bool, uint) {
+	var zero T
+	typeOf := reflect.TypeOf(zero)
+	switch typeOf.Kind() {
+	case reflect.Int8:
+		return true, 8
+	case reflect.Int16:
+		return true, 16
+	case reflect.Int32:
+		return true, 32
+	case reflect.Int64, reflect.Int:
+		return true, uint(typeOf.Bits())
+	case reflect.Uint8:
+		return false, 8
+	case reflect.Uint16:
+		return false, 16
+	case reflect.Uint32:
+		return false, 32
+	case reflect.Uint64, reflect.Uint:
+		return false, uint(typeOf.Bits())
+	default:
+		panic("unsupported fixed integer type")
+	}
+}
+
+func zFixedFromBig[T zAnyInteger](value *big.Int) T {
+	var zero T
+	if reflect.TypeOf(zero).Kind() >= reflect.Uint && reflect.TypeOf(zero).Kind() <= reflect.Uint64 {
+		return T(value.Uint64())
+	}
+	return T(value.Int64())
+}
+
+func zFixedArithmetic[T zAnyInteger](left, right T, operator string, mode string) T {
+	leftBig := zIntegerBig(left)
+	rightBig := zIntegerBig(right)
+	result := new(big.Int)
+	switch operator {
+	case "+":
+		result.Add(leftBig, rightBig)
+	case "-":
+		result.Sub(leftBig, rightBig)
+	case "*":
+		result.Mul(leftBig, rightBig)
+	}
+
+	signed, bits := zFixedTypeInfo[T]()
+	min, max := zIntegerBounds(signed, bits)
+	switch mode {
+	case "checked":
+		if result.Cmp(min) < 0 || result.Cmp(max) > 0 {
+			panic("fixed integer overflow")
+		}
+	case "saturating":
+		if result.Cmp(min) < 0 { result.Set(min) }
+		if result.Cmp(max) > 0 { result.Set(max) }
+	case "wrapping":
+		modulus := new(big.Int).Lsh(big.NewInt(1), bits)
+		result.Mod(result, modulus)
+		if result.Sign() < 0 { result.Add(result, modulus) }
+	}
+	return zFixedFromBig[T](result)
+}
+
+func checkedAdd[T zAnyInteger](left, right T) T { return zFixedArithmetic(left, right, "+", "checked") }
+func checkedSub[T zAnyInteger](left, right T) T { return zFixedArithmetic(left, right, "-", "checked") }
+func checkedMul[T zAnyInteger](left, right T) T { return zFixedArithmetic(left, right, "*", "checked") }
+func satAdd[T zAnyInteger](left, right T) T { return zFixedArithmetic(left, right, "+", "saturating") }
+func satSub[T zAnyInteger](left, right T) T { return zFixedArithmetic(left, right, "-", "saturating") }
+func satMul[T zAnyInteger](left, right T) T { return zFixedArithmetic(left, right, "*", "saturating") }
+
+func zIndex(value interface{}) int {
+	reflected := reflect.ValueOf(value)
+	switch reflected.Kind() {
+	case reflect.Int, reflect.Int8, reflect.Int16, reflect.Int32, reflect.Int64:
+		index := reflected.Int()
+		if index < 0 { panic(fmt.Sprintf("index must be non-negative, got %d", index)) }
+		return int(index)
+	case reflect.Uint, reflect.Uint8, reflect.Uint16, reflect.Uint32, reflect.Uint64:
+		return int(reflected.Uint())
+	default:
+		panic(fmt.Sprintf("index must be integer, got %T", value))
+	}
+}
+
+func zBytes(size interface{}) []uint8 {
+	return make([]uint8, zIndex(size))
+}
+
+func zArrayOf(kind string, size interface{}) interface{} {
+	length := zIndex(size)
+	switch kind {
+	case "u8": return make([]uint8, length)
+	case "u16": return make([]uint16, length)
+	case "u32": return make([]uint32, length)
+	case "u64": return make([]uint64, length)
+	case "i8": return make([]int8, length)
+	case "i16": return make([]int16, length)
+	case "i32": return make([]int32, length)
+	case "i64": return make([]int64, length)
+	default: panic(fmt.Sprintf("unsupported arrayOf type %q", kind))
+	}
+}
+
+func zGet(container interface{}, index interface{}) interface{} {
+	value := reflect.ValueOf(container)
+	i := zIndex(index)
+	if value.Kind() == reflect.Map {
+		key := reflect.ValueOf(index)
+		result := value.MapIndex(key)
+		if !result.IsValid() { return nil }
+		return result.Interface()
+	}
+	if value.Kind() != reflect.Array && value.Kind() != reflect.Slice && value.Kind() != reflect.String {
+		panic(fmt.Sprintf("value of type %T cannot be indexed", container))
+	}
+	if i < 0 || i >= value.Len() { panic(fmt.Sprintf("index out of bounds: %d (length %d)", i, value.Len())) }
+	return value.Index(i).Interface()
+}
+
+func zConvertElement(value interface{}, target reflect.Type) reflect.Value {
+	input := reflect.ValueOf(value)
+	if input.IsValid() && input.Type().AssignableTo(target) { return input }
+	if input.IsValid() && input.Type().ConvertibleTo(target) {
+		converted := input.Convert(target)
+		if target.Kind() >= reflect.Int && target.Kind() <= reflect.Int64 {
+			original := zIntegerBigDynamic(value)
+			if original.Cmp(big.NewInt(converted.Int())) != 0 { panic("integer value is outside typed array range") }
+		}
+		if target.Kind() >= reflect.Uint && target.Kind() <= reflect.Uint64 {
+			original := zIntegerBigDynamic(value)
+			convertedBig := new(big.Int).SetUint64(converted.Uint())
+			if original.Sign() < 0 || original.Cmp(convertedBig) != 0 { panic("integer value is outside typed array range") }
+		}
+		return converted
+	}
+	panic(fmt.Sprintf("cannot store %T in %s", value, target))
+}
+
+func zSet(container interface{}, index interface{}, newValue interface{}) interface{} {
+	value := reflect.ValueOf(container)
+	i := zIndex(index)
+	if value.Kind() == reflect.Map {
+		value.SetMapIndex(reflect.ValueOf(index), reflect.ValueOf(newValue))
+		return newValue
+	}
+	if value.Kind() != reflect.Array && value.Kind() != reflect.Slice {
+		panic(fmt.Sprintf("value of type %T cannot be changed by index", container))
+	}
+	if i < 0 || i >= value.Len() { panic(fmt.Sprintf("index out of bounds: %d (length %d)", i, value.Len())) }
+	value.Index(i).Set(zConvertElement(newValue, value.Type().Elem()))
+	return newValue
+}
+
+func zSlice(container interface{}, start interface{}, end interface{}) interface{} {
+	value := reflect.ValueOf(container)
+	from := zIndex(start)
+	to := zIndex(end)
+	if value.Kind() != reflect.Array && value.Kind() != reflect.Slice {
+		panic(fmt.Sprintf("value of type %T cannot be sliced", container))
+	}
+	if from < 0 || to < from || to > value.Len() { panic(fmt.Sprintf("invalid slice range [%d:%d] for length %d", from, to, value.Len())) }
+	return value.Slice(from, to).Interface()
+}
+
+func zFill(container interface{}, newValue interface{}) interface{} {
+	value := reflect.ValueOf(container)
+	if value.Kind() != reflect.Array && value.Kind() != reflect.Slice {
+		panic(fmt.Sprintf("value of type %T cannot be filled", container))
+	}
+	for i := 0; i < value.Len(); i++ { value.Index(i).Set(zConvertElement(newValue, value.Type().Elem())) }
+	return container
+}
+
+func zByteReflect(buffer interface{}) reflect.Value {
+	value := reflect.ValueOf(buffer)
+	if value.Kind() != reflect.Array && value.Kind() != reflect.Slice {
+		panic(fmt.Sprintf("expected byte-compatible buffer, got %T", buffer))
+	}
+	kind := value.Type().Elem().Kind()
+	if kind != reflect.Uint8 && kind != reflect.Int8 {
+		panic(fmt.Sprintf("expected byte-compatible buffer, got %T", buffer))
+	}
+	return value
+}
+
+func zByteData(buffer interface{}) []byte {
+	value := zByteReflect(buffer)
+	data := make([]byte, value.Len())
+	for i := 0; i < value.Len(); i++ {
+		if value.Type().Elem().Kind() == reflect.Uint8 {
+			data[i] = byte(value.Index(i).Uint())
+		} else {
+			data[i] = byte(int8(value.Index(i).Int()))
+		}
+	}
+	return data
+}
+
+func zSetByte(buffer interface{}, index int, value byte) {
+	reflected := zByteReflect(buffer)
+	if index < 0 || index >= reflected.Len() {
+		panic(fmt.Sprintf("byte index out of bounds: %d (length %d)", index, reflected.Len()))
+	}
+	if reflected.Type().Elem().Kind() == reflect.Uint8 {
+		reflected.Index(index).SetUint(uint64(value))
+	} else {
+		reflected.Index(index).SetInt(int64(int8(value)))
+	}
+}
+
+func zReadBytes(path string) []uint8 {
+	data, err := os.ReadFile(path)
+	if err != nil { panic(fmt.Sprintf("readBytes %q: %v", path, err)) }
+	return []uint8(data)
+}
+
+func zWriteBytes(path string, buffer interface{}) int {
+	data := zByteData(buffer)
+	if err := os.WriteFile(path, data, 0644); err != nil {
+		panic(fmt.Sprintf("writeBytes %q: %v", path, err))
+	}
+	return len(data)
+}
+
+func zReadUnsigned(buffer interface{}, offset interface{}, width int, order binary.ByteOrder) uint64 {
+	data := zByteData(buffer)
+	start := zIndex(offset)
+	if start > len(data) || width > len(data)-start {
+		panic(fmt.Sprintf("byte range [%d:%d] is outside buffer length %d", start, start+width, len(data)))
+	}
+	window := data[start:start+width]
+	switch width {
+	case 2: return uint64(order.Uint16(window))
+	case 4: return uint64(order.Uint32(window))
+	case 8: return order.Uint64(window)
+	default: panic(fmt.Sprintf("unsupported integer width %d", width))
+	}
+}
+
+func zReadU16LE(buffer interface{}, offset interface{}) uint16 { return uint16(zReadUnsigned(buffer, offset, 2, binary.LittleEndian)) }
+func zReadU16BE(buffer interface{}, offset interface{}) uint16 { return uint16(zReadUnsigned(buffer, offset, 2, binary.BigEndian)) }
+func zReadU32LE(buffer interface{}, offset interface{}) uint32 { return uint32(zReadUnsigned(buffer, offset, 4, binary.LittleEndian)) }
+func zReadU32BE(buffer interface{}, offset interface{}) uint32 { return uint32(zReadUnsigned(buffer, offset, 4, binary.BigEndian)) }
+func zReadU64LE(buffer interface{}, offset interface{}) uint64 { return zReadUnsigned(buffer, offset, 8, binary.LittleEndian) }
+func zReadU64BE(buffer interface{}, offset interface{}) uint64 { return zReadUnsigned(buffer, offset, 8, binary.BigEndian) }
+
+func zWriteUnsigned(buffer interface{}, offset interface{}, input interface{}, width int, order binary.ByteOrder) interface{} {
+	start := zIndex(offset)
+	reflected := zByteReflect(buffer)
+	if start > reflected.Len() || width > reflected.Len()-start {
+		panic(fmt.Sprintf("byte range [%d:%d] is outside buffer length %d", start, start+width, reflected.Len()))
+	}
+	number := zIntegerBigDynamic(input)
+	_, max := zIntegerBounds(false, uint(width*8))
+	if number.Sign() < 0 || number.Cmp(max) > 0 {
+		panic(fmt.Sprintf("value %s is outside u%d range", number.String(), width*8))
+	}
+	temp := make([]byte, width)
+	raw := number.Uint64()
+	switch width {
+	case 2: order.PutUint16(temp, uint16(raw))
+	case 4: order.PutUint32(temp, uint32(raw))
+	case 8: order.PutUint64(temp, raw)
+	default: panic(fmt.Sprintf("unsupported integer width %d", width))
+	}
+	for i, value := range temp { zSetByte(buffer, start+i, value) }
+	return buffer
+}
+
+func zWriteU16LE(buffer interface{}, offset interface{}, value interface{}) interface{} { return zWriteUnsigned(buffer, offset, value, 2, binary.LittleEndian) }
+func zWriteU16BE(buffer interface{}, offset interface{}, value interface{}) interface{} { return zWriteUnsigned(buffer, offset, value, 2, binary.BigEndian) }
+func zWriteU32LE(buffer interface{}, offset interface{}, value interface{}) interface{} { return zWriteUnsigned(buffer, offset, value, 4, binary.LittleEndian) }
+func zWriteU32BE(buffer interface{}, offset interface{}, value interface{}) interface{} { return zWriteUnsigned(buffer, offset, value, 4, binary.BigEndian) }
+func zWriteU64LE(buffer interface{}, offset interface{}, value interface{}) interface{} { return zWriteUnsigned(buffer, offset, value, 8, binary.LittleEndian) }
+func zWriteU64BE(buffer interface{}, offset interface{}, value interface{}) interface{} { return zWriteUnsigned(buffer, offset, value, 8, binary.BigEndian) }
+
+func zCopyBytes(destination interface{}, destinationStart interface{}, source interface{}, sourceStart interface{}, length interface{}) interface{} {
+	dst := zByteReflect(destination)
+	src := zByteData(source)
+	dstStart := zIndex(destinationStart)
+	srcStart := zIndex(sourceStart)
+	count := zIndex(length)
+	if dstStart > dst.Len() || count > dst.Len()-dstStart { panic("copyBytes destination range is outside buffer") }
+	if srcStart > len(src) || count > len(src)-srcStart { panic("copyBytes source range is outside buffer") }
+	temp := append([]byte(nil), src[srcStart:srcStart+count]...)
+	for i, value := range temp { zSetByte(destination, dstStart+i, value) }
+	return destination
+}
+
+func zBytesEqual(first interface{}, second interface{}) bool {
+	return bytes.Equal(zByteData(first), zByteData(second))
+}
+
+func zSHA256(buffer interface{}) string {
+	sum := sha256.Sum256(zByteData(buffer))
+	return fmt.Sprintf("%x", sum)
+}
+
 func sizeOf(value interface{}) int {
-	switch v := value.(type) {
-	case []interface{}:
-		return len(v)
-	case string:
-		return len(v)
+	if value == nil { return 0 }
+	reflected := reflect.ValueOf(value)
+	switch reflected.Kind() {
+	case reflect.Array, reflect.Slice, reflect.Map, reflect.String:
+		return reflected.Len()
 	default:
 		return 0
 	}
@@ -515,6 +872,10 @@ func mysqlDeleteTable(tableName string) error {
 	}
 	fmt.Printf("Table '%s' deleted successfully\n", tableName)
 	return nil
+}
+
+func mysqlDropTable(tableName string) error {
+	return mysqlDeleteTable(tableName)
 }
 
 func mysqlInsertIntoTable(tableName string, data map[string]interface{}) error {
@@ -1528,6 +1889,205 @@ func awaitValue(v interface{}) interface{} {
 
 func tryValue(v interface{}) interface{} {
 	return awaitValue(v)
+}
+
+
+type zMethod func(self *zStructInstance, args ...interface{}) interface{}
+
+type zStructDefinition struct {
+	Name string
+	Fields []string
+	Methods map[string]zMethod
+}
+
+type zStructInstance struct {
+	Definition *zStructDefinition
+	Fields map[string]interface{}
+}
+
+type zEnumValue struct { EnumName string; Name string; Ordinal int }
+type zEnumDefinition struct { Name string; Members map[string]zEnumValue }
+type zMatchCase struct { Pattern interface{}; Body func() interface{} }
+
+func zStruct(name string, fields []string, methods map[string]zMethod) *zStructDefinition {
+	return &zStructDefinition{Name: name, Fields: fields, Methods: methods}
+}
+
+func zConstruct(definition *zStructDefinition, args ...interface{}) *zStructInstance {
+	instance := &zStructInstance{Definition: definition, Fields: map[string]interface{}{}}
+	if len(args) == 1 {
+		if named, ok := args[0].(map[string]interface{}); ok {
+			for _, field := range definition.Fields {
+				value, exists := named[field]
+				if !exists { panic(fmt.Sprintf("missing field %s for %s", field, definition.Name)) }
+				instance.Fields[field] = value
+			}
+			for field := range named {
+				known := false
+				for _, declared := range definition.Fields { if field == declared { known = true; break } }
+				if !known { panic(fmt.Sprintf("unknown field %s for %s", field, definition.Name)) }
+			}
+			return instance
+		}
+	}
+	if len(args) != len(definition.Fields) { panic(fmt.Sprintf("wrong number of fields for %s: want=%d, got=%d", definition.Name, len(definition.Fields), len(args))) }
+	for index, field := range definition.Fields { instance.Fields[field] = args[index] }
+	return instance
+}
+
+func zEnum(name string, members []string) *zEnumDefinition {
+	definition := &zEnumDefinition{Name: name, Members: map[string]zEnumValue{}}
+	for index, member := range members { definition.Members[member] = zEnumValue{EnumName: name, Name: member, Ordinal: index} }
+	return definition
+}
+
+func zGetAttr(value interface{}, property string) interface{} {
+	switch current := value.(type) {
+	case *zStructInstance:
+		if field, ok := current.Fields[property]; ok { return field }
+		if current.Definition != nil { if _, ok := current.Definition.Methods[property]; ok { return property } }
+		panic(fmt.Sprintf("unknown field or method %s", property))
+	case *zEnumDefinition:
+		member, ok := current.Members[property]
+		if !ok { panic(fmt.Sprintf("unknown enum member %s.%s", current.Name, property)) }
+		return member
+	case map[string]interface{}:
+		return current[property]
+	default:
+		reflected := reflect.ValueOf(value)
+		if reflected.Kind() == reflect.Pointer { reflected = reflected.Elem() }
+		if reflected.IsValid() && reflected.Kind() == reflect.Struct {
+			field := reflected.FieldByName(property)
+			if field.IsValid() { return field.Interface() }
+		}
+		panic(fmt.Sprintf("object %T has no attribute %s", value, property))
+	}
+}
+
+func zSetAttr(value interface{}, property string, fieldValue interface{}) interface{} {
+	instance, ok := value.(*zStructInstance)
+	if !ok { panic(fmt.Sprintf("attribute assignment requires struct, got %T", value)) }
+	if _, exists := instance.Fields[property]; !exists { panic(fmt.Sprintf("unknown field %s", property)) }
+	instance.Fields[property] = fieldValue
+	return fieldValue
+}
+
+func zCallMethod(value interface{}, method string, args ...interface{}) interface{} {
+	instance, ok := value.(*zStructInstance)
+	if !ok { panic(fmt.Sprintf("method call requires struct, got %T", value)) }
+	fn, ok := instance.Definition.Methods[method]
+	if !ok { panic(fmt.Sprintf("unknown method %s", method)) }
+	return fn(instance, args...)
+}
+
+func zMatch(value interface{}, cases []zMatchCase, fallback func() interface{}) interface{} {
+	for _, candidate := range cases { if reflect.DeepEqual(value, candidate.Pattern) { return candidate.Body() } }
+	if fallback != nil { return fallback() }
+	return nil
+}
+
+func zIntegerTarget(left reflect.Value, right reflect.Value) reflect.Type {
+	if left.Type() == right.Type() { return left.Type() }
+	isInteger := func(kind reflect.Kind) bool {
+		return (kind >= reflect.Int && kind <= reflect.Int64) || (kind >= reflect.Uint && kind <= reflect.Uint64)
+	}
+	if !isInteger(left.Kind()) || !isInteger(right.Kind()) { return nil }
+	if left.Kind() == reflect.Int && right.Kind() != reflect.Int { return right.Type() }
+	if right.Kind() == reflect.Int && left.Kind() != reflect.Int { return left.Type() }
+	return nil
+}
+
+func zCoerceInteger(value reflect.Value, target reflect.Type) reflect.Value {
+	number := zIntegerBigDynamic(value.Interface())
+	signed := target.Kind() >= reflect.Int && target.Kind() <= reflect.Int64
+	minimum, maximum := zIntegerBounds(signed, uint(target.Bits()))
+	if number.Cmp(minimum) < 0 || number.Cmp(maximum) > 0 {
+		panic(fmt.Sprintf("value %s is outside %s range", number.String(), target.String()))
+	}
+	result := reflect.New(target).Elem()
+	if signed { result.SetInt(number.Int64()) } else { result.SetUint(number.Uint64()) }
+	return result
+}
+
+func zSignedResult(target reflect.Type, value int64) interface{} {
+	result := reflect.New(target).Elem()
+	result.SetInt(value)
+	return result.Interface()
+}
+
+func zUnsignedResult(target reflect.Type, value uint64) interface{} {
+	result := reflect.New(target).Elem()
+	result.SetUint(value)
+	return result.Interface()
+}
+
+func zBinary(operator string, left interface{}, right interface{}) interface{} {
+	if operator == "==" { return reflect.DeepEqual(left, right) }
+	if operator == "!=" { return !reflect.DeepEqual(left, right) }
+	if l, ok := left.(string); ok {
+		r, rok := right.(string)
+		if operator == "+" && rok { return l + r }
+	}
+	lv, rv := reflect.ValueOf(left), reflect.ValueOf(right)
+	if !lv.IsValid() || !rv.IsValid() { panic("invalid binary operand") }
+	isFloat := func(k reflect.Kind) bool { return k == reflect.Float32 || k == reflect.Float64 }
+	isSigned := func(k reflect.Kind) bool { return k >= reflect.Int && k <= reflect.Int64 }
+	isUnsigned := func(k reflect.Kind) bool { return k >= reflect.Uint && k <= reflect.Uint64 }
+	if isFloat(lv.Kind()) || isFloat(rv.Kind()) {
+		toFloat := func(v reflect.Value) float64 { if isFloat(v.Kind()) { return v.Convert(reflect.TypeOf(float64(0))).Float() }; if isSigned(v.Kind()) { return float64(v.Int()) }; return float64(v.Uint()) }
+		l, r := toFloat(lv), toFloat(rv)
+		switch operator { case "+": return l+r; case "-": return l-r; case "*": return l*r; case "/": return l/r; case "<": return l<r; case ">": return l>r; case "<=": return l<=r; case ">=": return l>=r }
+	}
+	if target := zIntegerTarget(lv, rv); target != nil {
+		lv, rv = zCoerceInteger(lv, target), zCoerceInteger(rv, target)
+	}
+	if operator == "shl" || operator == "shr" {
+		var count uint64
+		if isSigned(rv.Kind()) {
+			if rv.Int() < 0 { panic("shift count must be non-negative") }
+			count = uint64(rv.Int())
+		} else if isUnsigned(rv.Kind()) {
+			count = rv.Uint()
+		} else { panic(fmt.Sprintf("shift count must be integer, got %T", right)) }
+		if count >= uint64(lv.Type().Bits()) { panic(fmt.Sprintf("shift count out of range: %d", count)) }
+		if isSigned(lv.Kind()) {
+			if operator == "shl" { return zSignedResult(lv.Type(), lv.Int()<<count) }
+			return zSignedResult(lv.Type(), lv.Int()>>count)
+		}
+		if isUnsigned(lv.Kind()) {
+			if operator == "shl" { return zUnsignedResult(lv.Type(), lv.Uint()<<count) }
+			return zUnsignedResult(lv.Type(), lv.Uint()>>count)
+		}
+	}
+	if isSigned(lv.Kind()) && isSigned(rv.Kind()) && lv.Type() == rv.Type() {
+		l, r := lv.Int(), rv.Int()
+		switch operator {
+		case "+": return zSignedResult(lv.Type(), l+r)
+		case "-": return zSignedResult(lv.Type(), l-r)
+		case "*": return zSignedResult(lv.Type(), l*r)
+		case "/": return zSignedResult(lv.Type(), l/r)
+		case "%": return zSignedResult(lv.Type(), l%r)
+		case "band": return zSignedResult(lv.Type(), l&r)
+		case "bor": return zSignedResult(lv.Type(), l|r)
+		case "bxor": return zSignedResult(lv.Type(), l^r)
+		case "<": return l<r; case ">": return l>r; case "<=": return l<=r; case ">=": return l>=r
+		}
+	}
+	if isUnsigned(lv.Kind()) && isUnsigned(rv.Kind()) && lv.Type() == rv.Type() {
+		l, r := lv.Uint(), rv.Uint()
+		switch operator {
+		case "+": return zUnsignedResult(lv.Type(), l+r)
+		case "-": return zUnsignedResult(lv.Type(), l-r)
+		case "*": return zUnsignedResult(lv.Type(), l*r)
+		case "/": return zUnsignedResult(lv.Type(), l/r)
+		case "%": return zUnsignedResult(lv.Type(), l%r)
+		case "band": return zUnsignedResult(lv.Type(), l&r)
+		case "bor": return zUnsignedResult(lv.Type(), l|r)
+		case "bxor": return zUnsignedResult(lv.Type(), l^r)
+		case "<": return l<r; case ">": return l>r; case "<=": return l<=r; case ">=": return l>=r
+		}
+	}
+	panic(fmt.Sprintf("unsupported binary operation %T %s %T", left, operator, right))
 }
 
 `

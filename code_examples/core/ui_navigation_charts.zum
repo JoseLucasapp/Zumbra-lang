@@ -1,0 +1,31 @@
+import "../../std/desktop.zum" as desktop;
+import "../../std/ui.zum" as ui;
+
+var application << desktop.app({"backend": "headless", "quitOnLastWindow": false});
+var window << application.window({"title": "Navigation and charts", "width": 900, "height": 600});
+var collapsed << ui.boolState(false);
+var navigation << ui.navigation({
+    "id": "navigation",
+    "placement": "left",
+    "expandedSize": 280,
+    "collapsedSize": 56,
+    "collapsed": false,
+    "border": true
+}, [ui.text("Menu")]);
+ui.bind(navigation, "collapsed", collapsed);
+var chart << ui.chart({"id": "chart", "grow": 1, "height": 220});
+ui.pieChart(chart, {"values": [3, 2], "labels": ["Físico", "Digital"], "legend": true});
+ui.barChart(chart, {"values": [4, 2, 1], "labels": ["PS1", "PC", "NES"]});
+var table << ui.dataTable({"id": "table", "columns": ["Plataforma", "Jogos"], "rows": [["PS1", "4"], ["PC", "2"]], "height": 120});
+var content << ui.columnWith({"grow": 1, "gap": 8}, [chart, table]);
+var root << ui.rowWith({"grow": 1}, [navigation, content]);
+var context << ui.mount(application, window, root, {});
+var items << ui.snapshot(context)["items"];
+show(items[1]["width"]);
+show(sizeOf(ui.get(chart, "commands")));
+collapsed.set(true);
+items << ui.snapshot(context)["items"];
+show(items[1]["width"]);
+show(ui.get(table, "columns")[0]);
+context.close();
+application.close();

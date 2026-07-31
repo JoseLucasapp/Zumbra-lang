@@ -1,0 +1,510 @@
+package types
+
+import (
+	"strings"
+	"testing"
+	"zumbra/lexer"
+	"zumbra/parser"
+)
+
+func parseProgram(t *testing.T, input string) *parser.Parser {
+	t.Helper()
+	l := lexer.New(input)
+	return parser.New(l)
+}
+
+func checkInput(t *testing.T, input string) []error {
+	t.Helper()
+
+	p := parseProgram(t, input)
+	program := p.ParseProgram()
+
+	if len(p.Errors()) > 0 {
+		t.Fatalf("parser errors: %v", p.Errors())
+	}
+
+	c := NewChecker()
+	return c.Check(program)
+}
+
+func TestCheckValidNumericExpression(t *testing.T) {
+	errs := checkInput(t, `
+		var x << 10 + 20;
+	`)
+	if len(errs) != 0 {
+		t.Fatalf("expected 0 errors, got %d: %v", len(errs), errs)
+	}
+}
+
+func TestCheckInvalidNumericExpression(t *testing.T) {
+	errs := checkInput(t, `
+		var x << 10 + "abc";
+	`)
+	if len(errs) != 1 {
+		t.Fatalf("expected 1 error, got %d: %v", len(errs), errs)
+	}
+	if !strings.Contains(errs[0].Error(), "invalid operands for +") {
+		t.Fatalf("unexpected error: %v", errs[0])
+	}
+}
+
+func TestCheckHomogeneousArray(t *testing.T) {
+	errs := checkInput(t, `
+		var xs << [1, 2, 3];
+	`)
+	if len(errs) != 0 {
+		t.Fatalf("expected 0 errors, got %d: %v", len(errs), errs)
+	}
+}
+
+func TestCheckMixedArray(t *testing.T) {
+	errs := checkInput(t, `
+		var xs << [1, "a", 3];
+	`)
+	if len(errs) != 1 {
+		t.Fatalf("expected 1 error, got %d: %v", len(errs), errs)
+	}
+	if !strings.Contains(errs[0].Error(), "array literal has mixed element types") {
+		t.Fatalf("unexpected error: %v", errs[0])
+	}
+}
+
+func TestCheckComparisonMismatch(t *testing.T) {
+	errs := checkInput(t, `
+		var ok << 10 == "10";
+	`)
+	if len(errs) != 1 {
+		t.Fatalf("expected 1 error, got %d: %v", len(errs), errs)
+	}
+	if !strings.Contains(errs[0].Error(), "cannot compare") {
+		t.Fatalf("unexpected error: %v", errs[0])
+	}
+}
+
+func TestBuiltinSizeOfReturnsInt(t *testing.T) {
+	errs := checkInput(t, `
+		var len << sizeOf([1, 2, 3]);
+		var x << len + 10;
+	`)
+	if len(errs) != 0 {
+		t.Fatalf("expected 0 errors, got %d: %v", len(errs), errs)
+	}
+}
+
+func TestBuiltinInputReturnsString(t *testing.T) {
+	errs := checkInput(t, `
+		var name << input("name");
+		var msg << name + "!";
+	`)
+	if len(errs) != 0 {
+		t.Fatalf("expected 0 errors, got %d: %v", len(errs), errs)
+	}
+}
+
+func TestFunctionReturnInferenceInt(t *testing.T) {
+	errs := checkInput(t, `
+		var answer << fct() { return 42; };
+		var x << answer() + 8;
+	`)
+	if len(errs) != 0 {
+		t.Fatalf("expected 0 errors, got %d: %v", len(errs), errs)
+	}
+}
+
+func TestFunctionReturnInferenceString(t *testing.T) {
+	errs := checkInput(t, `
+		var greet << fct() { return "hi"; };
+		var msg << greet() + "!";
+	`)
+	if len(errs) != 0 {
+		t.Fatalf("expected 0 errors, got %d: %v", len(errs), errs)
+	}
+}
+
+func TestFunctionConflictingReturnTypes(t *testing.T) {
+	errs := checkInput(t, `
+		var strange << fct() {
+			return 10;
+			return "abc";
+		};
+	`)
+	if len(errs) != 1 {
+		t.Fatalf("expected 1 error, got %d: %v", len(errs), errs)
+	}
+	if !strings.Contains(errs[0].Error(), "function has conflicting return types") {
+		t.Fatalf("unexpected error: %v", errs[0])
+	}
+}
+
+func TestFunctionReturnInferenceAcrossIfAndReturn(t *testing.T) {
+	errs := checkInput(t, `
+		var f << fct(a) {
+			if (a) { return 10; }
+			return 20;
+		};
+		var x << f(true) + 1;
+	`)
+	if len(errs) != 0 {
+		t.Fatalf("expected 0 errors, got %d: %v", len(errs), errs)
+	}
+}
+
+func TestFunctionReturnConflictAcrossIfAndReturn(t *testing.T) {
+	errs := checkInput(t, `
+		var f << fct(a) {
+			if (a) { return 10; }
+			return "x";
+		};
+	`)
+	if len(errs) != 1 {
+		t.Fatalf("expected 1 error, got %d: %v", len(errs), errs)
+	}
+	if !strings.Contains(errs[0].Error(), "function has conflicting return types") {
+		t.Fatalf("unexpected error: %v", errs[0])
+	}
+}
+
+func TestFunctionReturnInferenceAcrossIfElse(t *testing.T) {
+	errs := checkInput(t, `
+		var f << fct(a) {
+			if (a) { return 10; } else { return 20; }
+		};
+		var x << f(true) + 1;
+	`)
+	if len(errs) != 0 {
+		t.Fatalf("expected 0 errors, got %d: %v", len(errs), errs)
+	}
+}
+
+func TestFunctionReturnConflictAcrossIfElse(t *testing.T) {
+	errs := checkInput(t, `
+		var f << fct(a) {
+			if (a) { return 10; } else { return "x"; }
+		};
+	`)
+	if len(errs) != 1 {
+		t.Fatalf("expected 1 error, got %d: %v", len(errs), errs)
+	}
+	if !strings.Contains(errs[0].Error(), "function has conflicting return types") {
+		t.Fatalf("unexpected error: %v", errs[0])
+	}
+}
+
+func TestArrayIndexMustBeInt(t *testing.T) {
+	errs := checkInput(t, `
+		var xs << [1, 2, 3];
+		var x << xs["0"];
+	`)
+	if len(errs) != 1 {
+		t.Fatalf("expected 1 error, got %d: %v", len(errs), errs)
+	}
+	if !strings.Contains(errs[0].Error(), "array index must be int") {
+		t.Fatalf("unexpected error: %v", errs[0])
+	}
+}
+
+func TestIfConditionMustBeBool(t *testing.T) {
+	errs := checkInput(t, `
+		if ("abc") { show("x"); }
+	`)
+	if len(errs) != 1 {
+		t.Fatalf("expected 1 error, got %d: %v", len(errs), errs)
+	}
+	if !strings.Contains(errs[0].Error(), "if condition must be bool") {
+		t.Fatalf("unexpected error: %v", errs[0])
+	}
+}
+
+func TestWhileConditionMustBeBool(t *testing.T) {
+	errs := checkInput(t, `
+		while (123) { show("y"); }
+	`)
+	if len(errs) != 1 {
+		t.Fatalf("expected 1 error, got %d: %v", len(errs), errs)
+	}
+	if !strings.Contains(errs[0].Error(), "while condition must be bool") {
+		t.Fatalf("unexpected error: %v", errs[0])
+	}
+}
+
+func TestSizeOfRejectsInvalidType(t *testing.T) {
+	errs := checkInput(t, `
+		var x << sizeOf(10);
+	`)
+	if len(errs) != 1 {
+		t.Fatalf("expected 1 error, got %d: %v", len(errs), errs)
+	}
+	if !strings.Contains(errs[0].Error(), "sizeOf expects array, string or dict") {
+		t.Fatalf("unexpected error: %v", errs[0])
+	}
+}
+
+func TestBuiltinArityValidation(t *testing.T) {
+	errs := checkInput(t, `
+		show();
+	`)
+	if len(errs) != 1 {
+		t.Fatalf("expected 1 error, got %d: %v", len(errs), errs)
+	}
+	if !strings.Contains(errs[0].Error(), "show expects 1 argument") {
+		t.Fatalf("unexpected error: %v", errs[0])
+	}
+}
+
+func TestFirstReturnsElementType(t *testing.T) {
+	errs := checkInput(t, `
+		var xs << [1, 2, 3];
+		var x << first(xs) + 1;
+	`)
+	if len(errs) != 0 {
+		t.Fatalf("expected 0 errors, got %d: %v", len(errs), errs)
+	}
+}
+
+func TestUserFunctionArityMismatchTooFew(t *testing.T) {
+	errs := checkInput(t, `
+		var add << fct(a, b) { return a + b; };
+		add(1);
+	`)
+	if len(errs) != 1 {
+		t.Fatalf("expected 1 error, got %d: %v", len(errs), errs)
+	}
+	if !strings.Contains(errs[0].Error(), "function expects 2 arguments, got 1") {
+		t.Fatalf("unexpected error: %v", errs[0])
+	}
+}
+
+func TestUserFunctionArityMismatchTooMany(t *testing.T) {
+	errs := checkInput(t, `
+		var add << fct(a, b) { return a + b; };
+		add(1, 2, 3);
+	`)
+	if len(errs) != 1 {
+		t.Fatalf("expected 1 error, got %d: %v", len(errs), errs)
+	}
+	if !strings.Contains(errs[0].Error(), "function expects 2 arguments, got 3") {
+		t.Fatalf("unexpected error: %v", errs[0])
+	}
+}
+
+func TestUserFunctionCorrectArity(t *testing.T) {
+	errs := checkInput(t, `
+		var add << fct(a, b) { return a + b; };
+		add(1, 2);
+	`)
+	if len(errs) != 0 {
+		t.Fatalf("expected 0 errors, got %d: %v", len(errs), errs)
+	}
+}
+
+func TestZeroArgFunctionRejectsExtraArgs(t *testing.T) {
+	errs := checkInput(t, `
+		var answer << fct() { return 42; };
+		answer(1);
+	`)
+	if len(errs) != 1 {
+		t.Fatalf("expected 1 error, got %d: %v", len(errs), errs)
+	}
+	if !strings.Contains(errs[0].Error(), "function expects 0 arguments, got 1") {
+		t.Fatalf("unexpected error: %v", errs[0])
+	}
+}
+
+func TestBuiltinAndUserFunctionCallsCanCoexist(t *testing.T) {
+	errs := checkInput(t, `
+		var greet << fct() { return "hi"; };
+		show(greet());
+	`)
+	if len(errs) != 0 {
+		t.Fatalf("expected 0 errors, got %d: %v", len(errs), errs)
+	}
+}
+
+func TestUserFunctionArgumentTypeMismatchNumericWithConcreteBody(t *testing.T) {
+	errs := checkInput(t, `
+		var addOne << fct(a) { return a + 1; };
+		addOne("x");
+	`)
+	if len(errs) != 1 {
+		t.Fatalf("expected 1 error, got %d: %v", len(errs), errs)
+	}
+	if !strings.Contains(errs[0].Error(), "argument 1 expects int, got string") {
+		t.Fatalf("unexpected error: %v", errs[0])
+	}
+}
+
+func TestUserFunctionArgumentTypeMatchNumericWithConcreteBody(t *testing.T) {
+	errs := checkInput(t, `
+		var addOne << fct(a) { return a + 1; };
+		addOne(10);
+	`)
+	if len(errs) != 0 {
+		t.Fatalf("expected 0 errors, got %d: %v", len(errs), errs)
+	}
+}
+
+func TestUserFunctionArgumentTypeMismatchNumericTwoParamsWithConcreteBody(t *testing.T) {
+	errs := checkInput(t, `
+		var addBase << fct(a, b) { return a + 1; };
+		addBase("x", 2);
+	`)
+	if len(errs) != 1 {
+		t.Fatalf("expected 1 error, got %d: %v", len(errs), errs)
+	}
+	if !strings.Contains(errs[0].Error(), "argument 1 expects int, got string") {
+		t.Fatalf("unexpected error: %v", errs[0])
+	}
+}
+
+func TestUserFunctionArgumentTypeMatchNumeric(t *testing.T) {
+	errs := checkInput(t, `
+		var add << fct(a, b) { return a + b; };
+		add(1, 2);
+	`)
+	if len(errs) != 0 {
+		t.Fatalf("expected 0 errors, got %d: %v", len(errs), errs)
+	}
+}
+
+func TestUserFunctionArgumentTypeMismatchString(t *testing.T) {
+	errs := checkInput(t, `
+		var suffix << fct(a) { return a + "!"; };
+		suffix(10);
+	`)
+	if len(errs) != 1 {
+		t.Fatalf("expected 1 error, got %d: %v", len(errs), errs)
+	}
+	if !strings.Contains(errs[0].Error(), "argument 1 expects string, got int") {
+		t.Fatalf("unexpected error: %v", errs[0])
+	}
+}
+
+func TestUserFunctionArgumentTypeMatchString(t *testing.T) {
+	errs := checkInput(t, `
+		var suffix << fct(a) { return a + "!"; };
+		suffix("hi");
+	`)
+	if len(errs) != 0 {
+		t.Fatalf("expected 0 errors, got %d: %v", len(errs), errs)
+	}
+}
+
+func TestUserFunctionArgumentTypesCanBeRefinedFromComparison(t *testing.T) {
+	errs := checkInput(t, `
+		var isTen << fct(a) { return a == 10; };
+		isTen("10");
+	`)
+	if len(errs) != 1 {
+		t.Fatalf("expected 1 error, got %d: %v", len(errs), errs)
+	}
+	if !strings.Contains(errs[0].Error(), "argument 1 expects int, got string") {
+		t.Fatalf("unexpected error: %v", errs[0])
+	}
+}
+
+func TestDictLiteralInference(t *testing.T) {
+	errs := checkInput(t, `
+		var ages << {"ana": 20, "bob": 30};
+		var x << ages["ana"] + 1;
+	`)
+	if len(errs) != 0 {
+		t.Fatalf("expected 0 errors, got %d: %v", len(errs), errs)
+	}
+}
+
+func TestDictLiteralMixedKeyTypes(t *testing.T) {
+	errs := checkInput(t, `
+		var ages << {"ana": 20, 10: 30};
+	`)
+	if len(errs) != 1 {
+		t.Fatalf("expected 1 error, got %d: %v", len(errs), errs)
+	}
+	if !strings.Contains(errs[0].Error(), "dict literal has mixed key types") {
+		t.Fatalf("unexpected error: %v", errs[0])
+	}
+}
+
+func TestDictLiteralMixedValueTypesWidenToUnknown(t *testing.T) {
+	parser := parseProgram(t, `var payload << {"name": "zumbra", "active": true, "count": 3};`)
+	program := parser.ParseProgram()
+	if len(parser.Errors()) != 0 {
+		t.Fatalf("parser errors: %v", parser.Errors())
+	}
+	analysis, errs := AnalyzeWithInfo(program)
+	if len(errs) != 0 {
+		t.Fatalf("unexpected errors: %v", errs)
+	}
+	typeInfo, ok := analysis.Global("payload")
+	if !ok || typeInfo.Kind != Dict || typeInfo.Value == nil || typeInfo.Value.Kind != Unknown {
+		t.Fatalf("expected dict<string, unknown>, got %v", typeInfo)
+	}
+}
+
+func TestDictIndexRejectsWrongKeyType(t *testing.T) {
+	errs := checkInput(t, `
+		var ages << {"ana": 20, "bob": 30};
+		var x << ages[10];
+	`)
+	if len(errs) != 1 {
+		t.Fatalf("expected 1 error, got %d: %v", len(errs), errs)
+	}
+	if !strings.Contains(errs[0].Error(), "dict key expects string, got int") {
+		t.Fatalf("unexpected error: %v", errs[0])
+	}
+}
+
+func TestSizeOfAcceptsDict(t *testing.T) {
+	errs := checkInput(t, `
+		var ages << {"ana": 20, "bob": 30};
+		var n << sizeOf(ages) + 1;
+	`)
+	if len(errs) != 0 {
+		t.Fatalf("expected 0 errors, got %d: %v", len(errs), errs)
+	}
+}
+
+func TestAwaitPropagatesType(t *testing.T) {
+	errs := checkInput(t, `
+		var getAge << fct() { return 20; };
+		var x << await getAge();
+		var y << x + 1;
+	`)
+	if len(errs) != 0 {
+		t.Fatalf("expected 0 errors, got %d: %v", len(errs), errs)
+	}
+}
+
+func TestTryPropagatesType(t *testing.T) {
+	errs := checkInput(t, `
+		var getName << fct() { return "ana"; };
+		var x << try getName();
+		var y << x + "!";
+	`)
+	if len(errs) != 0 {
+		t.Fatalf("expected 0 errors, got %d: %v", len(errs), errs)
+	}
+}
+
+func TestOrHandlerCompatibleTypes(t *testing.T) {
+	errs := checkInput(t, `
+		var getAge << fct() { return 20; };
+		var x << getAge() or { return 30; };
+		var y << x + 1;
+	`)
+	if len(errs) != 0 {
+		t.Fatalf("expected 0 errors, got %d: %v", len(errs), errs)
+	}
+}
+
+func TestOrHandlerIncompatibleTypes(t *testing.T) {
+	errs := checkInput(t, `
+		var getAge << fct() { return 20; };
+		var x << getAge() or { return "fallback"; };
+	`)
+	if len(errs) != 1 {
+		t.Fatalf("expected 1 error, got %d: %v", len(errs), errs)
+	}
+	if !strings.Contains(errs[0].Error(), "or handler has incompatible types") {
+		t.Fatalf("unexpected error: %v", errs[0])
+	}
+}

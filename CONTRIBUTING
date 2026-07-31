@@ -45,7 +45,7 @@ Zumbra is a growing language, and there's a lot of room for improvement. Here's 
     ```bash
    git checkout -b feature/your-feature-name
    ```
-3. Make your changes and write tests if possible.
+3. Make your changes. Language features must include tests, documentation, and an executable example.
 4. Commit with a clear message:
     ```bash
    git commit -m "Add: repeat(n) support to ShowResult type"
@@ -57,7 +57,10 @@ Zumbra is a growing language, and there's a lot of room for improvement. Here's 
 - Keep code readable and consistent with existing style.
 - Don't abuse on AI code.
 - Write helpful comments and commit messages.
-- Include test cases if you’re changing logic.
+- Include test cases for every changed language layer.
+- Document what the feature does, how it is used, and its limitations.
+- Add or update an executable example under `code_examples/`.
+- Follow `docs/pt-BR/processo-de-features.md`.
 - Keep pull requests focused on one topic.
 
 ### ❤️ Thanks!
