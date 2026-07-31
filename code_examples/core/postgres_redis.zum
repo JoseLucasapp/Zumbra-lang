@@ -1,0 +1,23 @@
+import "../../std/database.zum" as database;
+import "../../std/sessions.zum" as sessions;
+
+// This example is intended for environments with PostgreSQL and Redis running.
+// Replace the connection values before executing it.
+var postgres << database.postgres(
+    "postgres://zumbra:zumbra@127.0.0.1:5432/zumbra?sslmode=disable",
+    {"maxOpen": 8, "maxIdle": 4}
+);
+database.postgresConfigure(postgres, 8, 4, 300000, 60000);
+show(database.postgresPingServer(postgres));
+
+var redis << database.redis("127.0.0.1", 6379, "", 0, 10);
+show(database.redisPingServer(redis));
+database.redisSetValue(redis, "zumbra:example", {"ok": true}, 60000);
+show(database.redisGetValue(redis, "zumbra:example")["ok"]);
+
+var store << sessions.redis(redis, "zumbra:example:session:");
+var id << sessions.create(store, {"user": "Lucas"}, 60000);
+show(sessions.get(store, id)["user"]);
+sessions.close(store);
+database.redisCloseClient(redis);
+database.postgresCloseDatabase(postgres);

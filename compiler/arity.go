@@ -7,12 +7,14 @@ import (
 
 type ArityValidator struct {
 	functionScopes []map[string]int
+	structArities  map[string]int
 	errors         []Diagnostic
 }
 
 func NewArityValidator() *ArityValidator {
 	return &ArityValidator{
 		functionScopes: []map[string]int{{}},
+		structArities:  map[string]int{},
 		errors:         []Diagnostic{},
 	}
 }
@@ -77,6 +79,27 @@ func (v *ArityValidator) visitStatement(stmt ast.Statement) {
 			v.visitExpression(node.Value)
 		}
 
+	case *ast.ConstStatement:
+		if node.Value != nil {
+			v.visitExpression(node.Value)
+		}
+
+	case *ast.AttributeAssignStatement:
+		if node.Target != nil {
+			v.visitExpression(node.Target)
+		}
+		if node.Value != nil {
+			v.visitExpression(node.Value)
+		}
+
+	case *ast.IndexAssignStatement:
+		if node.Target != nil {
+			v.visitExpression(node.Target)
+		}
+		if node.Value != nil {
+			v.visitExpression(node.Value)
+		}
+
 	case *ast.ReturnStatement:
 		if node.ReturnValue != nil {
 			v.visitExpression(node.ReturnValue)
@@ -97,7 +120,24 @@ func (v *ArityValidator) visitStatement(stmt ast.Statement) {
 			v.popScope()
 		}
 
-	case *ast.ImportStatement:
+	case *ast.StructStatement:
+		if node.Name != nil {
+			v.structArities[node.Name.Value] = len(node.Fields)
+		}
+		for _, method := range node.Methods {
+			if method == nil || method.Function == nil {
+				continue
+			}
+			v.visitExpression(method.Function)
+		}
+
+	case *ast.UnsafeStatement:
+		if node.Body != nil {
+			v.pushScope()
+			v.visitStatementList(node.Body.Statements)
+			v.popScope()
+		}
+	case *ast.ExternBlockStatement, *ast.EnumStatement, *ast.TypeAliasStatement, *ast.ImportStatement:
 		return
 	}
 }
@@ -145,7 +185,16 @@ func (v *ArityValidator) visitExpression(expr ast.Expression) {
 	case *ast.CallExpression:
 		switch fn := node.Function.(type) {
 		case *ast.Identifier:
-			if expected, ok := v.resolveFunction(fn.Value); ok {
+			expected, known := v.resolveFunction(fn.Value)
+			if structArity, ok := v.structArities[fn.Value]; ok {
+				expected, known = structArity, true
+				if len(node.Arguments) == 1 {
+					if _, named := node.Arguments[0].(*ast.DictLiteral); named {
+						known = false // named initialization is validated by the type checker
+					}
+				}
+			}
+			if known {
 				got := len(node.Arguments)
 				if expected != got {
 					v.errors = append(v.errors, Diagnostic{
@@ -196,6 +245,11 @@ func (v *ArityValidator) visitExpression(expr ast.Expression) {
 			v.visitExpression(node.Object)
 		}
 
+	case *ast.SpawnExpression:
+		if node.Value != nil {
+			v.visitExpression(node.Value)
+		}
+
 	case *ast.AwaitExpression:
 		if node.Value != nil {
 			v.visitExpression(node.Value)
@@ -204,6 +258,26 @@ func (v *ArityValidator) visitExpression(expr ast.Expression) {
 	case *ast.TryExpression:
 		if node.Value != nil {
 			v.visitExpression(node.Value)
+		}
+
+	case *ast.MatchExpression:
+		if node.Value != nil {
+			v.visitExpression(node.Value)
+		}
+		for _, candidate := range node.Cases {
+			if candidate.Pattern != nil {
+				v.visitExpression(candidate.Pattern)
+			}
+			if candidate.Body != nil {
+				v.pushScope()
+				v.visitStatementList(candidate.Body.Statements)
+				v.popScope()
+			}
+		}
+		if node.Default != nil {
+			v.pushScope()
+			v.visitStatementList(node.Default.Statements)
+			v.popScope()
 		}
 
 	case *ast.ErrorHandlerExpression:

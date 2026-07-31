@@ -1,0 +1,36 @@
+fct square(value) {
+    sleepMs(5);
+    value * value;
+}
+
+fct produce(messages) {
+    send(messages, 7);
+    send(messages, 8);
+    closeChannel(messages);
+    return;
+}
+
+fct count(counter, amount) {
+    var index << 0;
+    while (index < amount) {
+        atomicAdd(counter, 1);
+        index << index + 1;
+    }
+    return;
+}
+
+var calculation << spawn square(6);
+show(await calculation);
+
+var messages << channel(2);
+var producer << spawn produce(messages);
+show(receive(messages));
+show(receive(messages));
+await producer;
+
+var counter << atomicInt(0);
+var firstWorker << spawn count(counter, 1000);
+var secondWorker << spawn count(counter, 1000);
+await firstWorker;
+await secondWorker;
+show(atomicLoad(counter));

@@ -1,0 +1,11 @@
+pub fct load(path) { configLoad(path); }
+pub fct fromValues(values) { configFrom(values); }
+pub fct environment(prefix) { configEnv(prefix); }
+pub fct merge(left, right) { configMerge(left, right); }
+pub fct required(config, key, fallback) { configRequired(config, key, fallback); }
+pub fct string(config, key, fallback) { configString(config, key, fallback); }
+pub fct integer(config, key, fallback) { configInt(config, key, fallback); }
+pub fct float(config, key, fallback) { configFloat(config, key, fallback); }
+pub fct boolean(config, key, fallback) { configBool(config, key, fallback); }
+pub fct secret(config, key) { configSecret(config, key); }
+pub fct redacted(config) { configRedacted(config); }

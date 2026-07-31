@@ -1,6 +1,8 @@
 package lexer
 
-import "zumbra/token"
+import (
+	"zumbra/token"
+)
 
 type Lexer struct {
 	input        string
@@ -109,6 +111,14 @@ func (l *Lexer) NextToken() token.Token {
 			tok = token.Token{
 				Pos:     pos,
 				Type:    token.MINUSMINUS,
+				Literal: string(ch) + string(l.ch),
+			}
+		} else if l.peekChar() == '>' {
+			ch := l.ch
+			l.readChar()
+			tok = token.Token{
+				Pos:     pos,
+				Type:    token.ARROW,
 				Literal: string(ch) + string(l.ch),
 			}
 		} else {
@@ -257,7 +267,36 @@ func (l *Lexer) readIdentifier() string {
 func (l *Lexer) readNumber() (string, token.TokenType) {
 	position := l.position
 
-	for isDigit(l.ch) {
+	// Base-prefixed integers are intentionally simple: 0x for hexadecimal,
+	// 0b for binary and 0o for octal. Invalid digits are left for the parser
+	// to report with a precise integer-literal error.
+	if l.ch == '0' {
+		switch l.peekChar() {
+		case 'x', 'X':
+			l.readChar()
+			l.readChar()
+			for isNumberLiteralChar(l.ch) {
+				l.readChar()
+			}
+			return l.input[position:l.position], token.INT
+		case 'b', 'B':
+			l.readChar()
+			l.readChar()
+			for isNumberLiteralChar(l.ch) {
+				l.readChar()
+			}
+			return l.input[position:l.position], token.INT
+		case 'o', 'O':
+			l.readChar()
+			l.readChar()
+			for isNumberLiteralChar(l.ch) {
+				l.readChar()
+			}
+			return l.input[position:l.position], token.INT
+		}
+	}
+
+	for isDigit(l.ch) || l.ch == '_' {
 		l.readChar()
 	}
 
@@ -267,12 +306,35 @@ func (l *Lexer) readNumber() (string, token.TokenType) {
 		tokenType = token.TokenType(token.FLOAT)
 		l.readChar()
 
-		for isDigit(l.ch) {
+		for isDigit(l.ch) || l.ch == '_' {
 			l.readChar()
 		}
 	}
 
+	if tokenType == token.INT {
+		l.readFixedIntegerSuffix()
+	}
+
 	return l.input[position:l.position], tokenType
+}
+
+func (l *Lexer) readFixedIntegerSuffix() {
+	remaining := l.input[l.position:]
+	for _, suffix := range []string{"u16", "u32", "u64", "i16", "i32", "i64", "u8", "i8"} {
+		if len(remaining) < len(suffix) || remaining[:len(suffix)] != suffix {
+			continue
+		}
+
+		next := l.position + len(suffix)
+		if next < len(l.input) && isIdentChar(l.input[next]) {
+			return
+		}
+
+		for range suffix {
+			l.readChar()
+		}
+		return
+	}
 }
 
 func (l *Lexer) readString() string {
@@ -303,6 +365,10 @@ func (l *Lexer) skipWhitespace() {
 
 func isDigit(ch byte) bool {
 	return '0' <= ch && ch <= '9'
+}
+
+func isNumberLiteralChar(ch byte) bool {
+	return isIdentChar(ch)
 }
 
 func isLetter(ch byte) bool {

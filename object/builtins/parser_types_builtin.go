@@ -20,6 +20,12 @@ func ToStringParserBuiltin() *object.Builtin {
 			switch obj := args[0].(type) {
 			case *object.Integer:
 				value = obj.Value
+			case *object.FixedInteger:
+				if obj.Kind.Signed() {
+					value = obj.SignedValue()
+				} else {
+					value = obj.UnsignedValue()
+				}
 			case *object.Float:
 				value = obj.Value
 			case *object.Boolean:
@@ -59,6 +65,14 @@ func ToIntParserBuiltin() *object.Builtin {
 				}
 			case *object.Integer:
 				return obj
+			case *object.FixedInteger:
+				if obj.Kind.Signed() {
+					return NewInteger(obj.SignedValue())
+				}
+				if obj.UnsignedValue() > math.MaxInt64 {
+					return NewError("value %s cannot fit in int", obj.Inspect())
+				}
+				return NewInteger(int64(obj.UnsignedValue()))
 			default:
 				return NewError("argument to `toInt` not supported, got=%s", args[0].Type())
 			}
@@ -92,6 +106,11 @@ func ToFloatParserBuiltin() *object.Builtin {
 				}
 			case *object.Integer:
 				return NewFloat(float64(obj.Value))
+			case *object.FixedInteger:
+				if obj.Kind.Signed() {
+					return NewFloat(float64(obj.SignedValue()))
+				}
+				return NewFloat(float64(obj.UnsignedValue()))
 			default:
 				return NewError("argument to `toFloat` not supported, got=%s", args[0].Type())
 			}
@@ -115,6 +134,8 @@ func ToBoolParserBuiltin() *object.Builtin {
 				return obj
 			case *object.Integer:
 				return NewBoolean(obj.Value != 0)
+			case *object.FixedInteger:
+				return NewBoolean(obj.UnsignedValue() != 0)
 			default:
 				return NewError("argument to `toBool` not supported, got=%s", args[0].Type())
 			}

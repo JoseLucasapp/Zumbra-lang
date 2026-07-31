@@ -9,6 +9,11 @@ const (
 	SymbolParam    SymbolKind = "PARAM"
 	SymbolBuiltin  SymbolKind = "BUILTIN"
 	SymbolImport   SymbolKind = "IMPORT"
+	SymbolConst    SymbolKind = "CONST"
+	SymbolStruct   SymbolKind = "STRUCT"
+	SymbolEnum     SymbolKind = "ENUM"
+	SymbolType     SymbolKind = "TYPE"
+	SymbolExternal SymbolKind = "EXTERNAL"
 )
 
 const (
@@ -58,8 +63,13 @@ func NewChildScope(parent *Scope, kind ScopeKind) *Scope {
 }
 
 func (s *Scope) Define(sym Symbol) error {
-	if _, exists := s.Symbols[sym.Name]; exists {
-		return ErrDuplicateSymbol(sym.Name)
+	if existing, exists := s.Symbols[sym.Name]; exists {
+		// Builtins are predeclared conveniences, not reserved words. A local or
+		// global declaration may intentionally shadow one, matching the compiler
+		// symbol table and keeping common names such as sum available.
+		if existing.Kind != SymbolBuiltin || sym.Kind == SymbolBuiltin {
+			return ErrDuplicateSymbol(sym.Name)
+		}
 	}
 
 	s.Symbols[sym.Name] = sym

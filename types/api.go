@@ -158,3 +158,22 @@ func collectImportPaths(program *ast.Program) []string {
 	}
 	return paths
 }
+
+// AnalyzeWithInfo checks a program and returns reusable type information.
+func AnalyzeWithInfo(program *ast.Program) (*Analysis, []error) {
+	checker := NewChecker()
+	errs := checker.Check(program)
+	return checker.snapshotAnalysis(), errs
+}
+
+// AnalyzeModuleWithInfo performs normal module validation and returns type
+// information for the entry program. Imported modules remain validated by the
+// existing module walker; the returned node map belongs to the entry AST.
+func AnalyzeModuleWithInfo(entryFile string, program *ast.Program) (*Analysis, []error) {
+	errs := AnalyzeModule(entryFile, program)
+	analysis, localErrs := AnalyzeWithInfo(program)
+	if len(localErrs) > 0 && len(errs) == 0 {
+		errs = append(errs, localErrs...)
+	}
+	return analysis, errs
+}

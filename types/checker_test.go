@@ -424,15 +424,19 @@ func TestDictLiteralMixedKeyTypes(t *testing.T) {
 	}
 }
 
-func TestDictLiteralMixedValueTypes(t *testing.T) {
-	errs := checkInput(t, `
-		var ages << {"ana": 20, "bob": "old"};
-	`)
-	if len(errs) != 1 {
-		t.Fatalf("expected 1 error, got %d: %v", len(errs), errs)
+func TestDictLiteralMixedValueTypesWidenToUnknown(t *testing.T) {
+	parser := parseProgram(t, `var payload << {"name": "zumbra", "active": true, "count": 3};`)
+	program := parser.ParseProgram()
+	if len(parser.Errors()) != 0 {
+		t.Fatalf("parser errors: %v", parser.Errors())
 	}
-	if !strings.Contains(errs[0].Error(), "dict literal has mixed value types") {
-		t.Fatalf("unexpected error: %v", errs[0])
+	analysis, errs := AnalyzeWithInfo(program)
+	if len(errs) != 0 {
+		t.Fatalf("unexpected errors: %v", errs)
+	}
+	typeInfo, ok := analysis.Global("payload")
+	if !ok || typeInfo.Kind != Dict || typeInfo.Value == nil || typeInfo.Value.Kind != Unknown {
+		t.Fatalf("expected dict<string, unknown>, got %v", typeInfo)
 	}
 }
 

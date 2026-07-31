@@ -1,0 +1,13 @@
+pub const BASE << 40;
+pub fct add(left, right) {
+    left + right;
+}
+
+pub struct Point {
+    x: int;
+    y: int;
+
+    fct sum() {
+        self.x + self.y;
+    }
+}

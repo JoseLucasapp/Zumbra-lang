@@ -1,0 +1,7 @@
+pub extern "C" from "../native/z8_math.c" {
+    fct add(left: i32, right: i32) -> i32 as "z8_add";
+    fct apply(value: i32, transform: callback(i32) -> i32) -> i32 as "z8_apply";
+    fct name() -> cstring as "z8_name";
+    fct nullPointer() -> ptr as "z8_null_pointer";
+    fct isNull(value: ptr) -> bool as "z8_is_null";
+}

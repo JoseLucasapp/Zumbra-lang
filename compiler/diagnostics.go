@@ -96,7 +96,7 @@ func (a *Analyzer) popScope() {
 }
 
 func isSyntheticName(name string) bool {
-	return strings.HasPrefix(name, "__z_")
+	return strings.HasPrefix(name, "__z_") || strings.HasPrefix(name, "__zm_")
 }
 
 func (a *Analyzer) markDeclared(name string) {
@@ -178,6 +178,30 @@ func (a *Analyzer) visitStatement(stmt ast.Statement) {
 			a.visitExpression(node.Value)
 		}
 
+	case *ast.ConstStatement:
+		if node.Name != nil {
+			a.markDeclared(node.Name.Value)
+		}
+		if node.Value != nil {
+			a.visitExpression(node.Value)
+		}
+
+	case *ast.AttributeAssignStatement:
+		if node.Target != nil {
+			a.visitExpression(node.Target)
+		}
+		if node.Value != nil {
+			a.visitExpression(node.Value)
+		}
+
+	case *ast.IndexAssignStatement:
+		if node.Target != nil {
+			a.visitExpression(node.Target)
+		}
+		if node.Value != nil {
+			a.visitExpression(node.Value)
+		}
+
 	case *ast.ReturnStatement:
 		if node.ReturnValue != nil {
 			a.visitExpression(node.ReturnValue)
@@ -192,6 +216,39 @@ func (a *Analyzer) visitStatement(stmt ast.Statement) {
 		if node.Condition != nil {
 			a.visitExpression(node.Condition)
 		}
+		a.pushScope()
+		if node.Body != nil {
+			a.visitStatementList(node.Body.Statements)
+		}
+		a.popScope()
+
+	case *ast.StructStatement:
+		if node.Name != nil {
+			a.markDeclared(node.Name.Value)
+		}
+		for _, method := range node.Methods {
+			if method == nil || method.Function == nil {
+				continue
+			}
+			a.visitExpression(method.Function)
+		}
+
+	case *ast.EnumStatement:
+		if node.Name != nil {
+			a.markDeclared(node.Name.Value)
+		}
+
+	case *ast.TypeAliasStatement:
+		return
+
+	case *ast.ExternBlockStatement:
+		for _, function := range node.Functions {
+			if function != nil && function.Name != nil {
+				a.markDeclared(function.Name.Value)
+			}
+		}
+
+	case *ast.UnsafeStatement:
 		a.pushScope()
 		if node.Body != nil {
 			a.visitStatementList(node.Body.Statements)
@@ -285,6 +342,11 @@ func (a *Analyzer) visitExpression(expr ast.Expression) {
 			a.visitExpression(node.Object)
 		}
 
+	case *ast.SpawnExpression:
+		if node.Value != nil {
+			a.visitExpression(node.Value)
+		}
+
 	case *ast.AwaitExpression:
 		if node.Value != nil {
 			a.visitExpression(node.Value)
@@ -293,6 +355,26 @@ func (a *Analyzer) visitExpression(expr ast.Expression) {
 	case *ast.TryExpression:
 		if node.Value != nil {
 			a.visitExpression(node.Value)
+		}
+
+	case *ast.MatchExpression:
+		if node.Value != nil {
+			a.visitExpression(node.Value)
+		}
+		for _, candidate := range node.Cases {
+			if candidate.Pattern != nil {
+				a.visitExpression(candidate.Pattern)
+			}
+			a.pushScope()
+			if candidate.Body != nil {
+				a.visitStatementList(candidate.Body.Statements)
+			}
+			a.popScope()
+		}
+		if node.Default != nil {
+			a.pushScope()
+			a.visitStatementList(node.Default.Statements)
+			a.popScope()
 		}
 
 	case *ast.ErrorHandlerExpression:

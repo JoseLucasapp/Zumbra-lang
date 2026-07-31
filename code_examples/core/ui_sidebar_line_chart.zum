@@ -1,0 +1,31 @@
+import "../../std/desktop.zum" as desktop;
+import "../../std/ui.zum" as ui;
+
+var app << desktop.app({"backend": "headless", "quitOnLastWindow": false});
+var window << app.window({"title": "Sidebar e linha", "width": 1000, "height": 600});
+var field << ui.input({"id": "sidebar-field", "value": "Final Fantasy IX", "height": 40});
+var sidebar << ui.navigation({"id": "sidebar", "placement": "left", "expandedSize": 350, "padding": 18, "border": true}, [
+    ui.columnWith({"id": "sidebar-content", "grow": 1, "gap": 8}, [
+        ui.textWith("Cadastrar jogo", {"id": "sidebar-title", "fontSize": 20}),
+        field
+    ])
+]);
+var chart << ui.chart({"id": "line-chart", "grow": 1, "minHeight": 240});
+ui.lineChart(chart, {"values": [1, 1], "labels": ["PlayStation 1", "PS1"], "legend": true});
+var root << ui.rowWith({"grow": 1, "gap": 18}, [sidebar, ui.columnWith({"grow": 1}, [chart])]);
+var context << ui.mount(app, window, root, {});
+
+fct byId(items, id) {
+    for item in items {
+        if (item["id"] == id) { return item; }
+    }
+    {};
+}
+
+var items << ui.snapshot(context)["items"];
+show(byId(items, "sidebar")["height"]);
+show(byId(items, "sidebar-title")["height"] > 0);
+show(byId(items, "sidebar-field")["height"]);
+show(ui.get(chart, "commands")[0]["values"]["labels"][0]);
+context.close();
+app.close();

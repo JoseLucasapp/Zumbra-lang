@@ -1,0 +1,36 @@
+import "../../std/desktop.zum" as desktop;
+
+var application << desktop.app({
+    "backend": "auto",
+    "name": "Zumbra Desktop",
+    "version": "0.10.4",
+    "identifier": "dev.zumbra.desktop-window",
+    "quitOnLastWindow": true,
+    "closeOnRequest": true
+});
+
+var window << application.window({
+    "title": "Zumbra Desktop - Z13",
+    "width": 960,
+    "height": 640,
+    "resizable": true,
+    "highDPI": true
+});
+
+application.shortcut("Ctrl+Q", fct(event) {
+    event;
+    application.quit();
+});
+
+application.on("drop_file", fct(event) {
+    show("Dropped file: " + event["path"]);
+});
+
+application.on("window_resized", fct(event) {
+    show("Window: " + toString(event["width"]) + "x" + toString(event["height"]));
+});
+
+window.show();
+window.focus();
+application.run();
+application.close();

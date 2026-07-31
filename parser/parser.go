@@ -3,6 +3,7 @@ package parser
 import (
 	"fmt"
 	"strconv"
+	"strings"
 
 	"zumbra/ast"
 	"zumbra/lexer"
@@ -12,12 +13,17 @@ import (
 var precedences = map[token.TokenType]int{
 	token.OR:        OR,
 	token.AND:       AND,
+	token.BIT_OR:    BIT_OR,
+	token.BIT_XOR:   BIT_XOR,
+	token.BIT_AND:   BIT_AND,
 	token.EQUAL:     EQUALS,
 	token.NOT_EQUAL: EQUALS,
 	token.LT:        LESSGREATER,
 	token.GT:        LESSGREATER,
 	token.LTE:       LESSGREATER,
 	token.GTE:       LESSGREATER,
+	token.SHIFT_L:   SHIFT,
+	token.SHIFT_R:   SHIFT,
 	token.DOTDOT:    RANGE,
 	token.PLUS:      SUM,
 	token.MINUS:     SUM,
@@ -37,6 +43,10 @@ const (
 	AND
 	EQUALS
 	LESSGREATER
+	BIT_OR
+	BIT_XOR
+	BIT_AND
+	SHIFT
 	RANGE
 	SUM
 	PRODUCT
@@ -76,6 +86,7 @@ func New(l *lexer.Lexer) *Parser {
 	p.registerPrefix(token.FLOAT, p.parseFloatLiteral)
 	p.registerPrefix(token.BANG, p.parsePrefixExpression)
 	p.registerPrefix(token.MINUS, p.parsePrefixExpression)
+	p.registerPrefix(token.BIT_NOT, p.parsePrefixExpression)
 	p.registerPrefix(token.TRUE, p.parseBoolean)
 	p.registerPrefix(token.FALSE, p.parseBoolean)
 	p.registerPrefix(token.LPAREN, p.parseGroupedExpression)
@@ -87,7 +98,9 @@ func New(l *lexer.Lexer) *Parser {
 	p.registerPrefix(token.FOR, p.parseForLoopExpression)
 	p.registerPrefix(token.ASYNC, p.parseAsyncFunctionLiteral)
 	p.registerPrefix(token.AWAIT, p.parseAwaitExpression)
+	p.registerPrefix(token.SPAWN, p.parseSpawnExpression)
 	p.registerPrefix(token.TRY, p.parseTryExpression)
+	p.registerPrefix(token.MATCH, p.parseMatchExpression)
 	p.registerPrefix(token.BREAK, p.parseBreakWithoutLoopContext)
 	p.registerPrefix(token.CONTINUE, p.parseContinueWithoutLoopContext)
 
@@ -106,6 +119,11 @@ func New(l *lexer.Lexer) *Parser {
 	p.registerInfix(token.GTE, p.parseInfixExpression)
 	p.registerInfix(token.AND, p.parseInfixExpression)
 	p.registerInfix(token.OR, p.parseOrExpression)
+	p.registerInfix(token.BIT_AND, p.parseInfixExpression)
+	p.registerInfix(token.BIT_OR, p.parseInfixExpression)
+	p.registerInfix(token.BIT_XOR, p.parseInfixExpression)
+	p.registerInfix(token.SHIFT_L, p.parseInfixExpression)
+	p.registerInfix(token.SHIFT_R, p.parseInfixExpression)
 	p.registerInfix(token.LPAREN, p.parseCallExpression)
 	p.registerInfix(token.LBRACKET, p.parseIndexExpression)
 	p.registerInfix(token.DOT, p.parseAttributeAccess)
@@ -152,6 +170,25 @@ func (p *Parser) parseStatement() ast.Statement {
 		return p.parseWhileStatement()
 	case token.IMPORT:
 		return p.parseImportStatement()
+	case token.CONST:
+		return p.parseConstStatement()
+	case token.STRUCT:
+		return p.parseStructStatement()
+	case token.ENUM:
+		return p.parseEnumStatement()
+	case token.TYPE:
+		return p.parseTypeAliasStatement()
+	case token.PUB:
+		return p.parsePublicStatement()
+	case token.EXTERN:
+		return p.parseExternBlockStatement(false)
+	case token.UNSAFE:
+		return p.parseUnsafeStatement()
+	case token.FUNCTION:
+		if p.peekTokenIs(token.IDENT) {
+			return p.parseNamedFunctionStatement(false)
+		}
+		return p.parseExpressionStatement()
 	case token.IDENT:
 		if p.peekTokenIs(token.ASSIGN) {
 			return p.parseAssignStatement()
@@ -160,6 +197,431 @@ func (p *Parser) parseStatement() ast.Statement {
 	default:
 		return p.parseExpressionStatement()
 	}
+}
+
+func (p *Parser) parsePublicStatement() ast.Statement {
+	pubToken := p.curToken
+	p.nextToken()
+	switch p.curToken.Type {
+	case token.VAR:
+		stmt := p.parseVarStatement()
+		if stmt != nil {
+			stmt.Public = true
+		}
+		return stmt
+	case token.CONST:
+		stmt := p.parseConstStatement()
+		if stmt != nil {
+			stmt.Public = true
+		}
+		return stmt
+	case token.STRUCT:
+		stmt := p.parseStructStatement()
+		if stmt != nil {
+			stmt.Public = true
+		}
+		return stmt
+	case token.ENUM:
+		stmt := p.parseEnumStatement()
+		if stmt != nil {
+			stmt.Public = true
+		}
+		return stmt
+	case token.TYPE:
+		stmt := p.parseTypeAliasStatement()
+		if stmt != nil {
+			stmt.Public = true
+		}
+		return stmt
+	case token.FUNCTION:
+		return p.parseNamedFunctionStatementWithToken(true, pubToken)
+	case token.EXTERN:
+		return p.parseExternBlockStatement(true)
+	default:
+		p.errors = append(p.errors, fmt.Sprintf("pub expects var, const, fct, struct, enum, type or extern, got %s", p.tokenDebugString(p.curToken)))
+		return nil
+	}
+}
+
+func (p *Parser) parseNamedFunctionStatement(public bool) *ast.VarStatement {
+	return p.parseNamedFunctionStatementWithToken(public, p.curToken)
+}
+
+func (p *Parser) parseNamedFunctionStatementWithToken(public bool, declarationToken token.Token) *ast.VarStatement {
+	functionToken := p.curToken
+	if !p.expectPeek(token.IDENT) {
+		return nil
+	}
+	name := &ast.Identifier{Token: p.curToken, Value: p.curToken.Literal}
+	if !p.expectPeek(token.LPAREN) {
+		return nil
+	}
+	params := p.parseFunctionParameters()
+	if params == nil {
+		return nil
+	}
+	if !p.expectPeek(token.LBRACE) {
+		return nil
+	}
+	body := p.parseBlockStatement()
+	fn := &ast.FunctionLiteral{Token: functionToken, Parameters: params, Body: body, Name: name.Value}
+	varToken := token.Token{Type: token.VAR, Literal: "var", Pos: declarationToken.Pos}
+	return &ast.VarStatement{Token: varToken, Public: public, Name: name, Value: fn}
+}
+
+func (p *Parser) parseUnsafeStatement() *ast.UnsafeStatement {
+	stmt := &ast.UnsafeStatement{Token: p.curToken}
+	if !p.expectPeek(token.LBRACE) {
+		return nil
+	}
+	stmt.Body = p.parseBlockStatement()
+	return stmt
+}
+
+func (p *Parser) parseExternBlockStatement(public bool) *ast.ExternBlockStatement {
+	stmt := &ast.ExternBlockStatement{Token: p.curToken, Public: public, Functions: []*ast.ExternFunction{}}
+	if !p.expectPeek(token.STRING) {
+		return nil
+	}
+	stmt.ABI = p.curToken.Literal
+	if stmt.ABI != "C" {
+		p.errors = append(p.errors, fmt.Sprintf("unsupported extern ABI %q; only C is available", stmt.ABI))
+	}
+	if p.peekTokenIs(token.FROM) {
+		p.nextToken()
+		if !p.expectPeek(token.STRING) {
+			return nil
+		}
+		stmt.Link = p.curToken.Literal
+	}
+	if !p.expectPeek(token.LBRACE) {
+		return nil
+	}
+	p.nextToken()
+	for !p.curTokenIs(token.RBRACE) && !p.curTokenIs(token.EOF) {
+		if p.curTokenIs(token.SEMICOLON) || p.curTokenIs(token.COMMA) {
+			p.nextToken()
+			continue
+		}
+		if !p.curTokenIs(token.FUNCTION) {
+			p.errors = append(p.errors, fmt.Sprintf("extern block expects fct declarations, got %s", p.tokenDebugString(p.curToken)))
+			return nil
+		}
+		fn := p.parseExternFunction()
+		if fn == nil {
+			return nil
+		}
+		stmt.Functions = append(stmt.Functions, fn)
+		if p.peekTokenIs(token.SEMICOLON) {
+			p.nextToken()
+		}
+		p.nextToken()
+	}
+	return stmt
+}
+
+func (p *Parser) parseExternFunction() *ast.ExternFunction {
+	fn := &ast.ExternFunction{Token: p.curToken}
+	if !p.expectPeek(token.IDENT) {
+		return nil
+	}
+	fn.Name = &ast.Identifier{Token: p.curToken, Value: p.curToken.Literal}
+	fn.CName = fn.Name.Value
+	if !p.expectPeek(token.LPAREN) {
+		return nil
+	}
+	fn.Parameters = []*ast.ExternParam{}
+	if p.peekTokenIs(token.RPAREN) {
+		p.nextToken()
+	} else {
+		p.nextToken()
+		for {
+			if !p.curTokenIs(token.IDENT) {
+				p.errors = append(p.errors, fmt.Sprintf("extern parameter name must be an identifier, got %s", p.tokenDebugString(p.curToken)))
+				return nil
+			}
+			param := &ast.ExternParam{Token: p.curToken, Name: &ast.Identifier{Token: p.curToken, Value: p.curToken.Literal}}
+			if !p.expectPeek(token.COLON) {
+				return nil
+			}
+			p.nextToken()
+			param.Type = p.parseExternType()
+			if param.Type == nil {
+				return nil
+			}
+			fn.Parameters = append(fn.Parameters, param)
+			if p.peekTokenIs(token.COMMA) {
+				p.nextToken()
+				p.nextToken()
+				continue
+			}
+			if !p.expectPeek(token.RPAREN) {
+				return nil
+			}
+			break
+		}
+	}
+	if !p.expectPeek(token.ARROW) {
+		return nil
+	}
+	p.nextToken()
+	fn.ReturnType = p.parseExternType()
+	if fn.ReturnType == nil {
+		return nil
+	}
+	if p.peekTokenIs(token.AS) {
+		p.nextToken()
+		if !p.expectPeek(token.STRING) {
+			return nil
+		}
+		fn.CName = p.curToken.Literal
+	}
+	return fn
+}
+
+func (p *Parser) parseExternType() *ast.ExternType {
+	if !p.curTokenIs(token.IDENT) {
+		p.errors = append(p.errors, fmt.Sprintf("expected extern type, got %s", p.tokenDebugString(p.curToken)))
+		return nil
+	}
+	t := &ast.ExternType{Name: p.curToken.Literal}
+	if t.Name != "callback" {
+		return t
+	}
+	if !p.expectPeek(token.LPAREN) {
+		return nil
+	}
+	t.CallbackParams = []*ast.ExternType{}
+	if p.peekTokenIs(token.RPAREN) {
+		p.nextToken()
+	} else {
+		p.nextToken()
+		for {
+			param := p.parseExternType()
+			if param == nil {
+				return nil
+			}
+			t.CallbackParams = append(t.CallbackParams, param)
+			if p.peekTokenIs(token.COMMA) {
+				p.nextToken()
+				p.nextToken()
+				continue
+			}
+			if !p.expectPeek(token.RPAREN) {
+				return nil
+			}
+			break
+		}
+	}
+	if !p.expectPeek(token.ARROW) {
+		return nil
+	}
+	p.nextToken()
+	t.CallbackReturn = p.parseExternType()
+	return t
+}
+
+func (p *Parser) parseConstStatement() *ast.ConstStatement {
+	stmt := &ast.ConstStatement{Token: p.curToken}
+	if !p.expectPeek(token.IDENT) {
+		return nil
+	}
+	stmt.Name = &ast.Identifier{Token: p.curToken, Value: p.curToken.Literal}
+	if !p.expectPeek(token.ASSIGN) {
+		return nil
+	}
+	p.nextToken()
+	stmt.Value = p.parseExpression(LOWEST)
+	if p.peekTokenIs(token.SEMICOLON) {
+		p.nextToken()
+	}
+	return stmt
+}
+
+func (p *Parser) parseTypeAliasStatement() *ast.TypeAliasStatement {
+	stmt := &ast.TypeAliasStatement{Token: p.curToken}
+	if !p.expectPeek(token.IDENT) {
+		return nil
+	}
+	stmt.Name = &ast.Identifier{Token: p.curToken, Value: p.curToken.Literal}
+	if !p.expectPeek(token.ASSIGN) {
+		return nil
+	}
+	if !p.expectPeek(token.IDENT) {
+		return nil
+	}
+	targetToken := p.curToken
+	targetName := p.parseQualifiedTypeName()
+	stmt.Target = &ast.Identifier{Token: targetToken, Value: targetName}
+	stmt.Target.Token.Literal = targetName
+	if p.peekTokenIs(token.SEMICOLON) {
+		p.nextToken()
+	}
+	return stmt
+}
+
+func (p *Parser) parseStructStatement() *ast.StructStatement {
+	stmt := &ast.StructStatement{Token: p.curToken, Fields: []*ast.StructField{}, Methods: []*ast.StructMethod{}}
+	if !p.expectPeek(token.IDENT) {
+		return nil
+	}
+	stmt.Name = &ast.Identifier{Token: p.curToken, Value: p.curToken.Literal}
+	if !p.expectPeek(token.LBRACE) {
+		return nil
+	}
+	p.nextToken()
+	for !p.curTokenIs(token.RBRACE) && !p.curTokenIs(token.EOF) {
+		switch p.curToken.Type {
+		case token.SEMICOLON, token.COMMA:
+			p.nextToken()
+			continue
+		case token.FUNCTION:
+			method := p.parseStructMethod()
+			if method == nil {
+				return nil
+			}
+			stmt.Methods = append(stmt.Methods, method)
+		case token.ASYNC:
+			if !p.expectPeek(token.FUNCTION) {
+				return nil
+			}
+			method := p.parseStructMethod()
+			if method == nil {
+				return nil
+			}
+			method.Function.Async = true
+			stmt.Methods = append(stmt.Methods, method)
+		default:
+			if !p.curTokenIs(token.IDENT) {
+				p.errors = append(p.errors, fmt.Sprintf("expected struct field or method, got %s", p.tokenDebugString(p.curToken)))
+				return nil
+			}
+			field := &ast.StructField{Token: p.curToken, Name: &ast.Identifier{Token: p.curToken, Value: p.curToken.Literal}}
+			if p.peekTokenIs(token.COLON) {
+				p.nextToken()
+				if !p.expectPeek(token.IDENT) {
+					return nil
+				}
+				field.TypeName = p.parseQualifiedTypeName()
+			}
+			stmt.Fields = append(stmt.Fields, field)
+			if p.peekTokenIs(token.SEMICOLON) || p.peekTokenIs(token.COMMA) {
+				p.nextToken()
+			}
+		}
+		p.nextToken()
+	}
+	stmt.RBraceToken = p.curToken
+	return stmt
+}
+
+func (p *Parser) parseQualifiedTypeName() string {
+	name := p.curToken.Literal
+	if p.peekTokenIs(token.DOT) {
+		p.nextToken()
+		if !p.expectPeek(token.IDENT) {
+			return name
+		}
+		name += "." + p.curToken.Literal
+	}
+	return name
+}
+
+func (p *Parser) parseStructMethod() *ast.StructMethod {
+	method := &ast.StructMethod{Token: p.curToken}
+	if !p.expectPeek(token.IDENT) {
+		return nil
+	}
+	method.Name = &ast.Identifier{Token: p.curToken, Value: p.curToken.Literal}
+	if !p.expectPeek(token.LPAREN) {
+		return nil
+	}
+	params := p.parseFunctionParameters()
+	if params == nil {
+		return nil
+	}
+	selfToken := token.Token{Type: token.IDENT, Literal: "self", Pos: method.Token.Pos}
+	params = append([]*ast.Identifier{{Token: selfToken, Value: "self"}}, params...)
+	if !p.expectPeek(token.LBRACE) {
+		return nil
+	}
+	body := p.parseBlockStatement()
+	method.Function = &ast.FunctionLiteral{Token: method.Token, Parameters: params, Body: body, Name: method.Name.Value}
+	return method
+}
+
+func (p *Parser) parseEnumStatement() *ast.EnumStatement {
+	stmt := &ast.EnumStatement{Token: p.curToken, Members: []*ast.Identifier{}}
+	if !p.expectPeek(token.IDENT) {
+		return nil
+	}
+	stmt.Name = &ast.Identifier{Token: p.curToken, Value: p.curToken.Literal}
+	if !p.expectPeek(token.LBRACE) {
+		return nil
+	}
+	p.nextToken()
+	for !p.curTokenIs(token.RBRACE) && !p.curTokenIs(token.EOF) {
+		if p.curTokenIs(token.SEMICOLON) || p.curTokenIs(token.COMMA) {
+			p.nextToken()
+			continue
+		}
+		if !p.curTokenIs(token.IDENT) {
+			p.errors = append(p.errors, fmt.Sprintf("expected enum member, got %s", p.tokenDebugString(p.curToken)))
+			return nil
+		}
+		stmt.Members = append(stmt.Members, &ast.Identifier{Token: p.curToken, Value: p.curToken.Literal})
+		if p.peekTokenIs(token.SEMICOLON) || p.peekTokenIs(token.COMMA) {
+			p.nextToken()
+		}
+		p.nextToken()
+	}
+	stmt.RBraceToken = p.curToken
+	return stmt
+}
+
+func (p *Parser) parseMatchExpression() ast.Expression {
+	expr := &ast.MatchExpression{Token: p.curToken, Cases: []*ast.MatchCase{}}
+	if !p.expectPeek(token.LPAREN) {
+		return nil
+	}
+	p.nextToken()
+	expr.Value = p.parseExpression(LOWEST)
+	if !p.expectPeek(token.RPAREN) {
+		return nil
+	}
+	if !p.expectPeek(token.LBRACE) {
+		return nil
+	}
+	p.nextToken()
+	for !p.curTokenIs(token.RBRACE) && !p.curTokenIs(token.EOF) {
+		if p.curTokenIs(token.SEMICOLON) {
+			p.nextToken()
+			continue
+		}
+		switch p.curToken.Type {
+		case token.CASE:
+			caseToken := p.curToken
+			p.nextToken()
+			pattern := p.parseExpression(LOWEST)
+			if !p.expectPeek(token.LBRACE) {
+				return nil
+			}
+			body := p.parseBlockStatement()
+			expr.Cases = append(expr.Cases, &ast.MatchCase{Token: caseToken, Pattern: pattern, Body: body})
+			p.nextToken()
+		case token.ELSE:
+			if !p.expectPeek(token.LBRACE) {
+				return nil
+			}
+			expr.Default = p.parseBlockStatement()
+			p.nextToken()
+		default:
+			p.errors = append(p.errors, fmt.Sprintf("expected case or else in match, got %s", p.tokenDebugString(p.curToken)))
+			return nil
+		}
+	}
+	expr.RBraceToken = p.curToken
+	return expr
 }
 
 func (p *Parser) parseImportStatement() *ast.ImportStatement {
@@ -172,6 +634,14 @@ func (p *Parser) parseImportStatement() *ast.ImportStatement {
 	stmt.Path = &ast.StringLiteral{
 		Token: p.curToken,
 		Value: p.curToken.Literal,
+	}
+
+	if p.peekTokenIs(token.AS) {
+		p.nextToken()
+		if !p.expectPeek(token.IDENT) {
+			return nil
+		}
+		stmt.Alias = &ast.Identifier{Token: p.curToken, Value: p.curToken.Literal}
 	}
 
 	if p.peekTokenIs(token.SEMICOLON) {
@@ -317,6 +787,16 @@ func (p *Parser) parseAwaitExpression() ast.Expression {
 	return expr
 }
 
+func (p *Parser) parseSpawnExpression() ast.Expression {
+	expr := &ast.SpawnExpression{Token: p.curToken}
+	p.nextToken()
+	expr.Value = p.parseExpression(PREFIX)
+	if _, ok := expr.Value.(*ast.CallExpression); !ok {
+		p.errors = append(p.errors, "spawn expects a function call, for example: spawn work()")
+	}
+	return expr
+}
+
 func (p *Parser) parseTryExpression() ast.Expression {
 	expr := &ast.TryExpression{Token: p.curToken}
 	p.nextToken()
@@ -367,14 +847,37 @@ func (p *Parser) registerInfix(tokenType token.TokenType, fct infixParseFct) {
 	p.infixParseFcts[tokenType] = fct
 }
 
-func (p *Parser) parseExpressionStatement() *ast.ExpressionStatement {
-	stmt := &ast.ExpressionStatement{Token: p.curToken}
-	stmt.Expression = p.parseExpression(LOWEST)
+func (p *Parser) parseExpressionStatement() ast.Statement {
+	startToken := p.curToken
+	expression := p.parseExpression(LOWEST)
 
+	if p.peekTokenIs(token.ASSIGN) {
+		p.nextToken()
+		assignToken := p.curToken
+		p.nextToken()
+		value := p.parseExpression(LOWEST)
+
+		var stmt ast.Statement
+		switch target := expression.(type) {
+		case *ast.IndexExpression:
+			stmt = &ast.IndexAssignStatement{Token: assignToken, Target: target, Value: value}
+		case *ast.AttributeAccess:
+			stmt = &ast.AttributeAssignStatement{Token: assignToken, Target: target, Value: value}
+		default:
+			p.errors = append(p.errors, fmt.Sprintf("invalid assignment target %T: only identifiers, indexed values and fields can be assigned", expression))
+			return &ast.ExpressionStatement{Token: startToken, Expression: expression}
+		}
+
+		if p.peekTokenIs(token.SEMICOLON) {
+			p.nextToken()
+		}
+		return stmt
+	}
+
+	stmt := &ast.ExpressionStatement{Token: startToken, Expression: expression}
 	if p.peekTokenIs(token.SEMICOLON) {
 		p.nextToken()
 	}
-
 	return stmt
 }
 
@@ -407,15 +910,61 @@ func (p *Parser) parseIdentifier() ast.Expression {
 func (p *Parser) parseIntegerLiteral() ast.Expression {
 	lit := &ast.IntegerLiteral{Token: p.curToken}
 
-	value, err := strconv.ParseInt(p.curToken.Literal, 0, 64)
-	if err != nil {
-		msg := fmt.Sprintf("could not parse %q as integer", p.curToken.Literal)
-		p.errors = append(p.errors, msg)
-		return nil
+	normalized := strings.ReplaceAll(p.curToken.Literal, "_", "")
+	number, fixedType, bits, signed := splitFixedIntegerSuffix(normalized)
+
+	if fixedType == "" {
+		value, err := strconv.ParseInt(number, 0, 64)
+		if err != nil {
+			p.addIntegerLiteralError(p.curToken.Literal)
+			return nil
+		}
+		lit.Value = value
+		return lit
 	}
 
-	lit.Value = value
+	lit.FixedType = fixedType
+	if signed {
+		value, err := strconv.ParseInt(number, 0, bits)
+		if err != nil {
+			p.addIntegerLiteralError(p.curToken.Literal)
+			return nil
+		}
+		lit.RawValue = uint64(value)
+		return lit
+	}
+
+	value, err := strconv.ParseUint(number, 0, bits)
+	if err != nil {
+		p.addIntegerLiteralError(p.curToken.Literal)
+		return nil
+	}
+	lit.RawValue = value
 	return lit
+}
+
+func splitFixedIntegerSuffix(literal string) (number string, fixedType string, bits int, signed bool) {
+	types := []struct {
+		suffix string
+		bits   int
+		signed bool
+	}{
+		{"u16", 16, false}, {"u32", 32, false}, {"u64", 64, false},
+		{"i16", 16, true}, {"i32", 32, true}, {"i64", 64, true},
+		{"u8", 8, false}, {"i8", 8, true},
+	}
+
+	for _, candidate := range types {
+		if strings.HasSuffix(literal, candidate.suffix) {
+			return strings.TrimSuffix(literal, candidate.suffix), candidate.suffix, candidate.bits, candidate.signed
+		}
+	}
+
+	return literal, "", 64, true
+}
+
+func (p *Parser) addIntegerLiteralError(literal string) {
+	p.errors = append(p.errors, fmt.Sprintf("could not parse %q as integer", literal))
 }
 
 func (p *Parser) noPrefixParseFctError(t token.TokenType) {
@@ -676,7 +1225,8 @@ func (p *Parser) parseDictLiteral() ast.Expression {
 func (p *Parser) parseFloatLiteral() ast.Expression {
 	float := &ast.FloatLiteral{Token: p.curToken}
 
-	value, err := strconv.ParseFloat(p.curToken.Literal, 64)
+	normalized := strings.ReplaceAll(p.curToken.Literal, "_", "")
+	value, err := strconv.ParseFloat(normalized, 64)
 	if err != nil {
 		msg := fmt.Sprintf("could not parse %q as float", p.curToken.Literal)
 		p.errors = append(p.errors, msg)

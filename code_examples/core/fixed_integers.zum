@@ -1,0 +1,19 @@
+// Inteiros de tamanho fixo para registradores, memória e games.
+
+var opcode << 0xA9u8;
+var address << 0x8000u16;
+var mask << 0b11110000u8;
+
+show(opcode);
+show(address);
+show(mask band 0x0Fu8);
+
+var wrapped << 255u8 + 1;
+var saturated << satAdd(255u8, 1u8);
+var converted << u16(opcode);
+var minimum << i8(-128);
+
+show(wrapped);
+show(saturated);
+show(converted);
+show(minimum);

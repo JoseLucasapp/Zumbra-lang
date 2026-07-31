@@ -1,0 +1,11 @@
+// Integer literals designed for systems and game code.
+var spriteMask << 0b1111_0000;
+var lowNibble << spriteMask band 0x0F;
+var highNibble << spriteMask shr 4;
+var combined << (highNibble shl 4) bor lowNibble;
+var toggled << combined bxor 0xFF;
+var inverted << bnot toggled;
+
+show(highNibble);
+show(toggled);
+show(inverted);

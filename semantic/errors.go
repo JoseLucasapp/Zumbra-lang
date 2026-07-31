@@ -35,3 +35,7 @@ func ErrAssignmentToUndefinedSymbol(name string) error {
 func ErrAssignmentToUndefinedSymbolAt(name string, tok token.Token) error {
 	return fmt.Errorf("assignment to undefined symbol: %s%s", name, formatTokenPosition(tok))
 }
+
+func ErrAssignmentToImmutableSymbolAt(name string, tok token.Token) error {
+	return fmt.Errorf("cannot assign to immutable symbol: %s%s", name, formatTokenPosition(tok))
+}

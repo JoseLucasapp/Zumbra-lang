@@ -39,10 +39,6 @@ func Start(in io.Reader, out io.Writer) {
 	semanticResolver := semantic.NewResolver()
 	typeChecker := types.NewChecker()
 
-	builtins.SetRouteInvoker(func(handler object.Object, args ...object.Object) (object.Object, error) {
-		return vm.InvokeFunction(handler, args, constants, globals)
-	})
-
 	for {
 		var lines string
 		var openBraces int
@@ -117,6 +113,11 @@ func Start(in io.Reader, out io.Writer) {
 
 		code := comp.Bytecode()
 		constants = code.Constants
+		callbackInvoker := func(handler object.Object, args ...object.Object) (object.Object, error) {
+			return vm.InvokeFunction(handler, args, code.Constants, globals)
+		}
+		builtins.SetRouteInvoker(callbackInvoker)
+		builtins.SetDesktopInvoker(callbackInvoker)
 
 		machine := vm.NewWithGlobalsStore(code, globals)
 		err = machine.Run()

@@ -2,8 +2,9 @@ package semantic
 
 import (
 	"fmt"
+	"strings"
 	"zumbra/ast"
-	objbuiltins "zumbra/object/builtins"
+	"zumbra/builtinspec"
 )
 
 type functionContext struct {
@@ -13,11 +14,13 @@ type functionContext struct {
 }
 
 type Resolver struct {
-	global    *Scope
-	scope     *Scope
-	errors    []error
-	result    *Result
-	functions []*functionContext
+	global      *Scope
+	scope       *Scope
+	errors      []error
+	result      *Result
+	functions   []*functionContext
+	externals   map[string]bool
+	unsafeDepth int
 }
 
 func NewResolver() *Resolver {
@@ -29,6 +32,7 @@ func NewResolver() *Resolver {
 		errors:    []error{},
 		result:    NewResult(),
 		functions: []*functionContext{},
+		externals: map[string]bool{},
 	}
 
 	r.installBuiltins()
@@ -46,6 +50,7 @@ func NewResolverWithGlobalScope(global *Scope) *Resolver {
 		errors:    []error{},
 		result:    NewResult(),
 		functions: []*functionContext{},
+		externals: map[string]bool{},
 	}
 
 	if len(global.Symbols) == 0 {
@@ -68,6 +73,8 @@ func (r *Resolver) ResetForNextRun() {
 	r.errors = []error{}
 	r.result = NewResult()
 	r.functions = []*functionContext{}
+	r.externals = map[string]bool{}
+	r.unsafeDepth = 0
 }
 
 func (r *Resolver) Resolve(program *ast.Program) []error {
@@ -78,9 +85,9 @@ func (r *Resolver) Resolve(program *ast.Program) []error {
 }
 
 func (r *Resolver) installBuiltins() {
-	for _, b := range objbuiltins.Builtins {
+	for _, name := range builtinspec.Names {
 		_ = r.global.Define(Symbol{
-			Name:        b.Name,
+			Name:        name,
 			Kind:        SymbolBuiltin,
 			Depth:       r.global.Depth,
 			Mutable:     false,
@@ -178,6 +185,9 @@ func (r *Resolver) collectWarningsFromScope(scope *Scope) {
 	}
 
 	for _, sym := range scope.Symbols {
+		if strings.HasPrefix(sym.Name, "__zm_") || strings.HasPrefix(sym.Name, "__z_") {
+			continue
+		}
 		switch sym.Kind {
 		case SymbolVar, SymbolParam, SymbolFunction, SymbolImport:
 			if !sym.Used {
@@ -234,12 +244,76 @@ func (r *Resolver) resolveBlockStatement(block *ast.BlockStatement, createScope 
 }
 
 func (r *Resolver) resolveStatement(stmt ast.Statement) {
+	if r.scope != r.global {
+		switch s := stmt.(type) {
+		case *ast.VarStatement:
+			if s.Public {
+				r.addError(fmt.Errorf("pub declarations are allowed only at module level"))
+			}
+		case *ast.ConstStatement:
+			if s.Public {
+				r.addError(fmt.Errorf("pub declarations are allowed only at module level"))
+			}
+		case *ast.StructStatement:
+			if s.Public {
+				r.addError(fmt.Errorf("pub declarations are allowed only at module level"))
+			}
+		case *ast.EnumStatement:
+			if s.Public {
+				r.addError(fmt.Errorf("pub declarations are allowed only at module level"))
+			}
+		case *ast.TypeAliasStatement:
+			if s.Public {
+				r.addError(fmt.Errorf("pub declarations are allowed only at module level"))
+			}
+		case *ast.ExternBlockStatement:
+			r.addError(fmt.Errorf("extern declarations are allowed only at module level"))
+		case *ast.ImportStatement:
+			r.addError(fmt.Errorf("imports are allowed only at module level"))
+		}
+	}
 	switch s := stmt.(type) {
+	case *ast.ConstStatement:
+		r.resolveConstStatement(s)
+
+	case *ast.StructStatement:
+		r.resolveStructStatement(s)
+
+	case *ast.EnumStatement:
+		r.defineImmutable(s.Name, SymbolEnum)
+
+	case *ast.TypeAliasStatement:
+		r.defineImmutable(s.Name, SymbolType)
+
+	case *ast.ExternBlockStatement:
+		r.resolveExternBlock(s)
+
+	case *ast.UnsafeStatement:
+		r.unsafeDepth++
+		r.resolveBlockStatement(s.Body, true)
+		r.unsafeDepth--
+
 	case *ast.VarStatement:
 		r.resolveVarStatement(s)
 
 	case *ast.AssignStatement:
 		r.resolveAssignStatement(s)
+
+	case *ast.AttributeAssignStatement:
+		if s.Target != nil {
+			r.resolveExpression(s.Target.Object)
+		}
+		if s.Value != nil {
+			r.resolveExpression(s.Value)
+		}
+
+	case *ast.IndexAssignStatement:
+		if s.Target != nil {
+			r.resolveExpression(s.Target)
+		}
+		if s.Value != nil {
+			r.resolveExpression(s.Value)
+		}
 
 	case *ast.ReturnStatement:
 		if s.ReturnValue != nil {
@@ -266,6 +340,22 @@ func (r *Resolver) resolveImportStatement(stmt *ast.ImportStatement) {
 
 	if stmt.Path != nil {
 		r.resolveExpression(stmt.Path)
+	}
+}
+
+func (r *Resolver) resolveExternBlock(stmt *ast.ExternBlockStatement) {
+	if stmt == nil {
+		return
+	}
+	for _, fn := range stmt.Functions {
+		if fn == nil || fn.Name == nil {
+			continue
+		}
+		r.externals[fn.Name.Value] = true
+		err := r.scope.Define(Symbol{Name: fn.Name.Value, Kind: SymbolExternal, Depth: r.scope.Depth, Mutable: false, OriginDepth: r.scope.Depth})
+		if err != nil {
+			r.addError(ErrDuplicateSymbolAt(fn.Name.Value, fn.Name.Token))
+		}
 	}
 }
 
@@ -302,9 +392,12 @@ func (r *Resolver) resolveAssignStatement(stmt *ast.AssignStatement) {
 		return
 	}
 
-	if _, _, ok := r.scope.Resolve(stmt.Name.Value); !ok {
+	if sym, _, ok := r.scope.Resolve(stmt.Name.Value); !ok {
 		r.addError(ErrAssignmentToUndefinedSymbolAt(stmt.Name.Value, stmt.Token))
 	} else {
+		if !sym.Mutable {
+			r.addError(ErrAssignmentToImmutableSymbolAt(stmt.Name.Value, stmt.Token))
+		}
 		r.scope.MarkUsed(stmt.Name.Value)
 	}
 
@@ -359,6 +452,9 @@ func (r *Resolver) resolveExpression(exp ast.Expression) {
 		r.resolveFunctionLiteral(e)
 
 	case *ast.CallExpression:
+		if identifier, ok := e.Function.(*ast.Identifier); ok && r.externals[identifier.Value] && r.unsafeDepth == 0 {
+			r.addError(fmt.Errorf("external function %s must be called inside unsafe { ... }", identifier.Value))
+		}
 		if e.Function != nil {
 			r.resolveExpression(e.Function)
 		}
@@ -399,6 +495,11 @@ func (r *Resolver) resolveExpression(exp ast.Expression) {
 			r.resolveExpression(e.Left)
 		}
 
+	case *ast.SpawnExpression:
+		if e.Value != nil {
+			r.resolveExpression(e.Value)
+		}
+
 	case *ast.AwaitExpression:
 		if e.Value != nil {
 			r.resolveExpression(e.Value)
@@ -407,6 +508,20 @@ func (r *Resolver) resolveExpression(exp ast.Expression) {
 	case *ast.TryExpression:
 		if e.Value != nil {
 			r.resolveExpression(e.Value)
+		}
+
+	case *ast.MatchExpression:
+		if e.Value != nil {
+			r.resolveExpression(e.Value)
+		}
+		for _, candidate := range e.Cases {
+			if candidate.Pattern != nil {
+				r.resolveExpression(candidate.Pattern)
+			}
+			r.resolveBlockStatement(candidate.Body, true)
+		}
+		if e.Default != nil {
+			r.resolveBlockStatement(e.Default, true)
 		}
 
 	case *ast.ErrorHandlerExpression:
@@ -456,6 +571,10 @@ func (r *Resolver) resolveExpression(exp ast.Expression) {
 }
 
 func (r *Resolver) resolveFunctionLiteral(fn *ast.FunctionLiteral) {
+	r.resolveFunctionLiteralWithName(fn, true)
+}
+
+func (r *Resolver) resolveFunctionLiteralWithName(fn *ast.FunctionLiteral, declareName bool) {
 	if fn == nil {
 		return
 	}
@@ -463,7 +582,7 @@ func (r *Resolver) resolveFunctionLiteral(fn *ast.FunctionLiteral) {
 	functionScope := r.pushScope(ScopeFunction)
 	r.pushFunction(fn, functionScope)
 
-	if fn.Name != "" {
+	if declareName && fn.Name != "" {
 		err := r.scope.Define(Symbol{
 			Name:        fn.Name,
 			Kind:        SymbolFunction,
@@ -471,7 +590,9 @@ func (r *Resolver) resolveFunctionLiteral(fn *ast.FunctionLiteral) {
 			Mutable:     false,
 			IsFree:      false,
 			OriginDepth: r.scope.Depth,
-			Used:        false,
+			// This is the implicit self-name used only for recursion. The
+			// user-facing declaration is tracked in the enclosing scope.
+			Used: true,
 		})
 		if err != nil {
 			r.addError(ErrDuplicateSymbol(fn.Name))
@@ -568,9 +689,6 @@ func (r *Resolver) resolveForEachArrayLoop(loop *ast.ForEachArrayLoop) {
 	if loop.Value != nil {
 		r.resolveExpression(loop.Value)
 	}
-	if loop.Cond != nil {
-		r.resolveExpression(loop.Cond)
-	}
 
 	r.pushScope(ScopeBlock)
 	defer r.popScope()
@@ -589,6 +707,9 @@ func (r *Resolver) resolveForEachArrayLoop(loop *ast.ForEachArrayLoop) {
 			r.addError(ErrDuplicateSymbol(loop.Var))
 		}
 	}
+	if loop.Cond != nil {
+		r.resolveExpression(loop.Cond)
+	}
 
 	r.resolveBlockStatement(loop.Block, false)
 }
@@ -600,9 +721,6 @@ func (r *Resolver) resolveForEachMapLoop(loop *ast.ForEachMapLoop) {
 
 	if loop.X != nil {
 		r.resolveExpression(loop.X)
-	}
-	if loop.Cond != nil {
-		r.resolveExpression(loop.Cond)
 	}
 
 	r.pushScope(ScopeBlock)
@@ -638,6 +756,10 @@ func (r *Resolver) resolveForEachMapLoop(loop *ast.ForEachMapLoop) {
 		}
 	}
 
+	if loop.Cond != nil {
+		r.resolveExpression(loop.Cond)
+	}
+
 	r.resolveBlockStatement(loop.Block, false)
 }
 
@@ -651,9 +773,6 @@ func (r *Resolver) resolveForEachDotRange(loop *ast.ForEachDotRange) {
 	}
 	if loop.EndIdx != nil {
 		r.resolveExpression(loop.EndIdx)
-	}
-	if loop.Cond != nil {
-		r.resolveExpression(loop.Cond)
 	}
 
 	r.pushScope(ScopeBlock)
@@ -674,6 +793,10 @@ func (r *Resolver) resolveForEachDotRange(loop *ast.ForEachDotRange) {
 		}
 	}
 
+	if loop.Cond != nil {
+		r.resolveExpression(loop.Cond)
+	}
+
 	r.resolveBlockStatement(loop.Block, false)
 }
 
@@ -686,4 +809,38 @@ func (r *Resolver) resolveForEverLoop(loop *ast.ForEverLoop) {
 	defer r.popScope()
 
 	r.resolveBlockStatement(loop.Block, false)
+}
+
+func (r *Resolver) defineImmutable(name *ast.Identifier, kind SymbolKind) {
+	if name == nil {
+		return
+	}
+	err := r.scope.Define(Symbol{Name: name.Value, Kind: kind, Depth: r.scope.Depth, Mutable: false, OriginDepth: r.scope.Depth})
+	if err != nil {
+		r.addError(ErrDuplicateSymbolAt(name.Value, name.Token))
+	}
+}
+
+func (r *Resolver) resolveConstStatement(stmt *ast.ConstStatement) {
+	if stmt == nil || stmt.Name == nil {
+		return
+	}
+	if stmt.Value != nil {
+		r.resolveExpression(stmt.Value)
+	}
+	r.defineImmutable(stmt.Name, SymbolConst)
+}
+
+func (r *Resolver) resolveStructStatement(stmt *ast.StructStatement) {
+	if stmt == nil || stmt.Name == nil {
+		return
+	}
+	r.defineImmutable(stmt.Name, SymbolStruct)
+	for _, method := range stmt.Methods {
+		if method != nil && method.Function != nil {
+			// A method is reached through its struct instance, so its local function
+			// name must not produce an "unused function" warning.
+			r.resolveFunctionLiteralWithName(method.Function, false)
+		}
+	}
 }

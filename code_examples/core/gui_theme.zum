@@ -1,0 +1,32 @@
+import "../../std/desktop.zum" as desktop;
+import "../../std/ui.zum" as ui;
+
+var application << desktop.app({
+    "backend": "headless",
+    "name": "Zumbra Theme Test",
+    "version": "0.10.4",
+    "quitOnLastWindow": false
+});
+var window << application.window({"title": "Theme", "width": 360, "height": 220});
+
+var enabled << ui.boolState(false);
+var toggle << ui.checkbox({"text": "Dark mode", "checked": false});
+ui.bind(toggle, "checked", enabled);
+var label << ui.textWith("Ação, café e São João", {"fontSize": 18, "fontWeight": "bold"});
+var root << ui.columnWith({"padding": 12, "gap": 8}, [toggle, label]);
+var context << ui.mount(application, window, root, {"theme": ui.theme("light")});
+
+ui.subscribe(enabled, fct(value) {
+    if (value) {
+        context.setTheme(ui.theme("dark"));
+    } else {
+        context.setTheme(ui.theme("light"));
+    }
+});
+ui.update(enabled, true);
+var snapshot << context.snapshot();
+show(snapshot["background"]);
+show(toggle.get("checked"));
+
+context.close();
+application.close();

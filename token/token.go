@@ -30,6 +30,18 @@ const (
 	WHERE    = "WHERE"
 	BREAK    = "BREAK"
 	CONTINUE = "CONTINUE"
+	CONST    = "CONST"
+	STRUCT   = "STRUCT"
+	ENUM     = "ENUM"
+	MATCH    = "MATCH"
+	CASE     = "CASE"
+	TYPE     = "TYPE"
+	PUB      = "PUB"
+	AS       = "AS"
+	EXTERN   = "EXTERN"
+	FROM     = "FROM"
+	UNSAFE   = "UNSAFE"
+	SPAWN    = "SPAWN"
 
 	// Operators
 	ASSIGN     = "<<"
@@ -50,10 +62,20 @@ const (
 	MINUSMINUS = "--"
 	DOT        = "."
 	DOTDOT     = ".."
+	ARROW      = "->"
 
 	// Logical
 	OR  = "or"
 	AND = "and"
+
+	// Bitwise. Word operators keep Zumbra readable and avoid conflicting
+	// with the existing << assignment syntax during the rebuild.
+	BIT_AND = "band"
+	BIT_OR  = "bor"
+	BIT_XOR = "bxor"
+	BIT_NOT = "bnot"
+	SHIFT_L = "shl"
+	SHIFT_R = "shr"
 
 	// Delimiters
 	COMMA     = ","
@@ -88,11 +110,29 @@ var keywords = map[string]TokenType{
 	"try":      TRY,
 	"and":      AND,
 	"or":       OR,
+	"band":     BIT_AND,
+	"bor":      BIT_OR,
+	"bxor":     BIT_XOR,
+	"bnot":     BIT_NOT,
+	"shl":      SHIFT_L,
+	"shr":      SHIFT_R,
 	"for":      FOR,
 	"in":       IN,
 	"where":    WHERE,
 	"break":    BREAK,
 	"continue": CONTINUE,
+	"const":    CONST,
+	"struct":   STRUCT,
+	"enum":     ENUM,
+	"match":    MATCH,
+	"case":     CASE,
+	"type":     TYPE,
+	"pub":      PUB,
+	"as":       AS,
+	"extern":   EXTERN,
+	"from":     FROM,
+	"unsafe":   UNSAFE,
+	"spawn":    SPAWN,
 }
 
 func LookupIdent(ident string) TokenType {

@@ -3,8 +3,11 @@ package vm
 import (
 	"fmt"
 	"math"
+	"sync"
 	"zumbra/code"
+	"zumbra/collections"
 	"zumbra/compiler"
+	"zumbra/numeric"
 	"zumbra/object"
 	"zumbra/object/builtins"
 )
@@ -24,6 +27,7 @@ type VM struct {
 	globals     []object.Object
 	frames      []*Frame
 	framesIndex int
+	globalMu    *sync.RWMutex
 }
 
 func New(bytecode *compiler.Bytecode) *VM {
@@ -40,6 +44,7 @@ func New(bytecode *compiler.Bytecode) *VM {
 		globals:     make([]object.Object, GlobalSize),
 		frames:      frames,
 		framesIndex: 1,
+		globalMu:    &sync.RWMutex{},
 	}
 }
 
@@ -52,8 +57,13 @@ func (vm *VM) StackTop() object.Object {
 }
 
 func InvokeFunction(handler object.Object, args []object.Object, constants []object.Object, globals []object.Object) (object.Object, error) {
+	return invokeFunctionShared(handler, args, constants, globals, &sync.RWMutex{})
+}
+
+func invokeFunctionShared(handler object.Object, args []object.Object, constants []object.Object, globals []object.Object, globalMu *sync.RWMutex) (object.Object, error) {
 	bytecode := &compiler.Bytecode{Constants: constants}
 	invoker := NewWithGlobalsStore(bytecode, globals)
+	invoker.globalMu = globalMu
 	invoker.constants = constants
 	if err := invoker.push(handler); err != nil {
 		return nil, err
@@ -69,7 +79,10 @@ func InvokeFunction(handler object.Object, args []object.Object, constants []obj
 	if err := invoker.Run(); err != nil {
 		return nil, err
 	}
-	return invoker.LastPoppedStackElem(), nil
+	if result := invoker.StackTop(); result != nil {
+		return result, nil
+	}
+	return Null, nil
 }
 
 func (vm *VM) Run() error {
@@ -93,7 +106,8 @@ func (vm *VM) Run() error {
 				return err
 			}
 
-		case code.OpAdd, code.OpSub, code.OpMul, code.OpDiv, code.OpMod, code.OpPower:
+		case code.OpAdd, code.OpSub, code.OpMul, code.OpDiv, code.OpMod, code.OpPower,
+			code.OpBitAnd, code.OpBitOr, code.OpBitXor, code.OpShiftLeft, code.OpShiftRight:
 			err := vm.executeBinaryOperation(op)
 			if err != nil {
 				return err
@@ -157,6 +171,12 @@ func (vm *VM) Run() error {
 				return err
 			}
 
+		case code.OpBitNot:
+			err := vm.executeBitNotOperator()
+			if err != nil {
+				return err
+			}
+
 		case code.OpPop:
 			vm.pop()
 
@@ -184,13 +204,19 @@ func (vm *VM) Run() error {
 			globalIndex := code.ReadUint16(ins[ip+1:])
 			vm.currentFrame().ip += 2
 
-			vm.globals[globalIndex] = vm.pop()
+			value := vm.pop()
+			vm.globalMu.Lock()
+			vm.globals[globalIndex] = value
+			vm.globalMu.Unlock()
 
 		case code.OpGetGlobal:
 			globalIndex := code.ReadUint16(ins[ip+1:])
 			vm.currentFrame().ip += 2
 
-			err := vm.push(vm.globals[globalIndex])
+			vm.globalMu.RLock()
+			value := vm.globals[globalIndex]
+			vm.globalMu.RUnlock()
+			err := vm.push(value)
 			if err != nil {
 				return err
 			}
@@ -204,6 +230,29 @@ func (vm *VM) Run() error {
 
 			err := vm.push(array)
 			if err != nil {
+				return err
+			}
+
+		case code.OpStructDefinition:
+			fieldCount := int(code.ReadUint8(ins[ip+1:]))
+			methodCount := int(code.ReadUint8(ins[ip+2:]))
+			vm.currentFrame().ip += 2
+			definition, err := vm.buildStructDefinition(fieldCount, methodCount)
+			if err != nil {
+				return err
+			}
+			if err := vm.push(definition); err != nil {
+				return err
+			}
+
+		case code.OpEnumDefinition:
+			memberCount := int(code.ReadUint8(ins[ip+1:]))
+			vm.currentFrame().ip += 1
+			definition, err := vm.buildEnumDefinition(memberCount)
+			if err != nil {
+				return err
+			}
+			if err := vm.push(definition); err != nil {
 				return err
 			}
 
@@ -232,12 +281,54 @@ func (vm *VM) Run() error {
 				return err
 			}
 
+		case code.OpSetAttr:
+			value := vm.pop()
+			propertyObject := vm.pop()
+			target := vm.pop()
+			property, ok := propertyObject.(*object.String)
+			if !ok {
+				return fmt.Errorf("attribute name must be a string, got %s", propertyObject.Type())
+			}
+			instance, ok := target.(*object.StructInstance)
+			if !ok {
+				return fmt.Errorf("attribute assignment not supported: %s", target.Type())
+			}
+			if _, exists := instance.Fields[property.Value]; !exists {
+				return fmt.Errorf("unknown field %s", property.Value)
+			}
+			instance.Fields[property.Value] = value
+
+		case code.OpSetIndex:
+			value := vm.pop()
+			index := vm.pop()
+			left := vm.pop()
+
+			if err := vm.executeIndexAssignment(left, index, value); err != nil {
+				return err
+			}
+
 		case code.OpCall:
 
 			numArgs := code.ReadUint8(ins[ip+1:])
 			vm.currentFrame().ip += 1
 			err := vm.executeCall(int(numArgs))
 			if err != nil {
+				return err
+			}
+
+		case code.OpSpawn:
+			numArgs := int(code.ReadUint8(ins[ip+1:]))
+			vm.currentFrame().ip += 1
+			if err := vm.spawnCall(numArgs); err != nil {
+				return err
+			}
+
+		case code.OpAwait:
+			value := vm.pop()
+			if task, ok := value.(*object.Task); ok {
+				value = task.Await()
+			}
+			if err := vm.push(value); err != nil {
 				return err
 			}
 
@@ -279,8 +370,8 @@ func (vm *VM) Run() error {
 			}
 
 		case code.OpGetBuiltin:
-			builtinIndex := code.ReadUint8(ins[ip+1:])
-			vm.currentFrame().ip += 1
+			builtinIndex := code.ReadUint16(ins[ip+1:])
+			vm.currentFrame().ip += 2
 
 			if int(builtinIndex) >= len(builtins.Builtins) {
 				return fmt.Errorf("builtin index out of range: %d", builtinIndex)
@@ -363,6 +454,32 @@ func (vm *VM) Run() error {
 			obj := vm.pop()
 
 			switch d := obj.(type) {
+			case *object.StructInstance:
+				if field, ok := d.Fields[attrName.Value]; ok {
+					if err := vm.push(field); err != nil {
+						return err
+					}
+					break
+				}
+				if d.Definition != nil {
+					if method, ok := d.Definition.Methods[attrName.Value]; ok {
+						if err := vm.push(&object.BoundMethod{Receiver: d, Function: method}); err != nil {
+							return err
+						}
+						break
+					}
+				}
+				return fmt.Errorf("unknown field or method %s", attrName.Value)
+
+			case *object.EnumDefinition:
+				member, ok := d.Members[attrName.Value]
+				if !ok {
+					return fmt.Errorf("unknown enum member %s.%s", d.Name, attrName.Value)
+				}
+				if err := vm.push(member); err != nil {
+					return err
+				}
+
 			case *object.Date:
 				switch attrName.Value {
 				case "hour":
@@ -410,6 +527,196 @@ func (vm *VM) Run() error {
 					}
 				}
 
+			case *object.DesktopApp:
+				val := builtins.DesktopAppMethod(d, attrName.Value)
+				if val == nil {
+					return fmt.Errorf("unknown method %s for DesktopApp", attrName.Value)
+				}
+				if err := vm.push(val); err != nil {
+					return err
+				}
+			case *object.DesktopWindow:
+				val := builtins.DesktopWindowMethod(d, attrName.Value)
+				if val == nil {
+					return fmt.Errorf("unknown method %s for DesktopWindow", attrName.Value)
+				}
+				if err := vm.push(val); err != nil {
+					return err
+				}
+			case *object.DesktopTray:
+				val := builtins.DesktopTrayMethod(d, attrName.Value)
+				if val == nil {
+					return fmt.Errorf("unknown method %s for DesktopTray", attrName.Value)
+				}
+				if err := vm.push(val); err != nil {
+					return err
+				}
+			case *object.DesktopProcess:
+				val := builtins.DesktopProcessMethod(d, attrName.Value)
+				if val == nil {
+					return fmt.Errorf("unknown method %s for DesktopProcess", attrName.Value)
+				}
+				if err := vm.push(val); err != nil {
+					return err
+				}
+			case *object.UIContext:
+				val := builtins.UIContextMethod(d, attrName.Value)
+				if val == nil {
+					return fmt.Errorf("unknown method %s for UIContext", attrName.Value)
+				}
+				if err := vm.push(val); err != nil {
+					return err
+				}
+			case *object.UINode:
+				val := builtins.UINodeMethod(d, attrName.Value)
+				if val == nil {
+					return fmt.Errorf("unknown method %s for UINode", attrName.Value)
+				}
+				if err := vm.push(val); err != nil {
+					return err
+				}
+			case *object.UIState:
+				val := builtins.UIStateMethod(d, attrName.Value)
+				if val == nil {
+					return fmt.Errorf("unknown method %s for UIState", attrName.Value)
+				}
+				if err := vm.push(val); err != nil {
+					return err
+				}
+			case *object.SQLiteDatabase:
+				val := builtins.SQLiteDatabaseMethod(d, attrName.Value)
+				if val == nil {
+					return fmt.Errorf("unknown method %s for SQLiteDatabase", attrName.Value)
+				}
+				if err := vm.push(val); err != nil {
+					return err
+				}
+
+			case *object.SQLiteStatement:
+				val := builtins.SQLiteStatementMethod(d, attrName.Value)
+				if val == nil {
+					return fmt.Errorf("unknown method %s for SQLiteStatement", attrName.Value)
+				}
+				if err := vm.push(val); err != nil {
+					return err
+				}
+
+			case *object.SQLiteTransaction:
+				val := builtins.SQLiteTransactionMethod(d, attrName.Value)
+				if val == nil {
+					return fmt.Errorf("unknown method %s for SQLiteTransaction", attrName.Value)
+				}
+				if err := vm.push(val); err != nil {
+					return err
+				}
+
+			case *object.SQLRows:
+				val := builtins.SQLRowsMethod(d, attrName.Value)
+				if val == nil {
+					return fmt.Errorf("unknown method %s for SQLRows", attrName.Value)
+				}
+				if err := vm.push(val); err != nil {
+					return err
+				}
+			case *object.PostgresDatabase:
+				val := builtins.PostgresDatabaseMethod(d, attrName.Value)
+				if val == nil {
+					return fmt.Errorf("unknown method %s for PostgresDatabase", attrName.Value)
+				}
+				if err := vm.push(val); err != nil {
+					return err
+				}
+			case *object.PostgresStatement:
+				val := builtins.PostgresStatementMethod(d, attrName.Value)
+				if val == nil {
+					return fmt.Errorf("unknown method %s for PostgresStatement", attrName.Value)
+				}
+				if err := vm.push(val); err != nil {
+					return err
+				}
+			case *object.PostgresTransaction:
+				val := builtins.PostgresTransactionMethod(d, attrName.Value)
+				if val == nil {
+					return fmt.Errorf("unknown method %s for PostgresTransaction", attrName.Value)
+				}
+				if err := vm.push(val); err != nil {
+					return err
+				}
+			case *object.RedisClient:
+				val := builtins.RedisClientMethod(d, attrName.Value)
+				if val == nil {
+					return fmt.Errorf("unknown method %s for RedisClient", attrName.Value)
+				}
+				if err := vm.push(val); err != nil {
+					return err
+				}
+			case *object.Config:
+				val := builtins.ConfigMethod(d, attrName.Value)
+				if val == nil {
+					return fmt.Errorf("unknown method %s for Config", attrName.Value)
+				}
+				if err := vm.push(val); err != nil {
+					return err
+				}
+			case *object.Logger:
+				val := builtins.LoggerMethod(d, attrName.Value)
+				if val == nil {
+					return fmt.Errorf("unknown method %s for Logger", attrName.Value)
+				}
+				if err := vm.push(val); err != nil {
+					return err
+				}
+			case *object.MetricsRegistry:
+				val := builtins.MetricsMethod(d, attrName.Value)
+				if val == nil {
+					return fmt.Errorf("unknown method %s for MetricsRegistry", attrName.Value)
+				}
+				if err := vm.push(val); err != nil {
+					return err
+				}
+			case *object.TraceSpan:
+				val := builtins.TraceSpanMethod(d, attrName.Value)
+				if val == nil {
+					return fmt.Errorf("unknown method %s for TraceSpan", attrName.Value)
+				}
+				if err := vm.push(val); err != nil {
+					return err
+				}
+			case *object.SessionStore:
+				val := builtins.SessionStoreMethod(d, attrName.Value)
+				if val == nil {
+					return fmt.Errorf("unknown method %s for SessionStore", attrName.Value)
+				}
+				if err := vm.push(val); err != nil {
+					return err
+				}
+			case *object.RateLimiter:
+				val := builtins.RateLimiterMethod(d, attrName.Value)
+				if val == nil {
+					return fmt.Errorf("unknown method %s for RateLimiter", attrName.Value)
+				}
+				if err := vm.push(val); err != nil {
+					return err
+				}
+
+			case *object.HttpApp:
+				val := builtins.AppMethod(d, attrName.Value)
+				if val == nil {
+					return fmt.Errorf("unknown method %s for HttpApp", attrName.Value)
+				}
+				if err := vm.push(val); err != nil {
+					return err
+				}
+
+			case *object.HttpServer:
+				val := builtins.ServerMethod(d, attrName.Value)
+				if val == nil {
+					return fmt.Errorf("unknown method %s for HttpServer", attrName.Value)
+				}
+				if err := vm.push(val); err != nil {
+					return err
+				}
+
 			case *object.HttpRequest:
 				val := builtins.RequestAttr(d, attrName.Value)
 				if val == nil {
@@ -423,6 +730,24 @@ func (vm *VM) Run() error {
 				val := builtins.ResponseMethod(d, attrName.Value)
 				if val == nil {
 					return fmt.Errorf("unknown attribute %s for HttpResponse", attrName.Value)
+				}
+				if err := vm.push(val); err != nil {
+					return err
+				}
+
+			case *object.HttpClientResponse:
+				val := builtins.ClientResponseAttr(d, attrName.Value)
+				if val == nil {
+					return fmt.Errorf("unknown attribute %s for HttpClientResponse", attrName.Value)
+				}
+				if err := vm.push(val); err != nil {
+					return err
+				}
+
+			case *object.HttpUploadedFile:
+				val := builtins.HTTPFileAttr(d, attrName.Value)
+				if val == nil {
+					return fmt.Errorf("unknown attribute %s for HttpFile", attrName.Value)
 				}
 				if err := vm.push(val); err != nil {
 					return err
@@ -482,6 +807,15 @@ func (vm *VM) executeBinaryOperation(op code.Opcode) error {
 	right := vm.pop()
 	left := vm.pop()
 
+	if operator, ok := fixedBinaryOperator(op); ok {
+		if result, handled, err := numeric.Binary(operator, left, right); handled {
+			if err != nil {
+				return err
+			}
+			return vm.push(result)
+		}
+	}
+
 	leftType := left.Type()
 	rightType := right.Type()
 
@@ -526,6 +860,21 @@ func (vm *VM) executeBinaryIntegerOperation(op code.Opcode, left, right object.O
 		result = leftValue % rightValue
 	case code.OpPower:
 		result = int64(math.Pow(float64(leftValue), float64(rightValue)))
+	case code.OpBitAnd:
+		result = leftValue & rightValue
+	case code.OpBitOr:
+		result = leftValue | rightValue
+	case code.OpBitXor:
+		result = leftValue ^ rightValue
+	case code.OpShiftLeft, code.OpShiftRight:
+		if rightValue < 0 || rightValue > 63 {
+			return fmt.Errorf("shift count must be between 0 and 63, got %d", rightValue)
+		}
+		if op == code.OpShiftLeft {
+			result = leftValue << uint(rightValue)
+		} else {
+			result = leftValue >> uint(rightValue)
+		}
 	default:
 		return fmt.Errorf("unknown integer operator: %d", op)
 	}
@@ -620,6 +969,15 @@ func (vm *VM) executeComparison(op code.Opcode) error {
 	right := vm.pop()
 	left := vm.pop()
 
+	if operator, ok := fixedComparisonOperator(op); ok {
+		if result, handled, err := numeric.Binary(operator, left, right); handled {
+			if err != nil {
+				return err
+			}
+			return vm.push(result)
+		}
+	}
+
 	if left.Type() == object.INTEGER_OBJ && right.Type() == object.INTEGER_OBJ {
 		return vm.executeIntegerComparison(op, left, right)
 	}
@@ -638,6 +996,19 @@ func (vm *VM) executeComparison(op code.Opcode) error {
 
 	if left.Type() == object.STRING_OBJ && right.Type() == object.STRING_OBJ {
 		return vm.executeStringComparison(op, left, right)
+	}
+
+	if leftValue, ok := left.(*object.EnumValue); ok {
+		rightValue, same := right.(*object.EnumValue)
+		equal := same && leftValue.EnumName == rightValue.EnumName && leftValue.Name == rightValue.Name
+		switch op {
+		case code.OpEqual:
+			return vm.push(nativeBoolToBooleanObject(equal))
+		case code.OpNotEqual:
+			return vm.push(nativeBoolToBooleanObject(!equal))
+		default:
+			return fmt.Errorf("enum values support only == and !=")
+		}
 	}
 
 	switch op {
@@ -752,6 +1123,54 @@ func (vm *VM) executeIntegerComparison(op code.Opcode, left, right object.Object
 	}
 }
 
+func fixedBinaryOperator(op code.Opcode) (string, bool) {
+	switch op {
+	case code.OpAdd:
+		return "+", true
+	case code.OpSub:
+		return "-", true
+	case code.OpMul:
+		return "*", true
+	case code.OpDiv:
+		return "/", true
+	case code.OpMod:
+		return "%", true
+	case code.OpPower:
+		return "**", true
+	case code.OpBitAnd:
+		return "band", true
+	case code.OpBitOr:
+		return "bor", true
+	case code.OpBitXor:
+		return "bxor", true
+	case code.OpShiftLeft:
+		return "shl", true
+	case code.OpShiftRight:
+		return "shr", true
+	default:
+		return "", false
+	}
+}
+
+func fixedComparisonOperator(op code.Opcode) (string, bool) {
+	switch op {
+	case code.OpEqual:
+		return "==", true
+	case code.OpNotEqual:
+		return "!=", true
+	case code.OpGreaterThan:
+		return ">", true
+	case code.OpLessThan:
+		return "<", true
+	case code.OpGreaterThanOrEqual:
+		return ">=", true
+	case code.OpLessThanOrEqual:
+		return "<=", true
+	default:
+		return "", false
+	}
+}
+
 func nativeBoolToBooleanObject(input bool) *object.Boolean {
 	if input {
 		return True
@@ -777,12 +1196,37 @@ func (vm *VM) executeBangOperator() error {
 func (vm *VM) executeMinusOperator() error {
 	val := vm.pop()
 
+	if result, handled, err := numeric.Unary("-", val); handled {
+		if err != nil {
+			return err
+		}
+		return vm.push(result)
+	}
+
 	if val.Type() != object.INTEGER_OBJ {
 		return fmt.Errorf("unsupported type for negation: %s", val.Type())
 	}
 
 	value := val.(*object.Integer).Value
 	return vm.push(&object.Integer{Value: -value})
+}
+
+func (vm *VM) executeBitNotOperator() error {
+	value := vm.pop()
+
+	if result, handled, err := numeric.Unary("bnot", value); handled {
+		if err != nil {
+			return err
+		}
+		return vm.push(result)
+	}
+
+	if value.Type() != object.INTEGER_OBJ {
+		return fmt.Errorf("unsupported type for bnot: %s", value.Type())
+	}
+
+	integer := value.(*object.Integer).Value
+	return vm.push(&object.Integer{Value: ^integer})
 }
 
 func isTruthy(obj object.Object) bool {
@@ -799,6 +1243,8 @@ func isTruthy(obj object.Object) bool {
 		return v.Value != ""
 	case *object.Integer:
 		return v.Value != 0
+	case *object.FixedInteger:
+		return v.UnsignedValue() != 0
 	case *object.Float:
 		return v.Value != 0
 	case *object.Array:
@@ -847,11 +1293,17 @@ func (vm *VM) buildDict(startIndex, endIndex int) (object.Object, error) {
 }
 
 func (vm *VM) executeIndexExpression(left, index object.Object) error {
-	switch {
-	case left.Type() == object.ARRAY_OBJ && index.Type() == object.INTEGER_OBJ:
+	switch left.Type() {
+	case object.ARRAY_OBJ:
 		return vm.executeArrayIndex(left, index)
-	case left.Type() == object.DICT_OBJ:
+	case object.DICT_OBJ:
 		return vm.executeDictIndex(left, index)
+	case object.BYTE_ARRAY_OBJ, object.TYPED_ARRAY_OBJ, object.SLICE_OBJ, object.POINTER_OBJ:
+		value, _, err := collections.Get(left, index)
+		if err != nil {
+			return err
+		}
+		return vm.push(value)
 	default:
 		return fmt.Errorf("index operator not supported: %s", left.Type())
 	}
@@ -859,7 +1311,10 @@ func (vm *VM) executeIndexExpression(left, index object.Object) error {
 
 func (vm *VM) executeArrayIndex(array, index object.Object) error {
 	arrayObject := array.(*object.Array)
-	i := index.(*object.Integer).Value
+	i, ok := vmIntegerIndex(index)
+	if !ok {
+		return fmt.Errorf("array index must be an integer, got %s", index.Type())
+	}
 	max := int64(len(arrayObject.Elements) - 1)
 
 	if i < 0 || i > max {
@@ -867,6 +1322,55 @@ func (vm *VM) executeArrayIndex(array, index object.Object) error {
 	}
 
 	return vm.push(arrayObject.Elements[i])
+}
+
+func vmIntegerIndex(value object.Object) (int64, bool) {
+	switch value := value.(type) {
+	case *object.Integer:
+		return value.Value, true
+	case *object.FixedInteger:
+		if value.Kind.Signed() {
+			return value.SignedValue(), true
+		}
+		if value.UnsignedValue() > uint64(^uint64(0)>>1) {
+			return 0, false
+		}
+		return int64(value.UnsignedValue()), true
+	default:
+		return 0, false
+	}
+}
+
+func (vm *VM) executeIndexAssignment(left, index, value object.Object) error {
+	switch left.Type() {
+	case object.ARRAY_OBJ:
+		array := left.(*object.Array)
+		i, ok := vmIntegerIndex(index)
+		if !ok {
+			return fmt.Errorf("array index must be an integer, got %s", index.Type())
+		}
+		if i < 0 || i >= int64(len(array.Elements)) {
+			return fmt.Errorf("array index out of bounds: %d (length %d)", i, len(array.Elements))
+		}
+		array.Elements[i] = value
+		return nil
+
+	case object.BYTE_ARRAY_OBJ, object.TYPED_ARRAY_OBJ, object.SLICE_OBJ, object.POINTER_OBJ:
+		_, err := collections.Set(left, index, value)
+		return err
+
+	case object.DICT_OBJ:
+		dict := left.(*object.Dict)
+		key, ok := index.(object.Dictable)
+		if !ok {
+			return fmt.Errorf("unusable as dict key: %s", index.Type())
+		}
+		dict.Pairs[key.DictKey()] = object.DictPair{Key: index, Value: value}
+		return nil
+
+	default:
+		return fmt.Errorf("index assignment not supported: %s", left.Type())
+	}
 }
 
 func (vm *VM) executeDictIndex(dict, index object.Object) error {
@@ -910,6 +1414,36 @@ func (vm *VM) callClosure(cl *object.Closure, numArgs int) error {
 	return nil
 }
 
+func (vm *VM) spawnCall(numArgs int) error {
+	calleeIndex := vm.sp - 1 - numArgs
+	if calleeIndex < 0 {
+		return fmt.Errorf("invalid spawn stack state")
+	}
+	callee := vm.stack[calleeIndex]
+	if closure, ok := callee.(*object.Closure); ok && closure.Fn.Async {
+		copyFn := *closure.Fn
+		copyFn.Async = false
+		callee = &object.Closure{Fn: &copyFn, Free: append([]object.Object(nil), closure.Free...)}
+	}
+	args := append([]object.Object(nil), vm.stack[calleeIndex+1:vm.sp]...)
+	vm.sp = calleeIndex
+	task := object.NewTask()
+	go func() {
+		defer func() {
+			if recovered := recover(); recovered != nil {
+				task.Complete(&object.Error{Message: fmt.Sprintf("task panic: %v", recovered)})
+			}
+		}()
+		result, err := invokeFunctionShared(callee, args, vm.constants, vm.globals, vm.globalMu)
+		if err != nil {
+			task.Complete(&object.Error{Message: err.Error()})
+			return
+		}
+		task.Complete(result)
+	}()
+	return vm.push(task)
+}
+
 func (vm *VM) executeCall(numArgs int) error {
 	callee := vm.stack[vm.sp-1-numArgs]
 
@@ -919,9 +1453,26 @@ func (vm *VM) executeCall(numArgs int) error {
 
 	switch callee := callee.(type) {
 	case *object.Closure:
+		if callee.Fn.Async {
+			return vm.spawnCall(numArgs)
+		}
 		return vm.callClosure(callee, numArgs)
 	case *object.Builtin:
 		return vm.callBuiltin(callee, numArgs)
+	case *object.StructDefinition:
+		return vm.callStructDefinition(callee, numArgs)
+	case *object.BoundMethod:
+		calleeIndex := vm.sp - 1 - numArgs
+		if vm.sp >= len(vm.stack) {
+			return fmt.Errorf("stack overflow while binding method")
+		}
+		for index := vm.sp; index > calleeIndex+1; index-- {
+			vm.stack[index] = vm.stack[index-1]
+		}
+		vm.stack[calleeIndex] = callee.Function
+		vm.stack[calleeIndex+1] = callee.Receiver
+		vm.sp++
+		return vm.executeCall(numArgs + 1)
 	default:
 		return fmt.Errorf("calling non-function and non-built-in object: %s", callee.Type())
 	}
@@ -958,4 +1509,104 @@ func (vm *VM) pushClosure(constIndex int, numFree int) error {
 
 	closure := &object.Closure{Fn: function, Free: free}
 	return vm.push(closure)
+}
+
+func (vm *VM) buildStructDefinition(fieldCount, methodCount int) (*object.StructDefinition, error) {
+	items := 1 + fieldCount*2 + methodCount*2
+	start := vm.sp - items
+	if start < 0 {
+		return nil, fmt.Errorf("invalid struct definition stack")
+	}
+	name, ok := vm.stack[start].(*object.String)
+	if !ok {
+		return nil, fmt.Errorf("struct name must be string")
+	}
+	definition := &object.StructDefinition{Name: name.Value, Fields: []object.StructFieldDefinition{}, Methods: map[string]object.Object{}}
+	cursor := start + 1
+	for index := 0; index < fieldCount; index++ {
+		fieldName, ok := vm.stack[cursor].(*object.String)
+		if !ok {
+			return nil, fmt.Errorf("struct field name must be string")
+		}
+		fieldType, ok := vm.stack[cursor+1].(*object.String)
+		if !ok {
+			return nil, fmt.Errorf("struct field type must be string")
+		}
+		definition.Fields = append(definition.Fields, object.StructFieldDefinition{Name: fieldName.Value, TypeName: fieldType.Value})
+		cursor += 2
+	}
+	for index := 0; index < methodCount; index++ {
+		methodName, ok := vm.stack[cursor].(*object.String)
+		if !ok {
+			return nil, fmt.Errorf("struct method name must be string")
+		}
+		definition.Methods[methodName.Value] = vm.stack[cursor+1]
+		cursor += 2
+	}
+	vm.sp = start
+	return definition, nil
+}
+
+func (vm *VM) buildEnumDefinition(memberCount int) (*object.EnumDefinition, error) {
+	start := vm.sp - 1 - memberCount
+	if start < 0 {
+		return nil, fmt.Errorf("invalid enum definition stack")
+	}
+	name, ok := vm.stack[start].(*object.String)
+	if !ok {
+		return nil, fmt.Errorf("enum name must be string")
+	}
+	definition := &object.EnumDefinition{Name: name.Value, Members: map[string]*object.EnumValue{}}
+	for index := 0; index < memberCount; index++ {
+		member, ok := vm.stack[start+1+index].(*object.String)
+		if !ok {
+			return nil, fmt.Errorf("enum member name must be string")
+		}
+		definition.Members[member.Value] = &object.EnumValue{EnumName: name.Value, Name: member.Value, Ordinal: index}
+	}
+	vm.sp = start
+	return definition, nil
+}
+
+func (vm *VM) callStructDefinition(definition *object.StructDefinition, numArgs int) error {
+	args := vm.stack[vm.sp-numArgs : vm.sp]
+	instance := &object.StructInstance{Definition: definition, Fields: map[string]object.Object{}}
+	if numArgs == 1 {
+		if named, ok := args[0].(*object.Dict); ok {
+			for _, field := range definition.Fields {
+				key := (&object.String{Value: field.Name}).DictKey()
+				pair, exists := named.Pairs[key]
+				if !exists {
+					return fmt.Errorf("missing field %s for %s", field.Name, definition.Name)
+				}
+				instance.Fields[field.Name] = pair.Value
+			}
+			for _, pair := range named.Pairs {
+				name, ok := pair.Key.(*object.String)
+				if !ok {
+					return fmt.Errorf("named struct fields must use string keys")
+				}
+				known := false
+				for _, field := range definition.Fields {
+					if field.Name == name.Value {
+						known = true
+						break
+					}
+				}
+				if !known {
+					return fmt.Errorf("unknown field %s for %s", name.Value, definition.Name)
+				}
+			}
+			vm.sp = vm.sp - numArgs - 1
+			return vm.push(instance)
+		}
+	}
+	if numArgs != len(definition.Fields) {
+		return fmt.Errorf("wrong number of fields for %s: want=%d, got=%d", definition.Name, len(definition.Fields), numArgs)
+	}
+	for index, field := range definition.Fields {
+		instance.Fields[field.Name] = args[index]
+	}
+	vm.sp = vm.sp - numArgs - 1
+	return vm.push(instance)
 }

@@ -1,0 +1,35 @@
+const START << 5;
+
+struct Counter {
+    value: int;
+
+    fct add(amount) {
+        self.value << self.value + amount;
+    }
+}
+
+enum Mode {
+    Idle;
+    Running;
+}
+
+var folded << 2 + 3 * 4;
+var counter << Counter(START);
+counter.add(folded);
+
+var memory << bytes(4);
+for index in 0..3 {
+    memory[index] << u8(index * 3);
+}
+
+var mode << Mode.Running;
+var label << match(mode) {
+    case Mode.Idle { "idle"; }
+    case Mode.Running { "running"; }
+    else { "unknown"; }
+};
+
+show(folded);
+show(counter.value);
+show(memory[3]);
+show(label);

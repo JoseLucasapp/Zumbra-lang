@@ -1,0 +1,12 @@
+import "../modules/z8_math.zum" as native;
+
+var double << fct(value) {
+    value * 2i32;
+};
+
+unsafe {
+    show(native.add(20i32, 22i32));
+    show(native.apply(21i32, double));
+    show(native.name());
+    show(native.isNull(native.nullPointer()));
+}

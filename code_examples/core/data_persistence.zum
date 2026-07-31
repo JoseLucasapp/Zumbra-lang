@@ -1,0 +1,34 @@
+import "../../std/database.zum" as database;
+
+var db << database.memory();
+var applied << database.migrate(db, [
+    {"version": 1, "name": "users", "sql": "CREATE TABLE users (id INTEGER PRIMARY KEY, name TEXT NOT NULL, score INTEGER NOT NULL)"},
+    {"version": 2, "name": "sessions", "sql": "CREATE TABLE events (id INTEGER PRIMARY KEY, user_id INTEGER NOT NULL, name TEXT NOT NULL)"}
+]);
+show(applied);
+show(database.schemaVersion(db));
+
+database.exec(db, "INSERT INTO users(name, score) VALUES (:name, :score)", {"name": "Lucas", "score": 42});
+database.exec(db, "INSERT INTO users(name, score) VALUES (:name, :score)", {"name": "Zumbra", "score": 100});
+
+var first << database.queryOne(db, "SELECT name, score FROM users WHERE name = :name", {"name": "Lucas"});
+show(first["name"]);
+show(first["score"]);
+
+var rows << database.stream(db, "SELECT name FROM users ORDER BY id", {});
+var current << database.next(rows);
+while (current[1]) {
+    show(current[0]["name"]);
+    current << database.next(rows);
+}
+show(database.closeRows(rows));
+
+var transaction << database.begin(db);
+database.transactionExec(transaction, "UPDATE users SET score = score + 1 WHERE name = :name", {"name": "Lucas"});
+database.savepoint(transaction, "before_bonus");
+database.transactionExec(transaction, "UPDATE users SET score = score + 1000 WHERE name = :name", {"name": "Lucas"});
+database.rollbackTo(transaction, "before_bonus");
+database.releaseSavepoint(transaction, "before_bonus");
+database.commit(transaction);
+show(database.queryOne(db, "SELECT score FROM users WHERE name = :name", {"name": "Lucas"})["score"]);
+show(database.close(db));

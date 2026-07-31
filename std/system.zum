@@ -1,0 +1,91 @@
+// Z17 systems programming standard module.
+
+// Explicit memory and pointer ownership.
+pub fct allocate(typeName, count) { alloc(typeName, count); }
+pub fct zeroed(typeName, count) { calloc(typeName, count); }
+pub fct null(typeName) { nullPointer(typeName); }
+pub fct resize(pointer, count) { realloc(pointer, count); }
+pub fct release(pointer) { free(pointer); }
+pub fct reference(value, index) { addressOf(value, index); }
+pub fct read(pointer, index) { pointerRead(pointer, index); }
+pub fct write(pointer, index, value) { pointerWrite(pointer, index, value); }
+pub fct offset(pointer, amount) { pointerOffset(pointer, amount); }
+pub fct length(pointer) { pointerLength(pointer); }
+pub fct byteLength(pointer) { pointerByteLength(pointer); }
+pub fct typeName(pointer) { pointerType(pointer); }
+pub fct address(pointer) { pointerAddress(pointer); }
+pub fct equal(left, right) { pointerEqual(left, right); }
+pub fct compare(left, right) { pointerCompare(left, right); }
+pub fct aligned(pointer, alignment) { pointerIsAligned(pointer, alignment); }
+pub fct valid(pointer) { pointerIsValid(pointer); }
+pub fct borrow(pointer) { borrowPointer(pointer); }
+pub fct borrowMutable(pointer) { borrowPointerMut(pointer); }
+pub fct releaseBorrowed(pointer) { releaseBorrow(pointer); }
+pub fct move(pointer) { movePointer(pointer); }
+pub fct copy(destination, destinationStart, source, sourceStart, count) {
+    pointerCopy(destination, destinationStart, source, sourceStart, count);
+}
+pub fct fill(pointer, value) { pointerFill(pointer, value); }
+
+// Native ABI layout.
+pub fct sizeOf(typeName) { sizeOfType(typeName); }
+pub fct alignOf(typeName) { alignOfType(typeName); }
+pub fct byteSize(value) { byteSizeOf(value); }
+pub fct structLayout(fields) { nativeStructLayout(fields); }
+
+// Arenas and diagnostics.
+pub fct arena() { arenaCreate(); }
+pub fct arenaAllocate(arenaValue, typeName, count) { arenaAlloc(arenaValue, typeName, count); }
+pub fct resetArena(arenaValue) { arenaReset(arenaValue); }
+pub fct closeArena(arenaValue) { arenaFree(arenaValue); }
+pub fct arenaInformation(arenaValue) { arenaStats(arenaValue); }
+pub fct memoryInformation() { memoryStats(); }
+pub fct leaks() { memoryLeaks(); }
+pub fct validateMemory() { memoryValidate(); }
+pub fct resetMemoryStatistics() { memoryResetStats(); }
+
+// Mapped files and shared memory.
+pub fct mapFile(path, mode, size) { mmapOpen(path, mode, size); }
+pub fct mappedPointer(mapping) { mmapPointer(mapping); }
+pub fct flushMapping(mapping) { mmapFlush(mapping); }
+pub fct closeMapping(mapping) { mmapClose(mapping); }
+pub fct mappingSize(mapping) { mmapSize(mapping); }
+pub fct shared(name, size, create) { sharedMemoryOpen(name, size, create); }
+pub fct sharedPointer(sharedValue) { sharedMemoryPointer(sharedValue); }
+pub fct closeShared(sharedValue) { sharedMemoryClose(sharedValue); }
+pub fct unlinkShared(name) { sharedMemoryUnlink(name); }
+
+// Atomics and memory ordering.
+pub fct fence(order) { memoryFence(order); }
+pub fct atomicLoad(pointer) { atomicPointerLoad(pointer); }
+pub fct atomicStore(pointer, value) { atomicPointerStore(pointer, value); }
+pub fct atomicAdd(pointer, value) { atomicPointerAdd(pointer, value); }
+pub fct atomicSwap(pointer, value) { atomicPointerSwap(pointer, value); }
+pub fct atomicCompareSwap(pointer, expected, replacement) {
+    atomicPointerCompareSwap(pointer, expected, replacement);
+}
+pub fct lockMemory(pointer) { memoryLock(pointer); }
+pub fct unlockMemory(pointer) { memoryUnlock(pointer); }
+
+// Dynamic loading, OS information and profiling.
+pub fct openLibrary(path) { dynamicOpen(path); }
+pub fct closeLibrary(library) { dynamicClose(library); }
+pub fct libraryOpen(library) { dynamicIsOpen(library); }
+pub fct libraryError(library) { dynamicError(library); }
+pub fct info() { systemInfo(); }
+pub fct memoryPageSize() { pageSize(); }
+pub fct processors() { cpuCount(); }
+pub fct nowNs() { profileNowNs(); }
+pub fct elapsedNs(start) { profileElapsedNs(start); }
+
+// Process control reuses the portable Z13 process runtime and is exposed here
+// as part of the systems programming surface.
+pub fct spawnProcess(command, options) { desktopSpawn(command, options); }
+pub fct waitProcess(process) { desktopProcessWait(process); }
+pub fct killProcess(process) { desktopProcessKill(process); }
+pub fct processRunning(process) { desktopProcessRunning(process); }
+pub fct processId(process) { desktopProcessId(process); }
+
+// Raw operations (`pointerFromAddress`, `volatileRead`, `volatileWrite`,
+// `memoryProtect`, `dynamicSymbol` and `rawSyscall`) are intentionally exposed
+// only as builtins because each call must appear inside an `unsafe` block.

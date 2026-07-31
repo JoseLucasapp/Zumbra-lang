@@ -1,0 +1,33 @@
+import "../../std/config.zum" as configuration;
+import "../../std/observability.zum" as observability;
+import "../../std/sessions.zum" as sessions;
+
+var config << configuration.fromValues({"port": "8080", "debug": "true", "password": "secret"});
+show(configuration.integer(config, "port", 0));
+show(configuration.boolean(config, "debug", false));
+configuration.secret(config, "password");
+show(configuration.redacted(config)["password"]);
+
+var registry << observability.registry();
+observability.counter(registry, "requests", 2, {"route": "/health"});
+observability.gauge(registry, "workers", 3, {});
+observability.observe(registry, "latency_ms", 12.5, {"route": "/health"});
+show(observability.snapshot(registry)["counters"]["requests{route=/health}"]);
+
+var span << observability.trace("request", {"route": "/health"});
+observability.event(span, "handled", {"status": 200});
+show(observability.active(span));
+show(observability.finish(span, "ok")["status"]);
+
+var limiter << sessions.limiter(2, 1000);
+show(sessions.allow(limiter, "local-client")["allowed"]);
+show(sessions.allow(limiter, "local-client")["allowed"]);
+show(sessions.allow(limiter, "local-client")["allowed"]);
+
+var store << sessions.sqlite(":memory:");
+var sessionId << sessions.create(store, {"user": "Lucas"}, 60000);
+show(sessions.get(store, sessionId)["user"]);
+var newId << sessions.rotate(store, sessionId, 60000);
+show(newId != sessionId);
+show(sessions.get(store, newId)["user"]);
+show(sessions.close(store));

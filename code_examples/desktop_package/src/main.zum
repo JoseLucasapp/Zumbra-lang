@@ -1,0 +1,5 @@
+import "../../../std/assets.zum" as assets;
+
+show(assets.text("assets/message.txt"));
+show(assets.exists("assets/message.txt"));
+show(sizeOf(assets.list()));

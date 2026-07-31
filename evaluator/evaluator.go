@@ -7,8 +7,11 @@ import (
 	"path/filepath"
 	"strings"
 	"zumbra/ast"
+	"zumbra/collections"
 	"zumbra/lexer"
+	"zumbra/numeric"
 	"zumbra/object"
+	objectbuiltins "zumbra/object/builtins"
 	"zumbra/parser"
 )
 
@@ -40,10 +43,37 @@ func Eval(node ast.Node, env *object.Environment) object.Object {
 		}
 		return &object.ReturnValue{Value: value}
 
+	case *ast.SpawnExpression:
+		call, ok := node.Value.(*ast.CallExpression)
+		if !ok {
+			return newError("spawn expects a function call")
+		}
+		function := Eval(call.Function, env)
+		if isError(function) {
+			return function
+		}
+		args := evalExpressions(call.Arguments, env)
+		if len(args) == 1 && isError(args[0]) {
+			return args[0]
+		}
+		task := object.NewTask()
+		go func() {
+			defer func() {
+				if recovered := recover(); recovered != nil {
+					task.Complete(newError("task panic: %v", recovered))
+				}
+			}()
+			task.Complete(applyFunctionSync(function, args))
+		}()
+		return task
+
 	case *ast.AwaitExpression:
 		value := Eval(node.Value, env)
 		if isError(value) {
 			return value
+		}
+		if task, ok := value.(*object.Task); ok {
+			return task.Await()
 		}
 		return value
 
@@ -74,10 +104,58 @@ func Eval(node ast.Node, env *object.Environment) object.Object {
 		}
 		return value
 
+	case *ast.ConstStatement:
+		if _, ok := env.Get(node.Name.Value); ok {
+			return newError("identifier '%s' already declared", node.Name.Value)
+		}
+		value := Eval(node.Value, env)
+		if isError(value) {
+			return value
+		}
+		env.DefineConst(node.Name.Value, value)
+		return value
+
+	case *ast.StructStatement:
+		definition := &object.StructDefinition{Name: node.Name.Value, Fields: []object.StructFieldDefinition{}, Methods: map[string]object.Object{}}
+		for _, field := range node.Fields {
+			definition.Fields = append(definition.Fields, object.StructFieldDefinition{Name: field.Name.Value, TypeName: field.TypeName})
+		}
+		env.Set(node.Name.Value, definition)
+		for _, method := range node.Methods {
+			methodObject := Eval(method.Function, env)
+			if isError(methodObject) {
+				return methodObject
+			}
+			definition.Methods[method.Name.Value] = methodObject
+		}
+		return definition
+
+	case *ast.EnumStatement:
+		definition := &object.EnumDefinition{Name: node.Name.Value, Members: map[string]*object.EnumValue{}}
+		for ordinal, member := range node.Members {
+			definition.Members[member.Value] = &object.EnumValue{EnumName: node.Name.Value, Name: member.Value, Ordinal: ordinal}
+		}
+		env.Set(node.Name.Value, definition)
+		return definition
+
+	case *ast.TypeAliasStatement:
+		return NULL
+
+	case *ast.ExternBlockStatement:
+		for _, function := range node.Functions {
+			if function != nil && function.Name != nil {
+				env.DefineConst(function.Name.Value, &object.ExternalFunction{Name: function.Name.Value})
+			}
+		}
+		return NULL
+
+	case *ast.UnsafeStatement:
+		return Eval(node.Body, env)
+
 	case *ast.VarStatement:
 
 		if _, ok := env.Get(node.Name.Value); ok {
-			return newError("variável '%s' já declarada", node.Name.Value)
+			return newError("identifier '%s' already declared", node.Name.Value)
 		}
 
 		value := Eval(node.Value, env)
@@ -86,10 +164,54 @@ func Eval(node ast.Node, env *object.Environment) object.Object {
 		}
 		env.Set(node.Name.Value, value)
 
+	case *ast.AssignStatement:
+		value := Eval(node.Value, env)
+		if isError(value) {
+			return value
+		}
+		assigned, err := env.Assign(node.Name.Value, value)
+		if err != nil {
+			return newError("%s", err)
+		}
+		return assigned
+
+	case *ast.AttributeAssignStatement:
+		left := Eval(node.Target.Object, env)
+		if isError(left) {
+			return left
+		}
+		value := Eval(node.Value, env)
+		if isError(value) {
+			return value
+		}
+		return evalAttributeAssignment(left, node.Target.Property.Value, value)
+
+	case *ast.IndexAssignStatement:
+		left := Eval(node.Target.Left, env)
+		if isError(left) {
+			return left
+		}
+		index := Eval(node.Target.Index, env)
+		if isError(index) {
+			return index
+		}
+		value := Eval(node.Value, env)
+		if isError(value) {
+			return value
+		}
+		return evalIndexAssignment(left, index, value)
+
 	case *ast.StringLiteral:
 		return &object.String{Value: node.Value}
 
 	case *ast.IntegerLiteral:
+		if node.FixedType != "" {
+			kind, ok := object.ParseFixedIntegerKind(node.FixedType)
+			if !ok {
+				return newError("unknown fixed integer type %s", node.FixedType)
+			}
+			return object.NewFixedIntegerRaw(kind, node.RawValue)
+		}
 		return &object.Integer{Value: node.Value}
 
 	case *ast.Boolean:
@@ -142,7 +264,17 @@ func Eval(node ast.Node, env *object.Environment) object.Object {
 	case *ast.FunctionLiteral:
 		params := node.Parameters
 		body := node.Body
-		return &object.Function{Parameters: params, Env: env, Body: body}
+		return &object.Function{Parameters: params, Env: env, Body: body, Async: node.Async}
+
+	case *ast.MatchExpression:
+		return evalMatchExpression(node, env)
+
+	case *ast.AttributeAccess:
+		left := Eval(node.Object, env)
+		if isError(left) {
+			return left
+		}
+		return evalAttributeAccess(left, node.Property.Value)
 
 	case *ast.CallExpression:
 		function := Eval(node.Function, env)
@@ -231,11 +363,20 @@ func nativeBoolToBooleanObject(input bool) object.Object {
 }
 
 func evalPrefixExpression(operator string, right object.Object) object.Object {
+	if result, handled, err := numeric.Unary(operator, right); handled {
+		if err != nil {
+			return newError("%s", err)
+		}
+		return result
+	}
+
 	switch operator {
 	case "!":
 		return evalBangOperatorExpression(right)
 	case "-":
 		return evalMinusPrefixOperatorExpression(right)
+	case "bnot":
+		return evalBitNotPrefixOperatorExpression(right)
 	default:
 		return newError("unknown operator: %s%s", operator, right.Type())
 	}
@@ -263,7 +404,23 @@ func evalMinusPrefixOperatorExpression(right object.Object) object.Object {
 	return &object.Integer{Value: -value}
 }
 
+func evalBitNotPrefixOperatorExpression(right object.Object) object.Object {
+	if right.Type() != object.INTEGER_OBJ {
+		return newError("unknown operator: bnot %s", right.Type())
+	}
+
+	value := right.(*object.Integer).Value
+	return &object.Integer{Value: ^value}
+}
+
 func evalInfixExpression(operator string, left, right object.Object) object.Object {
+	if result, handled, err := numeric.Binary(operator, left, right); handled {
+		if err != nil {
+			return newError("%s", err)
+		}
+		return result
+	}
+
 	switch {
 	case operator == "and" || operator == "or":
 		return evalLogicalInfixExpression(operator, left, right)
@@ -296,12 +453,18 @@ func objectEquals(left, right object.Object) bool {
 	switch left := left.(type) {
 	case *object.Integer:
 		return left.Value == right.(*object.Integer).Value
+	case *object.FixedInteger:
+		rightValue, ok := right.(*object.FixedInteger)
+		return ok && left.Kind == rightValue.Kind && left.UnsignedValue() == rightValue.UnsignedValue()
 	case *object.Float:
 		return left.Value == right.(*object.Float).Value
 	case *object.Boolean:
 		return left.Value == right.(*object.Boolean).Value
 	case *object.String:
 		return left.Value == right.(*object.String).Value
+	case *object.EnumValue:
+		rightValue, ok := right.(*object.EnumValue)
+		return ok && left.EnumName == rightValue.EnumName && left.Name == rightValue.Name
 	default:
 		return left == right
 	}
@@ -351,6 +514,20 @@ func evalIntegerInfixExpression(operator string, left, right object.Object) obje
 		return nativeBoolToBooleanObject(leftVal >= rightVal)
 	case "%":
 		return &object.Integer{Value: int64(math.Mod(float64(leftVal), float64(rightVal)))}
+	case "band":
+		return &object.Integer{Value: leftVal & rightVal}
+	case "bor":
+		return &object.Integer{Value: leftVal | rightVal}
+	case "bxor":
+		return &object.Integer{Value: leftVal ^ rightVal}
+	case "shl", "shr":
+		if rightVal < 0 || rightVal > 63 {
+			return newError("shift count must be between 0 and 63, got %d", rightVal)
+		}
+		if operator == "shl" {
+			return &object.Integer{Value: leftVal << uint(rightVal)}
+		}
+		return &object.Integer{Value: leftVal >> uint(rightVal)}
 	default:
 		return newError("unknown operator: %s %s %s", left.Type(), operator, right.Type())
 	}
@@ -468,6 +645,8 @@ func isTruthy(obj object.Object) bool {
 		return v.Value != ""
 	case *object.Integer:
 		return v.Value != 0
+	case *object.FixedInteger:
+		return v.UnsignedValue() != 0
 	case *object.Float:
 		return v.Value != 0
 	case *object.Array:
@@ -538,6 +717,22 @@ func extendFunctionEnv(fct *object.Function, args []object.Object) *object.Envir
 }
 
 func applyFunction(fct object.Object, args []object.Object) object.Object {
+	if function, ok := fct.(*object.Function); ok && function.Async {
+		task := object.NewTask()
+		go func() {
+			defer func() {
+				if recovered := recover(); recovered != nil {
+					task.Complete(newError("task panic: %v", recovered))
+				}
+			}()
+			task.Complete(applyFunctionSync(function, args))
+		}()
+		return task
+	}
+	return applyFunctionSync(fct, args)
+}
+
+func applyFunctionSync(fct object.Object, args []object.Object) object.Object {
 	switch fct := fct.(type) {
 	case *object.Function:
 		if len(args) != len(fct.Parameters) {
@@ -556,12 +751,34 @@ func applyFunction(fct object.Object, args []object.Object) object.Object {
 		if result := fct.Fn(args...); result != nil {
 			return result
 		}
-
 		return NULL
+
+	case *object.StructDefinition:
+		return instantiateStruct(fct, args)
+
+	case *object.ExternalFunction:
+		return newError("external function %s requires `zumbra build` and cannot run in the evaluator", fct.Name)
+
+	case *object.BoundMethod:
+		boundArgs := make([]object.Object, 0, len(args)+1)
+		boundArgs = append(boundArgs, fct.Receiver)
+		boundArgs = append(boundArgs, args...)
+		return applyFunction(fct.Function, boundArgs)
 
 	default:
 		return newError("not a function: %s", fct.Type())
 	}
+}
+
+// InvokeFunction executes a language callback synchronously. Runtime services
+// such as HTTP and desktop use it to enter the evaluator without duplicating
+// function invocation semantics.
+func InvokeFunction(handler object.Object, args []object.Object) (object.Object, error) {
+	result := applyFunctionSync(handler, args)
+	if errObj, ok := result.(*object.Error); ok {
+		return result, fmt.Errorf("%s", errObj.Message)
+	}
+	return result, nil
 }
 
 func unwrapReturnValue(obj object.Object) object.Object {
@@ -589,7 +806,10 @@ func evalStringInfixExpression(operator string, left, right object.Object) objec
 
 func evalArrayIndexExpression(left, index object.Object) object.Object {
 	arrayObj := left.(*object.Array)
-	idx := index.(*object.Integer).Value
+	idx, ok := integerIndex(index)
+	if !ok {
+		return newError("array index must be an integer, got %s", index.Type())
+	}
 	max := int64(len(arrayObj.Elements) - 1)
 
 	if idx < 0 || idx > max {
@@ -597,6 +817,23 @@ func evalArrayIndexExpression(left, index object.Object) object.Object {
 	}
 
 	return arrayObj.Elements[idx]
+}
+
+func integerIndex(value object.Object) (int64, bool) {
+	switch value := value.(type) {
+	case *object.Integer:
+		return value.Value, true
+	case *object.FixedInteger:
+		if value.Kind.Signed() {
+			return value.SignedValue(), true
+		}
+		if value.UnsignedValue() > uint64(^uint64(0)>>1) {
+			return 0, false
+		}
+		return int64(value.UnsignedValue()), true
+	default:
+		return 0, false
+	}
 }
 
 func evalDictLiteral(node *ast.DictLiteral, env *object.Environment) object.Object {
@@ -621,11 +858,17 @@ func evalDictLiteral(node *ast.DictLiteral, env *object.Environment) object.Obje
 }
 
 func evalIndexExpression(left, index object.Object) object.Object {
-	switch {
-	case left.Type() == object.ARRAY_OBJ && index.Type() == object.INTEGER_OBJ:
+	switch left.Type() {
+	case object.ARRAY_OBJ:
 		return evalArrayIndexExpression(left, index)
-	case left.Type() == object.DICT_OBJ:
+	case object.DICT_OBJ:
 		return evalDictIndexExpression(left, index)
+	case object.BYTE_ARRAY_OBJ, object.TYPED_ARRAY_OBJ, object.SLICE_OBJ, object.POINTER_OBJ:
+		value, _, err := collections.Get(left, index)
+		if err != nil {
+			return newError("%s", err)
+		}
+		return value
 	default:
 		return newError("index operator not supported: %s", left.Type())
 	}
@@ -643,6 +886,41 @@ func evalDictIndexExpression(left, index object.Object) object.Object {
 		return NULL
 	}
 	return pair.Value
+}
+
+func evalIndexAssignment(left, index, value object.Object) object.Object {
+	switch left.Type() {
+	case object.ARRAY_OBJ:
+		array := left.(*object.Array)
+		i, ok := integerIndex(index)
+		if !ok {
+			return newError("array index must be an integer, got %s", index.Type())
+		}
+		if i < 0 || i >= int64(len(array.Elements)) {
+			return newError("array index out of bounds: %d (length %d)", i, len(array.Elements))
+		}
+		array.Elements[i] = value
+		return value
+
+	case object.BYTE_ARRAY_OBJ, object.TYPED_ARRAY_OBJ, object.SLICE_OBJ, object.POINTER_OBJ:
+		_, err := collections.Set(left, index, value)
+		if err != nil {
+			return newError("%s", err)
+		}
+		return value
+
+	case object.DICT_OBJ:
+		dict := left.(*object.Dict)
+		key, ok := index.(object.Dictable)
+		if !ok {
+			return newError("unusable as dict key: %s", index.Type())
+		}
+		dict.Pairs[key.DictKey()] = object.DictPair{Key: index, Value: value}
+		return value
+
+	default:
+		return newError("index assignment not supported: %s", left.Type())
+	}
 }
 
 func evalWhileStatement(ws *ast.WhileStatement, env *object.Environment) object.Object {
@@ -718,4 +996,259 @@ func evalImportStatement(node *ast.ImportStatement, env *object.Environment) obj
 	}
 
 	return result
+}
+
+func instantiateStruct(definition *object.StructDefinition, args []object.Object) object.Object {
+	instance := &object.StructInstance{Definition: definition, Fields: map[string]object.Object{}}
+	if len(args) == 1 {
+		if named, ok := args[0].(*object.Dict); ok {
+			for _, field := range definition.Fields {
+				key := (&object.String{Value: field.Name}).DictKey()
+				pair, exists := named.Pairs[key]
+				if !exists {
+					return newError("missing field %s for %s", field.Name, definition.Name)
+				}
+				instance.Fields[field.Name] = pair.Value
+			}
+			for _, pair := range named.Pairs {
+				name, ok := pair.Key.(*object.String)
+				if !ok {
+					return newError("named struct fields must use string keys")
+				}
+				known := false
+				for _, field := range definition.Fields {
+					if field.Name == name.Value {
+						known = true
+						break
+					}
+				}
+				if !known {
+					return newError("unknown field %s for %s", name.Value, definition.Name)
+				}
+			}
+			return instance
+		}
+	}
+	if len(args) != len(definition.Fields) {
+		return newError("wrong number of fields for %s: want=%d, got=%d", definition.Name, len(definition.Fields), len(args))
+	}
+	for index, field := range definition.Fields {
+		instance.Fields[field.Name] = args[index]
+	}
+	return instance
+}
+
+func evalAttributeAccess(left object.Object, property string) object.Object {
+	switch value := left.(type) {
+	case *object.StructInstance:
+		if field, ok := value.Fields[property]; ok {
+			return field
+		}
+		if value.Definition != nil {
+			if method, ok := value.Definition.Methods[property]; ok {
+				return &object.BoundMethod{Receiver: value, Function: method}
+			}
+		}
+		return newError("unknown field or method %s", property)
+	case *object.EnumDefinition:
+		if member, ok := value.Members[property]; ok {
+			return member
+		}
+		return newError("unknown enum member %s.%s", value.Name, property)
+	case *object.Dict:
+		key := &object.String{Value: property}
+		if pair, ok := value.Pairs[key.DictKey()]; ok {
+			return pair.Value
+		}
+		return NULL
+	case *object.DesktopApp:
+		if method := objectbuiltins.DesktopAppMethod(value, property); method != nil {
+			return method
+		}
+		return newError("unknown method %s for DesktopApp", property)
+	case *object.DesktopWindow:
+		if method := objectbuiltins.DesktopWindowMethod(value, property); method != nil {
+			return method
+		}
+		return newError("unknown method %s for DesktopWindow", property)
+	case *object.DesktopTray:
+		if method := objectbuiltins.DesktopTrayMethod(value, property); method != nil {
+			return method
+		}
+		return newError("unknown method %s for DesktopTray", property)
+	case *object.DesktopProcess:
+		if method := objectbuiltins.DesktopProcessMethod(value, property); method != nil {
+			return method
+		}
+		return newError("unknown method %s for DesktopProcess", property)
+	case *object.UIContext:
+		if method := objectbuiltins.UIContextMethod(value, property); method != nil {
+			return method
+		}
+		return newError("unknown method %s for UIContext", property)
+	case *object.UINode:
+		if method := objectbuiltins.UINodeMethod(value, property); method != nil {
+			return method
+		}
+		return newError("unknown method %s for UINode", property)
+	case *object.UIState:
+		if method := objectbuiltins.UIStateMethod(value, property); method != nil {
+			return method
+		}
+		return newError("unknown method %s for UIState", property)
+	case *object.SQLiteDatabase:
+		if method := objectbuiltins.SQLiteDatabaseMethod(value, property); method != nil {
+			return method
+		}
+		return newError("unknown method %s for SQLiteDatabase", property)
+	case *object.SQLiteStatement:
+		if method := objectbuiltins.SQLiteStatementMethod(value, property); method != nil {
+			return method
+		}
+		return newError("unknown method %s for SQLiteStatement", property)
+	case *object.SQLiteTransaction:
+		if method := objectbuiltins.SQLiteTransactionMethod(value, property); method != nil {
+			return method
+		}
+		return newError("unknown method %s for SQLiteTransaction", property)
+	case *object.SQLRows:
+		if method := objectbuiltins.SQLRowsMethod(value, property); method != nil {
+			return method
+		}
+		return newError("unknown method %s for SQLRows", property)
+	case *object.PostgresDatabase:
+		if method := objectbuiltins.PostgresDatabaseMethod(value, property); method != nil {
+			return method
+		}
+		return newError("unknown method %s for PostgresDatabase", property)
+	case *object.PostgresStatement:
+		if method := objectbuiltins.PostgresStatementMethod(value, property); method != nil {
+			return method
+		}
+		return newError("unknown method %s for PostgresStatement", property)
+	case *object.PostgresTransaction:
+		if method := objectbuiltins.PostgresTransactionMethod(value, property); method != nil {
+			return method
+		}
+		return newError("unknown method %s for PostgresTransaction", property)
+	case *object.RedisClient:
+		if method := objectbuiltins.RedisClientMethod(value, property); method != nil {
+			return method
+		}
+		return newError("unknown method %s for RedisClient", property)
+	case *object.Config:
+		if method := objectbuiltins.ConfigMethod(value, property); method != nil {
+			return method
+		}
+		return newError("unknown method %s for Config", property)
+	case *object.Logger:
+		if method := objectbuiltins.LoggerMethod(value, property); method != nil {
+			return method
+		}
+		return newError("unknown method %s for Logger", property)
+	case *object.MetricsRegistry:
+		if method := objectbuiltins.MetricsMethod(value, property); method != nil {
+			return method
+		}
+		return newError("unknown method %s for MetricsRegistry", property)
+	case *object.TraceSpan:
+		if method := objectbuiltins.TraceSpanMethod(value, property); method != nil {
+			return method
+		}
+		return newError("unknown method %s for TraceSpan", property)
+	case *object.SessionStore:
+		if method := objectbuiltins.SessionStoreMethod(value, property); method != nil {
+			return method
+		}
+		return newError("unknown method %s for SessionStore", property)
+	case *object.RateLimiter:
+		if method := objectbuiltins.RateLimiterMethod(value, property); method != nil {
+			return method
+		}
+		return newError("unknown method %s for RateLimiter", property)
+	case *object.HttpApp:
+		if method := objectbuiltins.AppMethod(value, property); method != nil {
+			return method
+		}
+		return newError("unknown method %s for HttpApp", property)
+	case *object.HttpServer:
+		if method := objectbuiltins.ServerMethod(value, property); method != nil {
+			return method
+		}
+		return newError("unknown method %s for HttpServer", property)
+	case *object.HttpRequest:
+		if value := objectbuiltins.RequestAttr(value, property); value != nil {
+			return value
+		}
+		return newError("unknown attribute %s for HttpRequest", property)
+	case *object.HttpResponse:
+		if value := objectbuiltins.ResponseMethod(value, property); value != nil {
+			return value
+		}
+		return newError("unknown attribute %s for HttpResponse", property)
+	case *object.HttpClientResponse:
+		if value := objectbuiltins.ClientResponseAttr(value, property); value != nil {
+			return value
+		}
+		return newError("unknown attribute %s for HttpClientResponse", property)
+	case *object.HttpUploadedFile:
+		if value := objectbuiltins.HTTPFileAttr(value, property); value != nil {
+			return value
+		}
+		return newError("unknown attribute %s for HttpFile", property)
+	case *object.Date:
+		switch property {
+		case "hour":
+			return &object.Integer{Value: int64(value.Hour)}
+		case "minute":
+			return &object.Integer{Value: int64(value.Minute)}
+		case "day":
+			return &object.Integer{Value: int64(value.Day)}
+		case "second":
+			return &object.Integer{Value: int64(value.Second)}
+		case "month":
+			return &object.Integer{Value: int64(value.Month)}
+		case "year":
+			return &object.Integer{Value: int64(value.Year)}
+		case "fullDate":
+			return &object.String{Value: value.FullDate.String()}
+		}
+	case *object.Error:
+		if property == "message" {
+			return &object.String{Value: value.Message}
+		}
+	}
+	return newError("object type %s has no attribute %s", left.Type(), property)
+}
+
+func evalAttributeAssignment(left object.Object, property string, value object.Object) object.Object {
+	instance, ok := left.(*object.StructInstance)
+	if !ok {
+		return newError("attribute assignment not supported: %s", left.Type())
+	}
+	if _, exists := instance.Fields[property]; !exists {
+		return newError("unknown field %s", property)
+	}
+	instance.Fields[property] = value
+	return value
+}
+
+func evalMatchExpression(node *ast.MatchExpression, env *object.Environment) object.Object {
+	value := Eval(node.Value, env)
+	if isError(value) {
+		return value
+	}
+	for _, candidate := range node.Cases {
+		pattern := Eval(candidate.Pattern, env)
+		if isError(pattern) {
+			return pattern
+		}
+		if objectEquals(value, pattern) {
+			return Eval(candidate.Body, env)
+		}
+	}
+	if node.Default != nil {
+		return Eval(node.Default, env)
+	}
+	return NULL
 }

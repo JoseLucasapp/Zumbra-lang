@@ -52,6 +52,18 @@ const (
 	OpGetAttr
 	OpIsError
 	OpDup
+	OpBitAnd
+	OpBitOr
+	OpBitXor
+	OpBitNot
+	OpShiftLeft
+	OpShiftRight
+	OpSetIndex
+	OpStructDefinition
+	OpEnumDefinition
+	OpSetAttr
+	OpSpawn
+	OpAwait
 )
 
 type Definition struct {
@@ -91,7 +103,7 @@ var definitions = map[Opcode]*Definition{
 	OpReturn:             {"OpReturn", []int{}},
 	OpSetLocal:           {"OpSetLocal", []int{1}},
 	OpGetLocal:           {"OpGetLocal", []int{1}},
-	OpGetBuiltin:         {"OpGetBuiltin", []int{1}},
+	OpGetBuiltin:         {"OpGetBuiltin", []int{2}},
 	OpClosure:            {"OpClosure", []int{2, 1}},
 	OpGetFree:            {"OpGetFree", []int{1}},
 	OpCurrentClosure:     {"OpCurrentClosure", []int{}},
@@ -101,6 +113,18 @@ var definitions = map[Opcode]*Definition{
 	OpGetAttr:            {"OpGetAttr", []int{}},
 	OpIsError:            {"OpIsError", []int{}},
 	OpDup:                {"OpDup", []int{}},
+	OpBitAnd:             {"OpBitAnd", []int{}},
+	OpBitOr:              {"OpBitOr", []int{}},
+	OpBitXor:             {"OpBitXor", []int{}},
+	OpBitNot:             {"OpBitNot", []int{}},
+	OpShiftLeft:          {"OpShiftLeft", []int{}},
+	OpShiftRight:         {"OpShiftRight", []int{}},
+	OpSetIndex:           {"OpSetIndex", []int{}},
+	OpStructDefinition:   {"OpStructDefinition", []int{1, 1}},
+	OpEnumDefinition:     {"OpEnumDefinition", []int{1}},
+	OpSetAttr:            {"OpSetAttr", []int{}},
+	OpSpawn:              {"OpSpawn", []int{1}},
+	OpAwait:              {"OpAwait", []int{}},
 }
 
 func Lookup(op byte) (*Definition, error) {

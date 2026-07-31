@@ -36,6 +36,7 @@ type Compiler struct {
 	importingFiles      map[string]bool
 	currentDir          string
 	errorTempCounter    int
+	matchTempCounter    int
 	loopStack           []LoopContext
 	warnings            []Diagnostic
 }
@@ -104,6 +105,7 @@ func newCompilerWithState(
 		importingFiles:   map[string]bool{},
 		currentDir:       baseDir,
 		errorTempCounter: 0,
+		matchTempCounter: 0,
 		loopStack:        []LoopContext{},
 		warnings:         []Diagnostic{},
 	}
@@ -188,6 +190,16 @@ func (c *Compiler) Compile(node ast.Node) error {
 			c.emit(code.OpAnd)
 		case "or":
 			c.emit(code.OpOr)
+		case "band":
+			c.emit(code.OpBitAnd)
+		case "bor":
+			c.emit(code.OpBitOr)
+		case "bxor":
+			c.emit(code.OpBitXor)
+		case "shl":
+			c.emit(code.OpShiftLeft)
+		case "shr":
+			c.emit(code.OpShiftRight)
 		default:
 			return fmt.Errorf("unknown operator %s", node.Operator)
 		}
@@ -203,10 +215,21 @@ func (c *Compiler) Compile(node ast.Node) error {
 			c.emit(code.OpBang)
 		case "-":
 			c.emit(code.OpMinus)
+		case "bnot":
+			c.emit(code.OpBitNot)
 		default:
 			return fmt.Errorf("unknown operator %s", node.Operator)
 		}
 	case *ast.IntegerLiteral:
+		if node.FixedType != "" {
+			kind, ok := object.ParseFixedIntegerKind(node.FixedType)
+			if !ok {
+				return fmt.Errorf("unknown fixed integer type %s", node.FixedType)
+			}
+			integer := object.NewFixedIntegerRaw(kind, node.RawValue)
+			c.emit(code.OpConstant, c.addConstant(integer))
+			break
+		}
 		integer := &object.Integer{Value: node.Value}
 		c.emit(code.OpConstant, c.addConstant(integer))
 
@@ -269,6 +292,32 @@ func (c *Compiler) Compile(node ast.Node) error {
 
 	case *ast.BlockStatement:
 		return c.compileBlockWithScope(node)
+
+	case *ast.ConstStatement:
+		symbol := c.symbolTable.DefineConst(node.Name.Value)
+		if err := c.Compile(node.Value); err != nil {
+			return err
+		}
+		if symbol.Scope == GlobalScope {
+			c.emit(code.OpSetGlobal, symbol.Index)
+		} else {
+			c.emit(code.OpSetLocal, symbol.Index)
+		}
+
+	case *ast.StructStatement:
+		return c.compileStructStatement(node)
+
+	case *ast.EnumStatement:
+		return c.compileEnumStatement(node)
+
+	case *ast.TypeAliasStatement:
+		return nil
+
+	case *ast.ExternBlockStatement:
+		return fmt.Errorf("extern C requires native compilation with `zumbra build`")
+
+	case *ast.UnsafeStatement:
+		return c.Compile(node.Body)
 
 	case *ast.VarStatement:
 		symbol := c.symbolTable.Define(node.Name.Value)
@@ -374,6 +423,7 @@ func (c *Compiler) Compile(node ast.Node) error {
 			Instructions:  instructions,
 			NumLocals:     numLocals,
 			NumParameters: len(node.Parameters),
+			Async:         node.Async,
 		}
 		fnIndex := c.addConstant(compiledFn)
 		c.emit(code.OpClosure, fnIndex, len(freeSymbols))
@@ -392,8 +442,26 @@ func (c *Compiler) Compile(node ast.Node) error {
 
 		c.emit(code.OpReturnValue)
 
+	case *ast.SpawnExpression:
+		call, ok := node.Value.(*ast.CallExpression)
+		if !ok {
+			return fmt.Errorf("spawn expects a function call")
+		}
+		if err := c.Compile(call.Function); err != nil {
+			return err
+		}
+		for _, arg := range call.Arguments {
+			if err := c.Compile(arg); err != nil {
+				return err
+			}
+		}
+		c.emit(code.OpSpawn, len(call.Arguments))
+
 	case *ast.AwaitExpression:
-		return c.Compile(node.Value)
+		if err := c.Compile(node.Value); err != nil {
+			return err
+		}
+		c.emit(code.OpAwait)
 
 	case *ast.TryExpression:
 		return c.Compile(node.Value)
@@ -495,6 +563,29 @@ func (c *Compiler) Compile(node ast.Node) error {
 			return err
 		}
 
+	case *ast.AttributeAssignStatement:
+		if err := c.Compile(node.Target.Object); err != nil {
+			return err
+		}
+		propertyIndex := c.addConstant(&object.String{Value: node.Target.Property.Value})
+		c.emit(code.OpConstant, propertyIndex)
+		if err := c.Compile(node.Value); err != nil {
+			return err
+		}
+		c.emit(code.OpSetAttr)
+
+	case *ast.IndexAssignStatement:
+		if err := c.Compile(node.Target.Left); err != nil {
+			return err
+		}
+		if err := c.Compile(node.Target.Index); err != nil {
+			return err
+		}
+		if err := c.Compile(node.Value); err != nil {
+			return err
+		}
+		c.emit(code.OpSetIndex)
+
 	case *ast.ImportStatement:
 		return c.compileImport(node)
 
@@ -511,6 +602,9 @@ func (c *Compiler) Compile(node ast.Node) error {
 		}
 		pos := c.emit(code.OpJump, 9999)
 		c.registerContinue(pos)
+
+	case *ast.MatchExpression:
+		return c.compileMatchExpression(node)
 
 	case *ast.AttributeAccess:
 		if err := c.Compile(node.Object); err != nil {
@@ -671,6 +765,8 @@ func (c *Compiler) lastInstructionLeavesValue() bool {
 		code.OpCall,
 		code.OpGetAttr,
 		code.OpClosure,
+		code.OpStructDefinition,
+		code.OpEnumDefinition,
 		code.OpReturnValue,
 		code.OpReturn:
 		return true
@@ -780,6 +876,9 @@ func (c *Compiler) compileAssign(stmt *ast.AssignStatement) error {
 	symbol, ok := c.symbolTable.Resolve(stmt.Name.Value)
 	if !ok {
 		return fmt.Errorf("undefined variable %s", stmt.Name.Value)
+	}
+	if !c.symbolTable.IsMutable(stmt.Name.Value) {
+		return fmt.Errorf("cannot assign to constant %s", stmt.Name.Value)
 	}
 
 	switch symbol.Scope {
@@ -1432,6 +1531,14 @@ func rewriteErrorIdentInNode(node ast.Node, from, to string) {
 			rewriteErrorIdentInNode(n.Value, from, to)
 		}
 
+	case *ast.IndexAssignStatement:
+		if n.Target != nil {
+			rewriteErrorIdentInNode(n.Target, from, to)
+		}
+		if n.Value != nil {
+			rewriteErrorIdentInNode(n.Value, from, to)
+		}
+
 	case *ast.ReturnStatement:
 		if n.ReturnValue != nil {
 			rewriteErrorIdentInNode(n.ReturnValue, from, to)
@@ -1498,6 +1605,11 @@ func rewriteErrorIdentInNode(node ast.Node, from, to string) {
 			rewriteErrorIdentInNode(n.Body, from, to)
 		}
 
+	case *ast.SpawnExpression:
+		if n.Value != nil {
+			rewriteErrorIdentInNode(n.Value, from, to)
+		}
+
 	case *ast.AwaitExpression:
 		if n.Value != nil {
 			rewriteErrorIdentInNode(n.Value, from, to)
@@ -1516,4 +1628,104 @@ func rewriteErrorIdentInNode(node ast.Node, from, to string) {
 			rewriteErrorIdentInNode(n.Handler, from, to)
 		}
 	}
+}
+
+func (c *Compiler) compileStructStatement(node *ast.StructStatement) error {
+	symbol := c.symbolTable.DefineConst(node.Name.Value)
+	nameIndex := c.addConstant(&object.String{Value: node.Name.Value})
+	c.emit(code.OpConstant, nameIndex)
+	for _, field := range node.Fields {
+		fieldIndex := c.addConstant(&object.String{Value: field.Name.Value})
+		typeIndex := c.addConstant(&object.String{Value: field.TypeName})
+		c.emit(code.OpConstant, fieldIndex)
+		c.emit(code.OpConstant, typeIndex)
+	}
+	for _, method := range node.Methods {
+		methodIndex := c.addConstant(&object.String{Value: method.Name.Value})
+		c.emit(code.OpConstant, methodIndex)
+		if err := c.Compile(method.Function); err != nil {
+			return err
+		}
+	}
+	if len(node.Fields) > 255 || len(node.Methods) > 255 {
+		return fmt.Errorf("struct %s is too large", node.Name.Value)
+	}
+	c.emit(code.OpStructDefinition, len(node.Fields), len(node.Methods))
+	if symbol.Scope == GlobalScope {
+		c.emit(code.OpSetGlobal, symbol.Index)
+	} else {
+		c.emit(code.OpSetLocal, symbol.Index)
+	}
+	return nil
+}
+
+func (c *Compiler) compileEnumStatement(node *ast.EnumStatement) error {
+	symbol := c.symbolTable.DefineConst(node.Name.Value)
+	nameIndex := c.addConstant(&object.String{Value: node.Name.Value})
+	c.emit(code.OpConstant, nameIndex)
+	for _, member := range node.Members {
+		memberIndex := c.addConstant(&object.String{Value: member.Value})
+		c.emit(code.OpConstant, memberIndex)
+	}
+	if len(node.Members) > 255 {
+		return fmt.Errorf("enum %s has too many members", node.Name.Value)
+	}
+	c.emit(code.OpEnumDefinition, len(node.Members))
+	if symbol.Scope == GlobalScope {
+		c.emit(code.OpSetGlobal, symbol.Index)
+	} else {
+		c.emit(code.OpSetLocal, symbol.Index)
+	}
+	return nil
+}
+
+func (c *Compiler) compileMatchExpression(node *ast.MatchExpression) error {
+	tempName := fmt.Sprintf("__zumbra_match_%d", c.matchTempCounter)
+	c.matchTempCounter++
+	temp := c.symbolTable.Define(tempName)
+	if err := c.Compile(node.Value); err != nil {
+		return err
+	}
+	if temp.Scope == GlobalScope {
+		c.emit(code.OpSetGlobal, temp.Index)
+	} else {
+		c.emit(code.OpSetLocal, temp.Index)
+	}
+
+	endJumps := []int{}
+	for _, matchCase := range node.Cases {
+		c.loadSymbol(temp)
+		if err := c.Compile(matchCase.Pattern); err != nil {
+			return err
+		}
+		c.emit(code.OpEqual)
+		nextCase := c.emit(code.OpJumpNotTruthy, 9999)
+		if err := c.compileBlockWithScope(matchCase.Body); err != nil {
+			return err
+		}
+		if c.lastInstructionIs(code.OpPop) {
+			c.removeLastPop()
+		} else if !c.lastInstructionLeavesValue() {
+			c.emit(code.OpNull)
+		}
+		endJumps = append(endJumps, c.emit(code.OpJump, 9999))
+		c.changeOperand(nextCase, len(c.currentInstructions()))
+	}
+	if node.Default != nil {
+		if err := c.compileBlockWithScope(node.Default); err != nil {
+			return err
+		}
+		if c.lastInstructionIs(code.OpPop) {
+			c.removeLastPop()
+		} else if !c.lastInstructionLeavesValue() {
+			c.emit(code.OpNull)
+		}
+	} else {
+		c.emit(code.OpNull)
+	}
+	end := len(c.currentInstructions())
+	for _, jump := range endJumps {
+		c.changeOperand(jump, end)
+	}
+	return nil
 }

@@ -1,0 +1,120 @@
+name: Z15 Multiplatform
+
+on:
+  push:
+    paths:
+      - "app_commands.go"
+      - "appdist/**"
+      - "appmanifest/**"
+      - "nativec/**"
+      - "code_examples/desktop_package/**"
+      - "code_examples/core/desktop_gui_smoke.zum"
+      - "std/desktop.zum"
+      - "std/ui.zum"
+      - ".github/workflows/z15-multiplatform.yml"
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  linux:
+    name: Linux amd64
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version: "1.24.2"
+          cache: true
+      - name: Install native tools
+        run: sudo apt-get update && sudo apt-get install -y clang gcc nsis
+      - name: Test language and distribution
+        run: |
+          go test ./...
+          scripts/test-distribution.sh
+      - name: Build and run Linux desktop headless
+        env:
+          ZUMBRA_DESKTOP_HEADLESS: "1"
+        run: |
+          go run . build --release -o build/z15-linux-desktop code_examples/core/desktop_runtime.zum
+          ./build/z15-linux-desktop
+
+  windows:
+    name: Windows amd64
+    runs-on: windows-latest
+    defaults:
+      run:
+        shell: msys2 {0}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version: "1.24.2"
+          cache: true
+      - uses: msys2/setup-msys2@v2
+        with:
+          msystem: UCRT64
+          update: true
+          install: >-
+            mingw-w64-ucrt-x86_64-gcc
+            mingw-w64-ucrt-x86_64-binutils
+            mingw-w64-ucrt-x86_64-nsis
+            mingw-w64-ucrt-x86_64-sdl3
+            mingw-w64-ucrt-x86_64-sdl3-ttf
+      - name: Test Windows native backend
+        env:
+          CC: gcc
+          ZUMBRA_DESKTOP_HEADLESS: "1"
+        run: |
+          export PATH="/ucrt64/bin:$PATH"
+          go test ./appmanifest ./appdist ./nativec -run 'Test(Z13DesktopExampleBuildsAndRunsHeadlessNatively|Z14GUIExampleBuildsAndRunsHeadlessNatively|Z14PointOneNativeRuntimeContainsThemeAndUTF8FontSupport|WindowsResourceContainsApplicationMetadata|DesktopRuntimeContainsWindowsAndMacOSBackends)$'
+          go run . build --release --compiler gcc -o build/z15-windows-desktop.exe code_examples/core/desktop_runtime.zum
+          ./build/z15-windows-desktop.exe
+          file build/z15-windows-desktop.exe | grep -q 'PE32+'
+          go run . build --release --compiler gcc -o build/z15-windows-gui.exe code_examples/core/desktop_gui_smoke.zum
+          ZUMBRA_DESKTOP_HEADLESS=0 ./build/z15-windows-gui.exe | grep -q '^sdl3'
+      - name: Package and execute Windows application
+        env:
+          CC: gcc
+          ZUMBRA_DESKTOP_HEADLESS: "1"
+        run: |
+          export PATH="/ucrt64/bin:$PATH"
+          go run . app doctor --manifest code_examples/desktop_package/zumbra.toml --target windows --arch amd64 --format all
+          go run . app package --manifest code_examples/desktop_package/zumbra.toml --target windows --arch amd64 --format all
+          unzip -q code_examples/desktop_package/dist/packages/zumbra-packaged-app-1.0.0-windows-amd64-portable.zip -d build/windows-portable
+          ./build/windows-portable/zumbra-packaged-app-1.0.0-windows-amd64-portable/zumbra-packaged-app.exe
+          test -f code_examples/desktop_package/dist/packages/zumbra-packaged-app-1.0.0-windows-amd64-setup.exe
+
+  macos:
+    name: macOS arm64
+    runs-on: macos-14
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version: "1.24.2"
+          cache: true
+      - name: Install SDL3 runtime
+        run: brew install sdl3 sdl3_ttf
+      - name: Test macOS native backend
+        env:
+          CC: clang
+          ZUMBRA_DESKTOP_HEADLESS: "1"
+        run: |
+          go test ./appmanifest ./appdist ./nativec -run 'Test(Z13DesktopExampleBuildsAndRunsHeadlessNatively|Z14GUIExampleBuildsAndRunsHeadlessNatively|Z14PointOneNativeRuntimeContainsThemeAndUTF8FontSupport|DesktopRuntimeContainsWindowsAndMacOSBackends)$'
+          go run . build --release --compiler clang -o build/z15-macos-desktop code_examples/core/desktop_runtime.zum
+          ./build/z15-macos-desktop
+          file build/z15-macos-desktop | grep -q 'Mach-O 64-bit executable arm64'
+          go run . build --release --compiler clang -o build/z15-macos-gui code_examples/core/desktop_gui_smoke.zum
+          ZUMBRA_DESKTOP_HEADLESS=0 ./build/z15-macos-gui | grep -q '^sdl3'
+      - name: Package and execute macOS application
+        env:
+          CC: clang
+          ZUMBRA_DESKTOP_HEADLESS: "1"
+        run: |
+          go run . app doctor --manifest code_examples/desktop_package/zumbra.toml --target macos --arch arm64 --format all
+          go run . app package --manifest code_examples/desktop_package/zumbra.toml --target macos --arch arm64 --format all
+          "code_examples/desktop_package/dist/packages/Zumbra Packaged App.app/Contents/MacOS/zumbra-packaged-app"
+          test -f code_examples/desktop_package/dist/packages/zumbra-packaged-app-1.0.0-macos-arm64.zip

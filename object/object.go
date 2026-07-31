@@ -14,24 +14,68 @@ import (
 type ObjectType string
 
 const (
-	HTTP_REQUEST_OBJ      = "HTTP_REQUEST"
-	HTTP_RESPONSE_OBJ     = "HTTP_RESPONSE"
-	INTEGER_OBJ           = "INTEGER"
-	BOOLEAN_OBJ           = "BOOLEAN"
-	NULL_OBJ              = "NULL"
-	RETURN_VALUE_OBJ      = "RETURN_VALUE"
-	ERROR_OBJ             = "ERROR"
-	FUNCTION_OBJ          = "FUNCTION"
-	STRING_OBJ            = "STRING"
-	BUILTIN_OBJ           = "BUILTIN"
-	ARRAY_OBJ             = "ARRAY"
-	DICT_OBJ              = "DICT"
-	COMPILED_FUNCTION_OBJ = "COMPILED_FUNCTION_OBJ"
-	CLOSURE_OBJ           = "CLOSURE_OBJ"
-	FLOAT_OBJ             = "FLOAT"
-	DATE_OBJ              = "DATE"
-	RECORD_OBJ            = "RECORD"
-	ENV_OBJ               = "ENV"
+	HTTP_REQUEST_OBJ         = "HTTP_REQUEST"
+	HTTP_RESPONSE_OBJ        = "HTTP_RESPONSE"
+	HTTP_APP_OBJ             = "HTTP_APP"
+	HTTP_SERVER_OBJ          = "HTTP_SERVER"
+	HTTP_CLIENT_RESPONSE_OBJ = "HTTP_CLIENT_RESPONSE"
+	HTTP_STREAM_OBJ          = "HTTP_STREAM"
+	HTTP_FILE_OBJ            = "HTTP_FILE"
+	WEB_SOCKET_OBJ           = "WEB_SOCKET"
+	INTEGER_OBJ              = "INTEGER"
+	BOOLEAN_OBJ              = "BOOLEAN"
+	NULL_OBJ                 = "NULL"
+	RETURN_VALUE_OBJ         = "RETURN_VALUE"
+	ERROR_OBJ                = "ERROR"
+	FUNCTION_OBJ             = "FUNCTION"
+	STRING_OBJ               = "STRING"
+	BUILTIN_OBJ              = "BUILTIN"
+	ARRAY_OBJ                = "ARRAY"
+	DICT_OBJ                 = "DICT"
+	COMPILED_FUNCTION_OBJ    = "COMPILED_FUNCTION_OBJ"
+	CLOSURE_OBJ              = "CLOSURE_OBJ"
+	FLOAT_OBJ                = "FLOAT"
+	DATE_OBJ                 = "DATE"
+	RECORD_OBJ               = "RECORD"
+	ENV_OBJ                  = "ENV"
+	STRUCT_DEF_OBJ           = "STRUCT_DEFINITION"
+	STRUCT_INSTANCE_OBJ      = "STRUCT_INSTANCE"
+	BOUND_METHOD_OBJ         = "BOUND_METHOD"
+	ENUM_DEF_OBJ             = "ENUM_DEFINITION"
+	ENUM_VALUE_OBJ           = "ENUM_VALUE"
+	EXTERNAL_FUNCTION_OBJ    = "EXTERNAL_FUNCTION"
+	TASK_OBJ                 = "TASK"
+	CHANNEL_OBJ              = "CHANNEL"
+	MUTEX_OBJ                = "MUTEX"
+	RW_MUTEX_OBJ             = "RW_MUTEX"
+	WAIT_GROUP_OBJ           = "WAIT_GROUP"
+	SEMAPHORE_OBJ            = "SEMAPHORE"
+	ATOMIC_INT_OBJ           = "ATOMIC_INT"
+	NET_LISTENER_OBJ         = "NET_LISTENER"
+	NET_STREAM_OBJ           = "NET_STREAM"
+	UDP_SOCKET_OBJ           = "UDP_SOCKET"
+	SQLITE_DATABASE_OBJ      = "SQLITE_DATABASE"
+	SQLITE_STATEMENT_OBJ     = "SQLITE_STATEMENT"
+	SQLITE_TRANSACTION_OBJ   = "SQLITE_TRANSACTION"
+	SQL_ROWS_OBJ             = "SQL_ROWS"
+	POSTGRES_DATABASE_OBJ    = "POSTGRES_DATABASE"
+	POSTGRES_STATEMENT_OBJ   = "POSTGRES_STATEMENT"
+	POSTGRES_TRANSACTION_OBJ = "POSTGRES_TRANSACTION"
+	REDIS_CLIENT_OBJ         = "REDIS_CLIENT"
+	CONFIG_OBJ               = "CONFIG"
+	LOGGER_OBJ               = "LOGGER"
+	METRICS_OBJ              = "METRICS"
+	TRACE_SPAN_OBJ           = "TRACE_SPAN"
+	SESSION_STORE_OBJ        = "SESSION_STORE"
+	RATE_LIMITER_OBJ         = "RATE_LIMITER"
+	DESKTOP_APP_OBJ          = "DESKTOP_APP"
+	DESKTOP_WINDOW_OBJ       = "DESKTOP_WINDOW"
+	DESKTOP_TRAY_OBJ         = "DESKTOP_TRAY"
+	DESKTOP_PROCESS_OBJ      = "DESKTOP_PROCESS"
+	UI_NODE_OBJ              = "UI_NODE"
+	UI_STATE_OBJ             = "UI_STATE"
+	UI_THEME_OBJ             = "UI_THEME"
+	UI_CONTEXT_OBJ           = "UI_CONTEXT"
 )
 
 type Object interface {
@@ -76,6 +120,7 @@ type Function struct {
 	Parameters []*ast.Identifier
 	Body       *ast.BlockStatement
 	Env        *Environment
+	Async      bool
 }
 
 func (f *Function) Type() ObjectType { return FUNCTION_OBJ }
@@ -93,6 +138,11 @@ func (f *Function) Inspect() string {
 	out.WriteString("\n}")
 	return out.String()
 }
+
+type ExternalFunction struct{ Name string }
+
+func (f *ExternalFunction) Type() ObjectType { return EXTERNAL_FUNCTION_OBJ }
+func (f *ExternalFunction) Inspect() string  { return "extern C " + f.Name }
 
 type String struct {
 	Value string
@@ -191,6 +241,7 @@ type CompiledFunction struct {
 	Instructions  code.Instructions
 	NumLocals     int
 	NumParameters int
+	Async         bool
 }
 
 func (cf *CompiledFunction) Type() ObjectType { return COMPILED_FUNCTION_OBJ }
