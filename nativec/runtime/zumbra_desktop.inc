@@ -69,9 +69,13 @@ struct ZUIContextNative;
 #if defined(ZUMBRA_ENABLE_UI)
 static void z_ui_dispatch_from_desktop(ZDesktopAppNative *app, ZDesktopEventNative *event);
 static void z_ui_render_all(ZDesktopAppNative *app);
+static bool z_ui_any_dirty(ZDesktopAppNative *app);
+static void z_ui_release_renderer_resources(void *renderer);
 #else
 static void z_ui_dispatch_from_desktop(ZDesktopAppNative *app, ZDesktopEventNative *event) { (void)app; (void)event; }
 static void z_ui_render_all(ZDesktopAppNative *app) { (void)app; }
+static bool z_ui_any_dirty(ZDesktopAppNative *app) { (void)app; return false; }
+static void z_ui_release_renderer_resources(void *renderer) { (void)renderer; }
 #endif
 
 typedef struct ZDesktopHandlerNative {
@@ -128,6 +132,8 @@ struct ZDesktopProcessNative {
 struct ZDesktopAppNative {
     pthread_mutex_t mutex;
     bool headless, running, closed;
+    bool run_thread_set;
+    pthread_t run_thread;
     bool close_on_request, quit_on_last_window;
     int64_t poll_interval_ms;
     int64_t next_window_id;
@@ -249,7 +255,7 @@ typedef bool (*ZD_SDL_GetWindowSize)(SDL_Window*,int*,int*); typedef bool (*ZD_S
 typedef bool (*ZD_SDL_GetWindowPosition)(SDL_Window*,int*,int*); typedef bool (*ZD_SDL_SetWindowPosition)(SDL_Window*,int,int); typedef bool (*ZD_SDL_SetWindowFullscreen)(SDL_Window*,bool); typedef uint64_t (*ZD_SDL_GetWindowFlags)(SDL_Window*);
 typedef bool (*ZD_SDL_MaximizeWindow)(SDL_Window*); typedef bool (*ZD_SDL_MinimizeWindow)(SDL_Window*); typedef bool (*ZD_SDL_RestoreWindow)(SDL_Window*); typedef bool (*ZD_SDL_RaiseWindow)(SDL_Window*);
 typedef float (*ZD_SDL_GetWindowDisplayScale)(SDL_Window*); typedef float (*ZD_SDL_GetWindowPixelDensity)(SDL_Window*);
-typedef bool (*ZD_SDL_PollEvent)(ZDesktopSDLEvent*); typedef bool (*ZD_SDL_WaitEvent)(ZDesktopSDLEvent*); typedef bool (*ZD_SDL_WaitEventTimeout)(ZDesktopSDLEvent*,int32_t); typedef const char *(*ZD_SDL_GetKeyName)(uint32_t);
+typedef bool (*ZD_SDL_PollEvent)(ZDesktopSDLEvent*); typedef bool (*ZD_SDL_WaitEvent)(ZDesktopSDLEvent*); typedef bool (*ZD_SDL_WaitEventTimeout)(ZDesktopSDLEvent*,int32_t); typedef bool (*ZD_SDL_PushEvent)(ZDesktopSDLEvent*); typedef const char *(*ZD_SDL_GetKeyName)(uint32_t);
 typedef bool (*ZD_SDL_StartTextInput)(SDL_Window*); typedef bool (*ZD_SDL_StopTextInput)(SDL_Window*); typedef SDL_Cursor *(*ZD_SDL_CreateSystemCursor)(int); typedef bool (*ZD_SDL_SetCursor)(SDL_Cursor*); typedef void (*ZD_SDL_DestroyCursor)(SDL_Cursor*);
 typedef bool (*ZD_SDL_SetClipboardText)(const char*); typedef char *(*ZD_SDL_GetClipboardText)(void); typedef void (*ZD_SDL_free)(void*);
 typedef SDL_IOStream *(*ZD_SDL_IOFromFile)(const char*,const char*); typedef SDL_Surface *(*ZD_SDL_LoadBMP_IO)(SDL_IOStream*,bool); typedef void (*ZD_SDL_DestroySurface)(SDL_Surface*); typedef bool (*ZD_SDL_SetWindowIcon)(SDL_Window*,SDL_Surface*);
@@ -266,7 +272,7 @@ typedef struct {
     ZD_SDL_CreateWindow CreateWindow; ZD_SDL_DestroyWindow DestroyWindow; ZD_SDL_GetWindowID GetWindowID; ZD_SDL_ShowWindow ShowWindow; ZD_SDL_HideWindow HideWindow; ZD_SDL_GetWindowTitle GetWindowTitle; ZD_SDL_SetWindowTitle SetWindowTitle;
     ZD_SDL_GetWindowSize GetWindowSize; ZD_SDL_GetWindowSizeInPixels GetWindowSizeInPixels; ZD_SDL_SetWindowSize SetWindowSize; ZD_SDL_GetWindowPosition GetWindowPosition; ZD_SDL_SetWindowPosition SetWindowPosition; ZD_SDL_SetWindowFullscreen SetWindowFullscreen; ZD_SDL_GetWindowFlags GetWindowFlags;
     ZD_SDL_MaximizeWindow MaximizeWindow; ZD_SDL_MinimizeWindow MinimizeWindow; ZD_SDL_RestoreWindow RestoreWindow; ZD_SDL_RaiseWindow RaiseWindow; ZD_SDL_GetWindowDisplayScale GetWindowDisplayScale; ZD_SDL_GetWindowPixelDensity GetWindowPixelDensity;
-    ZD_SDL_PollEvent PollEvent; ZD_SDL_WaitEvent WaitEvent; ZD_SDL_WaitEventTimeout WaitEventTimeout; ZD_SDL_GetKeyName GetKeyName; ZD_SDL_StartTextInput StartTextInput; ZD_SDL_StopTextInput StopTextInput; ZD_SDL_CreateSystemCursor CreateSystemCursor; ZD_SDL_SetCursor SetCursor; ZD_SDL_DestroyCursor DestroyCursor; ZD_SDL_SetClipboardText SetClipboardText; ZD_SDL_GetClipboardText GetClipboardText; ZD_SDL_free Free;
+    ZD_SDL_PollEvent PollEvent; ZD_SDL_WaitEvent WaitEvent; ZD_SDL_WaitEventTimeout WaitEventTimeout; ZD_SDL_PushEvent PushEvent; ZD_SDL_GetKeyName GetKeyName; ZD_SDL_StartTextInput StartTextInput; ZD_SDL_StopTextInput StopTextInput; ZD_SDL_CreateSystemCursor CreateSystemCursor; ZD_SDL_SetCursor SetCursor; ZD_SDL_DestroyCursor DestroyCursor; ZD_SDL_SetClipboardText SetClipboardText; ZD_SDL_GetClipboardText GetClipboardText; ZD_SDL_free Free;
     ZD_SDL_IOFromFile IOFromFile; ZD_SDL_LoadBMP_IO LoadBMP_IO; ZD_SDL_DestroySurface DestroySurface; ZD_SDL_SetWindowIcon SetWindowIcon;
     ZD_SDL_CreateTray CreateTray; ZD_SDL_CreateTrayMenu CreateTrayMenu; ZD_SDL_InsertTrayEntryAt InsertTrayEntryAt; ZD_SDL_SetTrayEntryCallback SetTrayEntryCallback; ZD_SDL_SetTrayTooltip SetTrayTooltip; ZD_SDL_DestroyTray DestroyTray;
     ZD_SDL_CreateRenderer CreateRenderer; ZD_SDL_DestroyRenderer DestroyRenderer; ZD_SDL_SetRenderDrawColor SetRenderDrawColor; ZD_SDL_SetRenderDrawBlendMode SetRenderDrawBlendMode; ZD_SDL_SetRenderClipRect SetRenderClipRect; ZD_SDL_RenderClear RenderClear; ZD_SDL_RenderFillRect RenderFillRect; ZD_SDL_RenderRect RenderRect; ZD_SDL_RenderLine RenderLine; ZD_SDL_RenderPresent RenderPresent; ZD_SDL_RenderDebugText RenderDebugText; ZD_SDL_CreateTextureFromSurface CreateTextureFromSurface; ZD_SDL_CreateSurfaceFrom CreateSurfaceFrom; ZD_SDL_RenderReadPixels RenderReadPixels; ZD_SDL_ConvertSurface ConvertSurface; ZD_SDL_RenderTexture RenderTexture; ZD_SDL_DestroyTexture DestroyTexture; ZD_SDL_GetTextureSize GetTextureSize;
@@ -292,7 +298,7 @@ static bool z_desktop_sdl_load(void) {
     ZD_LOAD_REQUIRED(ShowWindow,"SDL_ShowWindow",ZD_SDL_ShowWindow); ZD_LOAD_REQUIRED(HideWindow,"SDL_HideWindow",ZD_SDL_HideWindow); ZD_LOAD_REQUIRED(GetWindowTitle,"SDL_GetWindowTitle",ZD_SDL_GetWindowTitle); ZD_LOAD_REQUIRED(SetWindowTitle,"SDL_SetWindowTitle",ZD_SDL_SetWindowTitle);
     ZD_LOAD_REQUIRED(GetWindowSize,"SDL_GetWindowSize",ZD_SDL_GetWindowSize); ZD_LOAD_REQUIRED(GetWindowSizeInPixels,"SDL_GetWindowSizeInPixels",ZD_SDL_GetWindowSizeInPixels); ZD_LOAD_REQUIRED(SetWindowSize,"SDL_SetWindowSize",ZD_SDL_SetWindowSize); ZD_LOAD_REQUIRED(GetWindowPosition,"SDL_GetWindowPosition",ZD_SDL_GetWindowPosition); ZD_LOAD_REQUIRED(SetWindowPosition,"SDL_SetWindowPosition",ZD_SDL_SetWindowPosition); ZD_LOAD_REQUIRED(SetWindowFullscreen,"SDL_SetWindowFullscreen",ZD_SDL_SetWindowFullscreen); ZD_LOAD_REQUIRED(GetWindowFlags,"SDL_GetWindowFlags",ZD_SDL_GetWindowFlags);
     ZD_LOAD_REQUIRED(MaximizeWindow,"SDL_MaximizeWindow",ZD_SDL_MaximizeWindow); ZD_LOAD_REQUIRED(MinimizeWindow,"SDL_MinimizeWindow",ZD_SDL_MinimizeWindow); ZD_LOAD_REQUIRED(RestoreWindow,"SDL_RestoreWindow",ZD_SDL_RestoreWindow); ZD_LOAD_REQUIRED(RaiseWindow,"SDL_RaiseWindow",ZD_SDL_RaiseWindow); ZD_LOAD_REQUIRED(GetWindowDisplayScale,"SDL_GetWindowDisplayScale",ZD_SDL_GetWindowDisplayScale); ZD_LOAD_REQUIRED(GetWindowPixelDensity,"SDL_GetWindowPixelDensity",ZD_SDL_GetWindowPixelDensity);
-    ZD_LOAD_REQUIRED(PollEvent,"SDL_PollEvent",ZD_SDL_PollEvent); ZD_LOAD_REQUIRED(WaitEvent,"SDL_WaitEvent",ZD_SDL_WaitEvent); ZD_LOAD_REQUIRED(WaitEventTimeout,"SDL_WaitEventTimeout",ZD_SDL_WaitEventTimeout); ZD_LOAD_REQUIRED(GetKeyName,"SDL_GetKeyName",ZD_SDL_GetKeyName); ZD_LOAD_REQUIRED(StartTextInput,"SDL_StartTextInput",ZD_SDL_StartTextInput); ZD_LOAD_REQUIRED(StopTextInput,"SDL_StopTextInput",ZD_SDL_StopTextInput); ZD_LOAD_OPTIONAL(CreateSystemCursor,"SDL_CreateSystemCursor",ZD_SDL_CreateSystemCursor); ZD_LOAD_OPTIONAL(SetCursor,"SDL_SetCursor",ZD_SDL_SetCursor); ZD_LOAD_OPTIONAL(DestroyCursor,"SDL_DestroyCursor",ZD_SDL_DestroyCursor); ZD_LOAD_REQUIRED(SetClipboardText,"SDL_SetClipboardText",ZD_SDL_SetClipboardText); ZD_LOAD_REQUIRED(GetClipboardText,"SDL_GetClipboardText",ZD_SDL_GetClipboardText); ZD_LOAD_REQUIRED(Free,"SDL_free",ZD_SDL_free);
+    ZD_LOAD_REQUIRED(PollEvent,"SDL_PollEvent",ZD_SDL_PollEvent); ZD_LOAD_REQUIRED(WaitEvent,"SDL_WaitEvent",ZD_SDL_WaitEvent); ZD_LOAD_REQUIRED(WaitEventTimeout,"SDL_WaitEventTimeout",ZD_SDL_WaitEventTimeout); ZD_LOAD_REQUIRED(PushEvent,"SDL_PushEvent",ZD_SDL_PushEvent); ZD_LOAD_REQUIRED(GetKeyName,"SDL_GetKeyName",ZD_SDL_GetKeyName); ZD_LOAD_REQUIRED(StartTextInput,"SDL_StartTextInput",ZD_SDL_StartTextInput); ZD_LOAD_REQUIRED(StopTextInput,"SDL_StopTextInput",ZD_SDL_StopTextInput); ZD_LOAD_OPTIONAL(CreateSystemCursor,"SDL_CreateSystemCursor",ZD_SDL_CreateSystemCursor); ZD_LOAD_OPTIONAL(SetCursor,"SDL_SetCursor",ZD_SDL_SetCursor); ZD_LOAD_OPTIONAL(DestroyCursor,"SDL_DestroyCursor",ZD_SDL_DestroyCursor); ZD_LOAD_REQUIRED(SetClipboardText,"SDL_SetClipboardText",ZD_SDL_SetClipboardText); ZD_LOAD_REQUIRED(GetClipboardText,"SDL_GetClipboardText",ZD_SDL_GetClipboardText); ZD_LOAD_REQUIRED(Free,"SDL_free",ZD_SDL_free);
     ZD_LOAD_OPTIONAL(IOFromFile,"SDL_IOFromFile",ZD_SDL_IOFromFile); ZD_LOAD_OPTIONAL(LoadBMP_IO,"SDL_LoadBMP_IO",ZD_SDL_LoadBMP_IO); ZD_LOAD_OPTIONAL(DestroySurface,"SDL_DestroySurface",ZD_SDL_DestroySurface); ZD_LOAD_OPTIONAL(SetWindowIcon,"SDL_SetWindowIcon",ZD_SDL_SetWindowIcon);
     ZD_LOAD_OPTIONAL(CreateTray,"SDL_CreateTray",ZD_SDL_CreateTray); ZD_LOAD_OPTIONAL(CreateTrayMenu,"SDL_CreateTrayMenu",ZD_SDL_CreateTrayMenu); ZD_LOAD_OPTIONAL(InsertTrayEntryAt,"SDL_InsertTrayEntryAt",ZD_SDL_InsertTrayEntryAt); ZD_LOAD_OPTIONAL(SetTrayEntryCallback,"SDL_SetTrayEntryCallback",ZD_SDL_SetTrayEntryCallback); ZD_LOAD_OPTIONAL(SetTrayTooltip,"SDL_SetTrayTooltip",ZD_SDL_SetTrayTooltip); ZD_LOAD_OPTIONAL(DestroyTray,"SDL_DestroyTray",ZD_SDL_DestroyTray);
     ZD_LOAD_REQUIRED(CreateRenderer,"SDL_CreateRenderer",ZD_SDL_CreateRenderer); ZD_LOAD_REQUIRED(DestroyRenderer,"SDL_DestroyRenderer",ZD_SDL_DestroyRenderer); ZD_LOAD_REQUIRED(SetRenderDrawColor,"SDL_SetRenderDrawColor",ZD_SDL_SetRenderDrawColor); ZD_LOAD_OPTIONAL(SetRenderDrawBlendMode,"SDL_SetRenderDrawBlendMode",ZD_SDL_SetRenderDrawBlendMode); ZD_LOAD_OPTIONAL(SetRenderClipRect,"SDL_SetRenderClipRect",ZD_SDL_SetRenderClipRect); ZD_LOAD_REQUIRED(RenderClear,"SDL_RenderClear",ZD_SDL_RenderClear); ZD_LOAD_REQUIRED(RenderFillRect,"SDL_RenderFillRect",ZD_SDL_RenderFillRect); ZD_LOAD_REQUIRED(RenderRect,"SDL_RenderRect",ZD_SDL_RenderRect); ZD_LOAD_REQUIRED(RenderLine,"SDL_RenderLine",ZD_SDL_RenderLine); ZD_LOAD_REQUIRED(RenderPresent,"SDL_RenderPresent",ZD_SDL_RenderPresent); ZD_LOAD_OPTIONAL(RenderDebugText,"SDL_RenderDebugText",ZD_SDL_RenderDebugText); ZD_LOAD_OPTIONAL(CreateTextureFromSurface,"SDL_CreateTextureFromSurface",ZD_SDL_CreateTextureFromSurface); ZD_LOAD_OPTIONAL(CreateSurfaceFrom,"SDL_CreateSurfaceFrom",ZD_SDL_CreateSurfaceFrom); ZD_LOAD_OPTIONAL(RenderReadPixels,"SDL_RenderReadPixels",ZD_SDL_RenderReadPixels); ZD_LOAD_OPTIONAL(ConvertSurface,"SDL_ConvertSurface",ZD_SDL_ConvertSurface); ZD_LOAD_OPTIONAL(RenderTexture,"SDL_RenderTexture",ZD_SDL_RenderTexture); ZD_LOAD_OPTIONAL(DestroyTexture,"SDL_DestroyTexture",ZD_SDL_DestroyTexture); ZD_LOAD_OPTIONAL(GetTextureSize,"SDL_GetTextureSize",ZD_SDL_GetTextureSize);
@@ -322,14 +328,30 @@ static SDL_Surface *z_desktop_sdl_load_bmp(const char *path) {
 static bool z_desktop_sdl_load(void) { return false; }
 #endif
 
+#define Z_DESKTOP_POLL_SENTINEL UINT32_C(0x7F00)
+#define Z_DESKTOP_WAKE_EVENT UINT32_C(0x8000)
+
+static void z_desktop_wake_app(ZDesktopAppNative *app) {
+#if defined(ZUMBRA_DESKTOP_SDL3)
+    if (app == NULL || app->headless || !app->running || app->closed || !z_desktop_sdl.initialized || z_desktop_sdl.PushEvent == NULL) return;
+    if (app->run_thread_set && pthread_equal(pthread_self(), app->run_thread)) return;
+    ZDesktopSDLEvent wake; memset(&wake, 0, sizeof(wake)); wake.type = Z_DESKTOP_WAKE_EVENT;
+    (void)z_desktop_sdl.PushEvent(&wake);
+#else
+    (void)app;
+#endif
+}
+
 /* -------- event queue and handlers -------- */
 static void z_desktop_queue(ZDesktopAppNative *app, const char *type, int64_t window_id, ZValue data) {
     ZDesktopEventNative *event=(ZDesktopEventNative *)z_alloc(sizeof(*event));
     event->type=z_strdup(type); event->window_id=window_id; event->timestamp=z_desktop_now_ns(); event->data=data; event->next=NULL;
     pthread_mutex_lock(&app->mutex);
+    bool was_empty=app->event_head==NULL;
     if(app->event_tail!=NULL)app->event_tail->next=event;else app->event_head=event;
     app->event_tail=event;
     pthread_mutex_unlock(&app->mutex);
+    if(was_empty)z_desktop_wake_app(app);
 }
 static ZDesktopEventNative *z_desktop_dequeue(ZDesktopAppNative *app) {
     pthread_mutex_lock(&app->mutex); ZDesktopEventNative *event=app->event_head;
@@ -371,7 +393,7 @@ static void z_desktop_close_window_native(ZDesktopWindowNative *window) {
     if (window == NULL || !window->open) return;
     window->open = false;
 #if defined(ZUMBRA_DESKTOP_SDL3)
-    if(!window->app->headless&&window->handle!=NULL){if(window->renderer!=NULL){z_desktop_sdl.DestroyRenderer((SDL_Renderer*)window->renderer);window->renderer=NULL;}z_desktop_sdl.DestroyWindow((SDL_Window *)window->handle);window->handle=NULL;}
+    if(!window->app->headless&&window->handle!=NULL){if(window->renderer!=NULL){z_ui_release_renderer_resources(window->renderer);z_desktop_sdl.DestroyRenderer((SDL_Renderer*)window->renderer);window->renderer=NULL;}z_desktop_sdl.DestroyWindow((SDL_Window *)window->handle);window->handle=NULL;}
 #endif
     z_desktop_queue(window->app,"window_closed",window->id,z_dict_from(NULL,0));
 }
@@ -399,7 +421,7 @@ static void z_desktop_shortcut(uint32_t key,uint16_t mod,char *output,size_t siz
 static ZDesktopEventNative *z_desktop_sdl_event(int64_t timeout_ms) {
     ZDesktopSDLEvent raw; bool ok=timeout_ms<0?z_desktop_sdl.WaitEvent(&raw):(timeout_ms==0?z_desktop_sdl.PollEvent(&raw):z_desktop_sdl.WaitEventTimeout(&raw,(int32_t)timeout_ms)); if(!ok)return NULL;
     ZDesktopSDLCommonEvent *common=(ZDesktopSDLCommonEvent *)&raw; const char *type="unknown";int64_t window_id=0;ZValue data=z_dict_from(NULL,0);
-    if(common->type==0x100u)type="quit"; else if(common->type==0x101u)type="terminating"; else if(common->type==0x102u)type="low_memory"; else if(common->type==0x103u)type="will_enter_background"; else if(common->type==0x104u)type="did_enter_background"; else if(common->type==0x105u)type="will_enter_foreground"; else if(common->type==0x106u)type="did_enter_foreground"; else if(common->type==0x109u)type="system_theme_changed";
+    if(common->type==Z_DESKTOP_POLL_SENTINEL)type="__zumbra_poll_sentinel"; else if(common->type==Z_DESKTOP_WAKE_EVENT)type="__zumbra_wake"; else if(common->type==0x100u)type="quit"; else if(common->type==0x101u)type="terminating"; else if(common->type==0x102u)type="low_memory"; else if(common->type==0x103u)type="will_enter_background"; else if(common->type==0x104u)type="did_enter_background"; else if(common->type==0x105u)type="will_enter_foreground"; else if(common->type==0x106u)type="did_enter_foreground"; else if(common->type==0x109u)type="system_theme_changed";
     else if(common->type>=0x202u&&common->type<=0x220u){ZDesktopSDLWindowEvent*w=(ZDesktopSDLWindowEvent*)&raw;window_id=w->windowID;switch(common->type){case 0x202:type="window_shown";break;case 0x203:type="window_hidden";break;case 0x204:type="window_exposed";break;case 0x205:type="window_moved";data=z_desktop_dict2("x",z_int(w->data1),"y",z_int(w->data2));break;case 0x206:type="window_resized";data=z_desktop_dict2("width",z_int(w->data1),"height",z_int(w->data2));break;case 0x207:type="window_pixel_size_changed";data=z_desktop_dict2("width",z_int(w->data1),"height",z_int(w->data2));break;case 0x209:type="window_minimized";break;case 0x20a:type="window_maximized";break;case 0x20b:type="window_restored";break;case 0x20c:type="window_mouse_enter";break;case 0x20d:type="window_mouse_leave";break;case 0x20e:type="window_focus_gained";break;case 0x20f:type="window_focus_lost";break;case 0x210:type="window_close_requested";break;case 0x219:type="window_enter_fullscreen";break;case 0x21a:type="window_leave_fullscreen";break;case 0x21b:type="window_closed";break;default:type="window_event";break;}}
     else if(common->type==0x300u||common->type==0x301u){ZDesktopSDLKeyboardEvent*k=(ZDesktopSDLKeyboardEvent*)&raw;window_id=k->windowID;char shortcut[256];z_desktop_shortcut(k->key,k->mod,shortcut,sizeof(shortcut));const char*key=z_desktop_sdl.GetKeyName(k->key);ZValue pairs[5]={z_pair(z_string("key"),z_string(key==NULL?"":key)),z_pair(z_string("keycode"),z_int(k->key)),z_pair(z_string("modifiers"),z_int(k->mod)),z_pair(z_string("repeat"),z_bool(k->repeat)),z_pair(z_string("shortcut"),z_string(shortcut))};data=z_dict_from(pairs,5);type=common->type==0x300u?"key_down":"key_up";}
     else if(common->type==0x303u){ZDesktopSDLTextEvent*t=(ZDesktopSDLTextEvent*)&raw;window_id=t->windowID;data=z_desktop_dict1("text",z_string(t->text==NULL?"":t->text));type="text_input";}
@@ -414,7 +436,16 @@ static ZDesktopEventNative *z_desktop_sdl_event(int64_t timeout_ms) {
 static ZDesktopEventNative *z_desktop_next_event(ZDesktopAppNative *app,int64_t timeout_ms){
     ZDesktopEventNative*queued=z_desktop_dequeue(app);if(queued!=NULL)return queued;
 #if defined(ZUMBRA_DESKTOP_SDL3)
-    if(!app->headless)return z_desktop_sdl_event(timeout_ms);
+    if(!app->headless){
+        for(;;){
+            ZDesktopEventNative*event=z_desktop_sdl_event(timeout_ms);
+            if(event==NULL)return NULL;
+            if(strcmp(event->type,"__zumbra_poll_sentinel")==0){if(timeout_ms==0)return NULL;z_desktop_sleep_ms(1);continue;}
+            if(strcmp(event->type,"__zumbra_wake")!=0)return event;
+            queued=z_desktop_dequeue(app);if(queued!=NULL)return queued;
+            if(timeout_ms==0)return NULL;
+        }
+    }
 #endif
     z_desktop_sleep_ms(timeout_ms);return z_desktop_dequeue(app);
 }
@@ -530,7 +561,7 @@ static ZValue z_desktop_call_builtin(const char*name,const ZValue*args,size_t ar
     if(strcmp(name,"desktopOn")==0){z_expect_args(name,argc,3);ZDesktopAppNative*app=z_desktop_expect_app(args[0]);z_desktop_add_handler(&app->handlers,z_as_cstring(args[1]),args[2]);return args[0];}
     if(strcmp(name,"desktopShortcut")==0){z_expect_args(name,argc,3);ZDesktopAppNative*app=z_desktop_expect_app(args[0]);char normalized[256];z_desktop_normalize_shortcut(z_as_cstring(args[1]),normalized,sizeof(normalized));z_desktop_add_handler(&app->shortcuts,normalized,args[2]);return args[0];}
     if(strcmp(name,"desktopPoll")==0){z_expect_args(name,argc,2);ZDesktopAppNative*app=z_desktop_expect_app(args[0]);ZDesktopEventNative*event=z_desktop_next_event(app,z_as_i64(args[1]));if(event==NULL){z_ui_render_all(app);return z_null();}z_desktop_dispatch(app,event);z_ui_render_all(app);return z_desktop_event_value(event);}
-    if(strcmp(name,"desktopRun")==0){z_expect_args(name,argc,1);ZDesktopAppNative*app=z_desktop_expect_app(args[0]);if(app->closed)z_fatal("desktop app is closed");app->running=true;while(app->running&&!app->closed){ZDesktopEventNative*event=z_desktop_next_event(app,app->poll_interval_ms);if(event!=NULL)z_desktop_dispatch(app,event);z_ui_render_all(app);}return z_bool(true);}
+    if(strcmp(name,"desktopRun")==0){z_expect_args(name,argc,1);ZDesktopAppNative*app=z_desktop_expect_app(args[0]);if(app->closed)z_fatal("desktop app is closed");app->running=true;app->run_thread=pthread_self();app->run_thread_set=true;z_ui_render_all(app);while(app->running&&!app->closed){if(z_ui_any_dirty(app))z_ui_render_all(app);int64_t wait_ms=app->headless?app->poll_interval_ms:-1;ZDesktopEventNative*event=z_desktop_next_event(app,wait_ms);if(event!=NULL)z_desktop_dispatch(app,event);size_t drained=0;while(app->running&&!app->closed&&drained<256){ZDesktopEventNative*pending=z_desktop_dequeue(app);if(pending==NULL)break;z_desktop_dispatch(app,pending);drained++;}z_ui_render_all(app);}app->run_thread_set=false;return z_bool(true);}
     if(strcmp(name,"desktopQuit")==0){z_expect_args(name,argc,1);z_desktop_expect_app(args[0])->running=false;return z_bool(true);}
     if(strcmp(name,"desktopRunning")==0){z_expect_args(name,argc,1);return z_bool(z_desktop_expect_app(args[0])->running);}
     if(strcmp(name,"desktopClose")==0){z_expect_args(name,argc,1);ZDesktopAppNative*app=z_desktop_expect_app(args[0]);if(!app->closed){app->running=false;app->closed=true;for(ZDesktopWindowNative*w=app->windows;w!=NULL;w=w->next)z_desktop_close_window_native(w);for(ZDesktopTrayNative*t=app->trays;t!=NULL;t=t->next){if(t->open){
