@@ -389,7 +389,32 @@ static void z_ui_text(SDL_Renderer*r,double x,double y,const char*text,const cha
     }
     if(z_desktop_sdl.RenderDebugText){z_desktop_sdl.SetRenderDrawColor(r,red,green,blue,alpha);z_desktop_sdl.RenderDebugText(r,(float)x,(float)y,text);}
 }
-static void z_ui_text_aligned(SDL_Renderer*r,ZUIRectNative bounds,double padding,const char*text,const char*color,ZValue props,ZUIThemeNative*theme,const char*default_align){double width=0,height=0;z_ui_measure_text_native(text,props,theme,z_ui_prop_number(props,"wrapWidth",0),&width,&height);double y=bounds.y+fmax(0,(bounds.height-height)/2),x=bounds.x+padding;const char*align=z_ui_prop_string(props,"textAlign",default_align);if(strcmp(align,"center")==0)x=bounds.x+fmax(padding,(bounds.width-width)/2);else if(strcmp(align,"right")==0)x=bounds.x+fmax(padding,bounds.width-padding-width);z_ui_text(r,x,y,text,color,props,theme);} 
+static size_t z_ui_utf8_byte_offset(const char*text,size_t index);
+static char*z_ui_fit_text_native(const char*text,double max_width,ZValue props,ZUIThemeNative*theme){
+    if(!text)text="";
+    double width=0,height=0;z_ui_measure_text_native(text,props,theme,z_ui_prop_number(props,"wrapWidth",0),&width,&height);
+    if(max_width<=0)return z_strdup("");
+    if(width<=max_width||strcasecmp(z_ui_prop_string(props,"textOverflow","ellipsis"),"visible")==0)return z_strdup(text);
+    const char*ellipsis="…";double ellipsis_width=0;z_ui_measure_text_native(ellipsis,props,theme,0,&ellipsis_width,&height);
+    if(ellipsis_width>max_width)return z_strdup("");
+    size_t count=z_ui_utf8_count(text),ellipsis_bytes=strlen(ellipsis);
+    while(count>0){
+        size_t bytes=z_ui_utf8_byte_offset(text,count);char*candidate=(char*)malloc(bytes+ellipsis_bytes+1);
+        if(!candidate)return z_strdup(ellipsis);
+        memcpy(candidate,text,bytes);memcpy(candidate+bytes,ellipsis,ellipsis_bytes+1);
+        z_ui_measure_text_native(candidate,props,theme,0,&width,&height);
+        if(width<=max_width)return candidate;
+        free(candidate);count--;
+    }
+    return z_strdup(ellipsis);
+}
+static void z_ui_text_aligned(SDL_Renderer*r,ZUIRectNative bounds,double padding,const char*text,const char*color,ZValue props,ZUIThemeNative*theme,const char*default_align){
+    double available=fmax(0,bounds.width-padding*2);char*fitted=z_ui_fit_text_native(text,available,props,theme);double width=0,height=0;
+    z_ui_measure_text_native(fitted,props,theme,z_ui_prop_number(props,"wrapWidth",0),&width,&height);
+    double y=bounds.y+fmax(0,(bounds.height-height)/2),x=bounds.x+padding;const char*align=z_ui_prop_string(props,"textAlign",default_align);
+    if(strcmp(align,"center")==0)x=bounds.x+fmax(padding,(bounds.width-width)/2);else if(strcmp(align,"right")==0)x=bounds.x+fmax(padding,bounds.width-padding-width);
+    z_ui_text(r,x,y,fitted,color,props,theme);free(fitted);
+}
 static void z_ui_text_centered(SDL_Renderer*r,ZUIRectNative bounds,double left_padding,const char*text,const char*color,ZValue props,ZUIThemeNative*theme){z_ui_text_aligned(r,bounds,left_padding,text,color,props,theme,"left");}
 static bool z_ui_render_control_icon(SDL_Renderer*r,ZUIRectNative b,const char*icon,const char*color){
     if(icon==NULL||*icon=='\0')return false;double cx=b.x+b.width/2,cy=b.y+b.height/2,size=fmax(4,fmin(b.width,b.height)*.22);z_ui_draw_color(r,color);
@@ -402,6 +427,12 @@ static bool z_ui_render_control_icon(SDL_Renderer*r,ZUIRectNative b,const char*i
 static const char*z_ui_node_text(ZUINodeNative*n){return z_ui_props_text(n->props);}
 static const char*z_ui_value_text(ZValue value){if(value.tag==ZV_STRING)return value.as.s;ZValue converted=z_to_string_value(value);return converted.tag==ZV_STRING?converted.as.s:"";}
 static void z_ui_set_clip(SDL_Renderer*r,bool enabled,ZUIRectNative clip){if(z_desktop_sdl.SetRenderClipRect==NULL)return;if(!enabled){z_desktop_sdl.SetRenderClipRect(r,NULL);return;}ZDesktopSDLRect q={(int32_t)floor(clip.x),(int32_t)floor(clip.y),(int32_t)ceil(clip.width),(int32_t)ceil(clip.height)};z_desktop_sdl.SetRenderClipRect(r,&q);}
+static bool z_ui_set_local_clip(SDL_Renderer*r,bool has_parent,ZUIRectNative parent,ZUIRectNative local){
+    ZUIRectNative effective=local;
+    if(has_parent&&!z_ui_rect_intersection(parent,local,&effective))return false;
+    z_ui_set_clip(r,true,effective);
+    return true;
+}
 
 static const char*z_ui_chart_color(ZValue colors,size_t index){static const char*palette[]={"#3867e8","#e89b38","#42a56b","#9b59b6","#e05260","#2f9db0","#8a6d3b","#6c7a89"};if(colors.tag==ZV_ARRAY&&colors.as.array->len>0)return z_ui_value_text(colors.as.array->items[index%colors.as.array->len]);return palette[index%(sizeof(palette)/sizeof(palette[0]))];}
 static void z_ui_render_pie_chart(SDL_Renderer*r,ZUIRectNative origin,ZValue values,ZUIThemeNative*theme){ZValue numbers=z_desktop_dict_get(values,"values"),colors=z_desktop_dict_get(values,"colors"),labels=z_desktop_dict_get(values,"labels");if(numbers.tag!=ZV_ARRAY||numbers.as.array->len==0)return;double x=origin.x+z_ui_prop_number(values,"x",0),y=origin.y+z_ui_prop_number(values,"y",0),width=z_ui_prop_number(values,"width",origin.width),height=z_ui_prop_number(values,"height",origin.height);bool legend=z_ui_prop_bool(values,"legend",true);double legend_width=legend?fmin(170,width*.42):0,plot_width=fmax(0,width-legend_width),radius=fmax(0,fmin(plot_width,height)/2-8),cx=x+plot_width/2,cy=y+height/2,total=0;for(size_t i=0;i<numbers.as.array->len;i++){double n=z_ui_number(numbers.as.array->items[i],0);if(n>0)total+=n;}if(total<=0||radius<=0)return;double start=-3.14159265358979323846/2;for(size_t i=0;i<numbers.as.array->len;i++){double n=z_ui_number(numbers.as.array->items[i],0);if(n<=0)continue;double end=start+n/total*2*3.14159265358979323846;z_ui_draw_color(r,z_ui_chart_color(colors,i));int steps=(int)fmax(2,ceil((end-start)*radius*1.6));for(int step=0;step<=steps;step++){double angle=start+(end-start)*(double)step/(double)steps,ex=cx+cos(angle)*radius,ey=cy+sin(angle)*radius;z_desktop_sdl.RenderLine(r,(float)cx,(float)cy,(float)ex,(float)ey);}start=end;}if(legend){double legend_x=x+plot_width+8;for(size_t i=0;i<numbers.as.array->len;i++){double row_y=y+8+(double)i*24;if(row_y+18>y+height)break;const char*color=z_ui_chart_color(colors,i);z_ui_fill(r,(ZUIRectNative){legend_x,row_y+3,12,12},color);const char*label=(labels.tag==ZV_ARRAY&&i<labels.as.array->len)?z_ui_value_text(labels.as.array->items[i]):"";char buffer[256];double n=z_ui_number(numbers.as.array->items[i],0);if(*label)snprintf(buffer,sizeof(buffer),"%s: %.0f",label,n);else snprintf(buffer,sizeof(buffer),"%.0f",n);z_ui_text(r,legend_x+18,row_y,buffer,z_ui_prop_string(values,"textColor",z_ui_theme_string(theme,"text","#172033")),values,theme);}}}
@@ -522,8 +553,46 @@ static void z_ui_render_node(SDL_Renderer*r,ZUINodeNative*n,ZUIContextNative*ctx
     const char*fg=z_ui_prop_string(n->props,"textColor",text);
     ZUIRectNative b=n->bounds;
     if(strcmp(n->kind,"text")==0){z_ui_text(r,b.x+2,b.y+4,z_ui_node_text(n),fg,n->props,ctx->theme);}
-    else if(strcmp(n->kind,"button")==0){if(strcmp(bg,"transparent")==0)bg=primary;z_ui_fill(r,b,bg);z_ui_stroke(r,b,border);z_ui_set_clip(r,true,(ZUIRectNative){b.x+1,b.y+1,fmax(0,b.width-2),fmax(0,b.height-2)});const char*button_color=z_ui_prop_string(n->props,"textColor",z_ui_theme_string(ctx->theme,"primaryText","#ffffff"));if(!z_ui_render_control_icon(r,b,z_ui_prop_string(n->props,"icon",""),button_color))z_ui_text_aligned(r,b,10,z_ui_node_text(n),button_color,n->props,ctx->theme,"center");z_ui_set_clip(r,has_clip,clip);}
-    else if(strcmp(n->kind,"input")==0||strcmp(n->kind,"textarea")==0||strcmp(n->kind,"select")==0){bool focused=ctx->focus_id&&strcmp(ctx->focus_id,n->id)==0;if(strcmp(bg,"transparent")==0)bg=surface;if(focused)bg=z_ui_prop_string(n->props,"focusBackground",z_ui_theme_string(ctx->theme,"surfaceAlt","#eef2f7"));z_ui_fill(r,b,bg);z_ui_stroke(r,b,border);const char*actual=z_ui_prop_string(n->props,"value","");const char*label=*actual?actual:z_ui_prop_string(n->props,"placeholder","");if(strcmp(n->kind,"select")==0){ZUIRectNative text_bounds=b;text_bounds.width=fmax(0,text_bounds.width-30);z_ui_text_aligned(r,text_bounds,8,label,*actual?fg:"#87909f",n->props,ctx->theme,"left");double cx=b.x+b.width-15,cy=b.y+b.height/2;z_ui_draw_color(r,fg);z_desktop_sdl.RenderLine(r,(float)(cx-4),(float)(cy-2),(float)cx,(float)(cy+2));z_desktop_sdl.RenderLine(r,(float)cx,(float)(cy+2),(float)(cx+4),(float)(cy-2));}else if(!focused&&!*actual){z_ui_text_aligned(r,b,8,label,"#87909f",n->props,ctx->theme,"left");}else{int64_t caret=0,anchor=0,sel_start=0,sel_end=0;z_ui_text_selection(n,&caret,&anchor,&sel_start,&sel_end);int64_t view_start=z_ui_text_visible_start(n,caret,ctx->theme),length=(int64_t)z_ui_utf8_count(actual),view_end=view_start;while(view_end<length&&z_ui_text_width_range(actual,view_start,view_end+1,n->props,ctx->theme)<=fmax(0,b.width-16))view_end++;char*visible=z_ui_utf8_slice(actual,(size_t)view_start,(size_t)view_end);double tw=0,th=0;z_ui_measure_text_native(visible,n->props,ctx->theme,0,&tw,&th);double tx=b.x+8,ty=b.y+fmax(0,(b.height-th)/2);if(focused&&sel_start!=sel_end){int64_t a=sel_start>view_start?sel_start:view_start,e=sel_end<view_end?sel_end:view_end;if(a<e){double prefix=z_ui_text_width_range(actual,view_start,a,n->props,ctx->theme),selected=z_ui_text_width_range(actual,a,e,n->props,ctx->theme);z_ui_fill(r,(ZUIRectNative){tx+prefix,ty-2,selected,fmax(th+4,18)},z_ui_prop_string(n->props,"selectionBackground","#3867e855"));}}z_ui_text(r,tx,ty,visible,fg,n->props,ctx->theme);if(focused){int64_t visible_caret=caret<view_start?view_start:(caret>view_end?view_end:caret);double prefix=z_ui_text_width_range(actual,view_start,visible_caret,n->props,ctx->theme),caret_h=fmin(b.height-12,fmax(14,th)),caret_y=b.y+(b.height-caret_h)/2;z_ui_draw_color(r,z_ui_prop_string(n->props,"caretColor",z_ui_theme_string(ctx->theme,"primary","#3867e8")));z_desktop_sdl.RenderLine(r,(float)(tx+prefix),(float)caret_y,(float)(tx+prefix),(float)(caret_y+caret_h));}}}
+    else if(strcmp(n->kind,"button")==0){
+        if(strcmp(bg,"transparent")==0)bg=primary;
+        z_ui_fill(r,b,bg);z_ui_stroke(r,b,border);
+        ZUIRectNative local_clip={b.x+1,b.y+1,fmax(0,b.width-2),fmax(0,b.height-2)};
+        if(z_ui_set_local_clip(r,has_clip,clip,local_clip)){
+            const char*button_color=z_ui_prop_string(n->props,"textColor",z_ui_theme_string(ctx->theme,"primaryText","#ffffff"));
+            if(!z_ui_render_control_icon(r,b,z_ui_prop_string(n->props,"icon",""),button_color))z_ui_text_aligned(r,b,10,z_ui_node_text(n),button_color,n->props,ctx->theme,"center");
+        }
+        z_ui_set_clip(r,has_clip,clip);
+    }
+    else if(strcmp(n->kind,"input")==0||strcmp(n->kind,"textarea")==0||strcmp(n->kind,"select")==0){
+        bool focused=ctx->focus_id&&strcmp(ctx->focus_id,n->id)==0;
+        if(strcmp(bg,"transparent")==0)bg=surface;
+        if(focused)bg=z_ui_prop_string(n->props,"focusBackground",z_ui_theme_string(ctx->theme,"surfaceAlt","#eef2f7"));
+        z_ui_fill(r,b,bg);z_ui_stroke(r,b,border);
+        ZUIRectNative local_clip={b.x+1,b.y+1,fmax(0,b.width-2),fmax(0,b.height-2)};
+        if(z_ui_set_local_clip(r,has_clip,clip,local_clip)){
+            const char*actual=z_ui_prop_string(n->props,"value","");
+            const char*label=*actual?actual:z_ui_prop_string(n->props,"placeholder","");
+            if(strcmp(n->kind,"select")==0){
+                ZUIRectNative text_bounds=b;text_bounds.width=fmax(0,text_bounds.width-30);
+                z_ui_text_aligned(r,text_bounds,8,label,*actual?fg:"#87909f",n->props,ctx->theme,"left");
+                double cx=b.x+b.width-15,cy=b.y+b.height/2;z_ui_draw_color(r,fg);
+                z_desktop_sdl.RenderLine(r,(float)(cx-4),(float)(cy-2),(float)cx,(float)(cy+2));
+                z_desktop_sdl.RenderLine(r,(float)cx,(float)(cy+2),(float)(cx+4),(float)(cy-2));
+            }else if(!focused&&!*actual){
+                z_ui_text_aligned(r,b,8,label,"#87909f",n->props,ctx->theme,"left");
+            }else{
+                int64_t caret=0,anchor=0,sel_start=0,sel_end=0;z_ui_text_selection(n,&caret,&anchor,&sel_start,&sel_end);
+                int64_t view_start=z_ui_text_visible_start(n,caret,ctx->theme),length=(int64_t)z_ui_utf8_count(actual),view_end=view_start;
+                while(view_end<length&&z_ui_text_width_range(actual,view_start,view_end+1,n->props,ctx->theme)<=fmax(0,b.width-16))view_end++;
+                char*visible=z_ui_utf8_slice(actual,(size_t)view_start,(size_t)view_end);double tw=0,th=0;
+                z_ui_measure_text_native(visible,n->props,ctx->theme,0,&tw,&th);double tx=b.x+8,ty=b.y+fmax(0,(b.height-th)/2);
+                if(focused&&sel_start!=sel_end){int64_t a=sel_start>view_start?sel_start:view_start,e=sel_end<view_end?sel_end:view_end;if(a<e){double prefix=z_ui_text_width_range(actual,view_start,a,n->props,ctx->theme),selected=z_ui_text_width_range(actual,a,e,n->props,ctx->theme);z_ui_fill(r,(ZUIRectNative){tx+prefix,ty-2,selected,fmax(th+4,18)},z_ui_prop_string(n->props,"selectionBackground","#3867e855"));}}
+                z_ui_text(r,tx,ty,visible,fg,n->props,ctx->theme);
+                if(focused){int64_t visible_caret=caret<view_start?view_start:(caret>view_end?view_end:caret);double prefix=z_ui_text_width_range(actual,view_start,visible_caret,n->props,ctx->theme),caret_h=fmin(b.height-12,fmax(14,th)),caret_y=b.y+(b.height-caret_h)/2;z_ui_draw_color(r,z_ui_prop_string(n->props,"caretColor",z_ui_theme_string(ctx->theme,"primary","#3867e8")));z_desktop_sdl.RenderLine(r,(float)(tx+prefix),(float)caret_y,(float)(tx+prefix),(float)(caret_y+caret_h));}
+            }
+        }
+        z_ui_set_clip(r,has_clip,clip);
+    }
     else if(strcmp(n->kind,"checkbox")==0||strcmp(n->kind,"radio")==0){ZUIRectNative box={b.x+4,b.y+(b.height-16)/2,16,16};z_ui_fill(r,box,surface);z_ui_stroke(r,box,border);if(z_ui_prop_bool(n->props,"checked",false))z_ui_fill(r,(ZUIRectNative){box.x+4,box.y+4,8,8},primary);ZUIRectNative label_bounds={b.x+20,b.y,b.width-20,b.height};z_ui_text_centered(r,label_bounds,8,z_ui_node_text(n),fg,n->props,ctx->theme);}
     else if(strcmp(n->kind,"progress")==0){z_ui_fill(r,b,z_ui_prop_string(n->props,"background",z_ui_theme_string(ctx->theme,"surfaceAlt","#eef2f7")));double max=z_ui_prop_number(n->props,"max",100),value=z_ui_prop_number(n->props,"value",0);if(max<=0)max=100;if(value<0)value=0;if(value>max)value=max;ZUIRectNative fill=b;fill.width=b.width*value/max;z_ui_fill(r,fill,z_ui_prop_string(n->props,"fill",primary));}
     else if(strcmp(n->kind,"list")==0||strcmp(n->kind,"tree")==0){z_ui_fill(r,b,bg);z_ui_stroke(r,b,border);ZValue items=z_desktop_dict_get(n->props,"items");double row_height=z_ui_prop_number(n->props,"itemHeight",28);if(items.tag==ZV_ARRAY){for(size_t i=0;i<items.as.array->len;i++){double y=b.y+6+(double)i*row_height;if(y>b.y+b.height)break;const char*label=z_ui_value_text(items.as.array->items[i]);if(strcmp(n->kind,"tree")==0){char*line=(char*)z_alloc(strlen(label)+3);sprintf(line,"- %s",label);z_ui_text(r,b.x+8,y,line,fg,n->props,ctx->theme);}else z_ui_text(r,b.x+8,y,label,fg,n->props,ctx->theme);}}}

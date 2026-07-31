@@ -1786,6 +1786,26 @@ func uiRectsEqual(a, b *object.UIRect) bool {
 	return a.X == b.X && a.Y == b.Y && a.Width == b.Width && a.Height == b.Height
 }
 
+// sdlUIItemRenderClip keeps control-local clipping inside an inherited scroll
+// viewport. Without the intersection, a partially scrolled button can restore
+// its full bounds and paint its label above the visible portion of the card.
+func sdlUIItemRenderClip(item object.UIRenderItem) (*object.UIRect, bool) {
+	switch item.Kind {
+	case "button", "input", "textarea", "select":
+		local := item.Bounds
+		if item.Clip != nil {
+			intersected, ok := uiRectIntersection(*item.Clip, local)
+			if !ok {
+				return nil, false
+			}
+			local = intersected
+		}
+		return &local, true
+	default:
+		return item.Clip, true
+	}
+}
+
 // sdlUIFirstModalIndex separates the normal application layer from the active
 // modal layer. Scrollbars must be rendered inside their own layer; drawing all
 // scrollbars after the entire frame lets scrollbars from the blurred background
@@ -1832,7 +1852,11 @@ func (w *sdlWindow) RenderUI(frame *object.UIRenderFrame) error {
 	renderItems := func(items []object.UIRenderItem) {
 		var activeClip *object.UIRect
 		for _, item := range items {
-			applyClip(&activeClip, item.Clip)
+			clip, visible := sdlUIItemRenderClip(item)
+			if !visible {
+				continue
+			}
+			applyClip(&activeClip, clip)
 			sdlUIRenderItem(w.renderer, item)
 		}
 		C.zsdl_clip_reset(w.renderer)
