@@ -779,6 +779,10 @@ func (vm *VM) push(o object.Object) error {
 		return fmt.Errorf("stack overflow")
 	}
 
+	if boolean, ok := o.(*object.Boolean); ok {
+		o = nativeBoolToBooleanObject(boolean.Value)
+	}
+
 	vm.stack[vm.sp] = o
 	vm.sp++
 
@@ -998,6 +1002,19 @@ func (vm *VM) executeComparison(op code.Opcode) error {
 		return vm.executeStringComparison(op, left, right)
 	}
 
+	if leftValue, ok := left.(*object.Boolean); ok {
+		rightValue, same := right.(*object.Boolean)
+		equal := same && leftValue.Value == rightValue.Value
+		switch op {
+		case code.OpEqual:
+			return vm.push(nativeBoolToBooleanObject(equal))
+		case code.OpNotEqual:
+			return vm.push(nativeBoolToBooleanObject(!equal))
+		default:
+			return fmt.Errorf("booleans support only == and !=")
+		}
+	}
+
 	if leftValue, ok := left.(*object.EnumValue); ok {
 		rightValue, same := right.(*object.EnumValue)
 		equal := same && leftValue.EnumName == rightValue.EnumName && leftValue.Name == rightValue.Name
@@ -1181,16 +1198,13 @@ func nativeBoolToBooleanObject(input bool) *object.Boolean {
 func (vm *VM) executeBangOperator() error {
 	val := vm.pop()
 
-	switch val {
-	case True:
-		return vm.push(False)
-	case False:
-		return vm.push(True)
-	case Null:
-		return vm.push(True)
-	default:
-		return vm.push(False)
+	if boolean, ok := val.(*object.Boolean); ok {
+		return vm.push(nativeBoolToBooleanObject(!boolean.Value))
 	}
+	if _, ok := val.(*object.Null); ok {
+		return vm.push(True)
+	}
+	return vm.push(False)
 }
 
 func (vm *VM) executeMinusOperator() error {

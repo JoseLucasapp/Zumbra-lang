@@ -1,6 +1,6 @@
 # Zumbra Language for VS Code
 
-Official editor support for Zumbra 0.14.0.
+Official editor support for Zumbra 0.14.1.
 
 The extension launches `zumbra lsp --stdio` and provides:
 

@@ -74,3 +74,42 @@ func TestFloatLiteralWithSeparators(t *testing.T) {
 		t.Fatalf("expected 10000.25, got %f", value.Value)
 	}
 }
+
+func TestBangOperatorUsesFixedComparisonBooleanValue(t *testing.T) {
+	tests := []struct {
+		input    string
+		expected bool
+	}{
+		{"!(0u8 band 0x02u8 != 0u8)", true},
+		{"!(0x02u8 band 0x02u8 != 0u8)", false},
+		{"!!(0u8 band 0x02u8 != 0u8)", false},
+		{"(0u8 band 0x02u8 != 0u8) == false", true},
+	}
+
+	for _, test := range tests {
+		evaluated := testEval(test.input)
+		boolean, ok := evaluated.(*object.Boolean)
+		if !ok {
+			t.Fatalf("%s: expected boolean, got %T", test.input, evaluated)
+		}
+		if boolean.Value != test.expected {
+			t.Fatalf("%s: expected %t, got %t", test.input, test.expected, boolean.Value)
+		}
+	}
+}
+
+func TestBangOperatorUsesBooleanValueStoredInStruct(t *testing.T) {
+	evaluated := testEval(`
+		struct Header { battery: bool; }
+		var flags << 0u8;
+		var parsed << Header((flags band 0x02u8) != 0u8);
+		!parsed.battery;
+	`)
+	boolean, ok := evaluated.(*object.Boolean)
+	if !ok {
+		t.Fatalf("expected boolean, got %T", evaluated)
+	}
+	if !boolean.Value {
+		t.Fatal("expected negated false struct field to be true")
+	}
+}

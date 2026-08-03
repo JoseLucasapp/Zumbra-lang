@@ -65,3 +65,19 @@ func TestFloatLiteralWithSeparatorsOnVM(t *testing.T) {
 		t.Fatalf("expected 10000.25, got %f", value.Value)
 	}
 }
+
+func TestBangOperatorUsesFixedComparisonBooleanValueOnVM(t *testing.T) {
+	tests := []vmTestCase{
+		{"!(0u8 band 0x02u8 != 0u8)", true},
+		{"!(0x02u8 band 0x02u8 != 0u8)", false},
+		{"!!(0u8 band 0x02u8 != 0u8)", false},
+		{"(0u8 band 0x02u8 != 0u8) == false", true},
+		{`
+			struct Header { battery: bool; }
+			var flags << 0u8;
+			var parsed << Header((flags band 0x02u8) != 0u8);
+			!parsed.battery;
+		`, true},
+	}
+	runVmTests(t, tests)
+}

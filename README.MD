@@ -21,6 +21,8 @@ Designed for clarity, simplicity, and extensibility, Zumbra is the perfect playg
 
 The rebuild now follows a clear direction: systems, emulation, and game development without abandoning Zumbra's simplicity. See the Portuguese design and feature documentation in [`docs/pt-BR/`](./docs/pt-BR/).
 
+**Zumbra 0.14.1** fixes boolean negation and equality for fixed-width integer comparisons in the evaluator and VM. This patch was identified while validating the Z19 NES/Famicom foundation. See [`docs/releases/0.14.1.md`](./docs/releases/0.14.1.md).
+
 **Zumbra 0.14.0** completes Z18 as one stable tooling release. It adds the canonical formatter, official linter, API documentation generator, project manager, compiler profiler, structured diagnostics, a built-in Language Server Protocol implementation and an official VS Code extension. See [`docs/pt-BR/tooling-z18.md`](./docs/pt-BR/tooling-z18.md) and [`docs/releases/0.14.0.md`](./docs/releases/0.14.0.md).
 
 **Zumbra 0.13.0** completes Z17 systems programming in one stable release. It adds typed explicit memory, pointer indexing, ownership and borrowing, arenas, memory diagnostics, native ABI layout, mapped files, shared memory, volatile/atomic operations, page protection, dynamic libraries and calls, opt-in raw syscalls, profiling, sanitizer builds and conditional C11 runtime emission across the evaluator, VM, Clang and GCC. See [`docs/pt-BR/programacao-de-sistemas-z17.md`](./docs/pt-BR/programacao-de-sistemas-z17.md).
@@ -393,6 +395,11 @@ The native C11 renderer now restores the inherited viewport clip before drawing 
 ## Zumbra 0.13.0 — Z17 systems programming
 
 Z17 is delivered as one complete systems-programming milestone. Zumbra now provides typed explicit memory, pointer ownership and borrowing, arenas, native layout inspection, mapped/shared memory, atomics, memory protection, dynamic libraries, controlled raw syscalls, profiling and sanitizer builds with evaluator/VM/C11 parity. See [`docs/pt-BR/programacao-de-sistemas-z17.md`](./docs/pt-BR/programacao-de-sistemas-z17.md) and [`docs/releases/0.13.0.md`](./docs/releases/0.13.0.md).
+
+
+## Zumbra 0.14.1 — fixed-width boolean canonicalization
+
+Fixed-width comparisons now behave like ordinary booleans when negated, compared, returned from functions or stored in struct fields. The VM also canonicalizes boolean objects at the stack boundary. See [`docs/releases/0.14.1.md`](./docs/releases/0.14.1.md).
 
 
 ## Zumbra 0.14.0 — Z18 official tooling

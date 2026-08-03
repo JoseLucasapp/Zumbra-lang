@@ -383,16 +383,13 @@ func evalPrefixExpression(operator string, right object.Object) object.Object {
 }
 
 func evalBangOperatorExpression(right object.Object) object.Object {
-	switch right {
-	case TRUE:
-		return FALSE
-	case FALSE:
-		return TRUE
-	case NULL:
-		return TRUE
-	default:
-		return FALSE
+	if boolean, ok := right.(*object.Boolean); ok {
+		return nativeBoolToBooleanObject(!boolean.Value)
 	}
+	if _, ok := right.(*object.Null); ok {
+		return TRUE
+	}
+	return FALSE
 }
 
 func evalMinusPrefixOperatorExpression(right object.Object) object.Object {
