@@ -43,3 +43,27 @@ func TestZ18ProjectScaffold(t *testing.T) {
 		t.Fatal(err)
 	}
 }
+
+func TestZ18ToolingHelpCommands(t *testing.T) {
+	tests := []struct {
+		name string
+		run  func() error
+	}{
+		{name: "check", run: func() error { return handleCheckCommand([]string{"--help"}) }},
+		{name: "fmt", run: func() error { return handleFormatCommand([]string{"--help"}) }},
+		{name: "lint", run: func() error { return handleLintCommand([]string{"--help"}) }},
+		{name: "doc", run: func() error { return handleDocCommand([]string{"--help"}) }},
+		{name: "project", run: func() error { return handleProjectCommand([]string{"--help"}) }},
+		{name: "project init", run: func() error { return handleProjectCommand([]string{"init", "--help"}) }},
+		{name: "project build", run: func() error { return handleProjectCommand([]string{"build", "--help"}) }},
+		{name: "profile", run: func() error { return handleProfileCommand([]string{"--help"}) }},
+		{name: "lsp", run: func() error { return handleLSPCommand([]string{"--help"}) }},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			if err := test.run(); err != nil {
+				t.Fatalf("help returned an error: %v", err)
+			}
+		})
+	}
+}

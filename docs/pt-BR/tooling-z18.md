@@ -235,6 +235,7 @@ O gate valida:
 - testes dos pacotes de tooling;
 - testes do pipeline e da CLI;
 - build da CLI 0.14.0;
+- ajuda com saída bem-sucedida para `check`, `fmt`, `lint`, `doc`, `project`, `profile` e `lsp`;
 - scaffold de projeto;
 - formatter e idempotência;
 - linter e JSON;

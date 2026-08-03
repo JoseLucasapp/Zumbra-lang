@@ -5,6 +5,7 @@ import (
 	"errors"
 	"flag"
 	"fmt"
+	"io"
 	"os"
 	"path/filepath"
 	"strings"
@@ -21,14 +22,67 @@ import (
 
 var errToolingUsage = errors.New("invalid tooling command usage")
 
+func parseToolFlags(flags *flag.FlagSet, arguments []string) (bool, error) {
+	if err := flags.Parse(arguments); err != nil {
+		if errors.Is(err, flag.ErrHelp) {
+			return true, nil
+		}
+		return false, errToolingUsage
+	}
+	return false, nil
+}
+
+func isHelpArgument(argument string) bool {
+	return argument == "help" || argument == "--help" || argument == "-h"
+}
+
+func printProjectUsage(output io.Writer) {
+	fmt.Fprintln(output, "Usage:")
+	fmt.Fprintln(output, "  zumbra project init [--dir <path>] [--kind <cli|library|desktop>] [--identifier <reverse-DNS>] [--force] <name>")
+	fmt.Fprintln(output, "  zumbra project info [--manifest <zumbra.toml>] [--json]")
+	fmt.Fprintln(output, "  zumbra project check [--manifest <zumbra.toml>] [--json] [--tests]")
+	fmt.Fprintln(output, "  zumbra project test [--manifest <zumbra.toml>] [--json] [--tests]")
+	fmt.Fprintln(output, "  zumbra project run [--manifest <zumbra.toml>]")
+	fmt.Fprintln(output, "  zumbra project build [--manifest <zumbra.toml>] [--debug] [build options]")
+	fmt.Fprintln(output, "  zumbra project fmt [--manifest <zumbra.toml>]")
+	fmt.Fprintln(output, "  zumbra project lint [--manifest <zumbra.toml>]")
+	fmt.Fprintln(output, "  zumbra project doc [--manifest <zumbra.toml>]")
+	fmt.Fprintln(output, "  zumbra project clean [--manifest <zumbra.toml>]")
+}
+
+func printProjectCommandUsage(output io.Writer, command string) error {
+	usage := map[string]string{
+		"init":  "zumbra project init [--dir <path>] [--kind <cli|library|desktop>] [--identifier <reverse-DNS>] [--force] <name>",
+		"info":  "zumbra project info [--manifest <zumbra.toml>] [--json]",
+		"check": "zumbra project check [--manifest <zumbra.toml>] [--json] [--tests]",
+		"test":  "zumbra project test [--manifest <zumbra.toml>] [--json] [--tests]",
+		"run":   "zumbra project run [--manifest <zumbra.toml>]",
+		"build": "zumbra project build [--manifest <zumbra.toml>] [--debug] [build options]",
+		"fmt":   "zumbra project fmt [--manifest <zumbra.toml>]",
+		"lint":  "zumbra project lint [--manifest <zumbra.toml>]",
+		"doc":   "zumbra project doc [--manifest <zumbra.toml>]",
+		"clean": "zumbra project clean [--manifest <zumbra.toml>]",
+	}
+	line, ok := usage[command]
+	if !ok {
+		return fmt.Errorf("unknown project command %q", command)
+	}
+	fmt.Fprintf(output, "Usage:\n  %s\n", line)
+	return nil
+}
+
 func handleFormatCommand(arguments []string) error {
 	flags := flag.NewFlagSet("fmt", flag.ContinueOnError)
 	flags.SetOutput(os.Stderr)
 	check := flags.Bool("check", false, "report files that are not canonically formatted")
 	stdout := flags.Bool("stdout", false, "write one formatted file to stdout")
 	indent := flags.Int("indent", 4, "indentation width")
-	if err := flags.Parse(arguments); err != nil {
-		return errToolingUsage
+	help, err := parseToolFlags(flags, arguments)
+	if err != nil {
+		return err
+	}
+	if help {
+		return nil
 	}
 	files, err := formatter.Discover(flags.Args())
 	if err != nil {
@@ -77,8 +131,12 @@ func handleLintCommand(arguments []string) error {
 	noPipeline := flags.Bool("no-pipeline", false, "skip semantic and type pipeline checks")
 	noPublicDocs := flags.Bool("no-public-docs", false, "disable public API documentation rule")
 	maxLineLength := flags.Int("max-line-length", 120, "maximum source line length")
-	if err := flags.Parse(arguments); err != nil {
-		return errToolingUsage
+	help, err := parseToolFlags(flags, arguments)
+	if err != nil {
+		return err
+	}
+	if help {
+		return nil
 	}
 	result, err := lint.Files(flags.Args(), lint.Options{
 		CheckPipeline:     !*noPipeline,
@@ -117,8 +175,12 @@ func handleDocCommand(arguments []string) error {
 	format := flags.String("format", "markdown", "markdown or json")
 	includePrivate := flags.Bool("private", false, "include private declarations")
 	title := flags.String("title", "Zumbra API", "documentation title")
-	if err := flags.Parse(arguments); err != nil {
-		return errToolingUsage
+	help, err := parseToolFlags(flags, arguments)
+	if err != nil {
+		return err
+	}
+	if help {
+		return nil
 	}
 	files, err := formatter.Discover(flags.Args())
 	if err != nil {
@@ -169,8 +231,12 @@ func handleProfileCommand(arguments []string) error {
 	jsonOutput := flags.Bool("json", false, "emit JSON report")
 	cpuProfile := flags.String("cpu-profile", "", "write a Go CPU pprof file")
 	heapProfile := flags.String("heap-profile", "", "write a Go heap pprof file")
-	if err := flags.Parse(arguments); err != nil {
-		return errToolingUsage
+	help, err := parseToolFlags(flags, arguments)
+	if err != nil {
+		return err
+	}
+	if help {
+		return nil
 	}
 	if flags.NArg() != 1 {
 		return fmt.Errorf("profile requires exactly one .zum input file")
@@ -208,6 +274,10 @@ func handleProfileCommand(arguments []string) error {
 }
 
 func handleLSPCommand(arguments []string) error {
+	if len(arguments) == 1 && isHelpArgument(arguments[0]) {
+		fmt.Fprintln(os.Stdout, "Usage:\n  zumbra lsp [--stdio]")
+		return nil
+	}
 	if len(arguments) > 1 || len(arguments) == 1 && arguments[0] != "--stdio" {
 		return fmt.Errorf("lsp only accepts --stdio")
 	}
@@ -216,7 +286,15 @@ func handleLSPCommand(arguments []string) error {
 
 func handleProjectCommand(arguments []string) error {
 	if len(arguments) == 0 {
+		printProjectUsage(os.Stderr)
 		return fmt.Errorf("project requires init, info, check, test, run, build, fmt, lint, doc or clean")
+	}
+	if len(arguments) == 1 && isHelpArgument(arguments[0]) {
+		printProjectUsage(os.Stdout)
+		return nil
+	}
+	if len(arguments) == 2 && isHelpArgument(arguments[1]) {
+		return printProjectCommandUsage(os.Stdout, arguments[0])
 	}
 	switch arguments[0] {
 	case "init":
@@ -294,8 +372,12 @@ func projectInit(arguments []string) error {
 	kind := flags.String("kind", "cli", "cli, library or desktop")
 	identifier := flags.String("identifier", "", "desktop reverse-DNS identifier")
 	force := flags.Bool("force", false, "add or replace scaffold files")
-	if err := flags.Parse(arguments); err != nil {
-		return errToolingUsage
+	help, err := parseToolFlags(flags, arguments)
+	if err != nil {
+		return err
+	}
+	if help {
+		return nil
 	}
 	if flags.NArg() != 1 {
 		return fmt.Errorf("project init requires a project name")
@@ -318,8 +400,12 @@ func projectInfo(arguments []string) error {
 	flags.SetOutput(os.Stderr)
 	manifestPath := flags.String("manifest", "", "manifest path")
 	jsonOutput := flags.Bool("json", false, "emit JSON")
-	if err := flags.Parse(arguments); err != nil {
-		return errToolingUsage
+	help, err := parseToolFlags(flags, arguments)
+	if err != nil {
+		return err
+	}
+	if help {
+		return nil
 	}
 	manifest, err := loadProject(*manifestPath)
 	if err != nil {
@@ -345,8 +431,12 @@ func projectCheck(command string, arguments []string) error {
 	manifestPath := flags.String("manifest", "", "manifest path")
 	jsonOutput := flags.Bool("json", false, "emit JSON")
 	includeTests := flags.Bool("tests", command == "test", "include test sources")
-	if err := flags.Parse(arguments); err != nil {
-		return errToolingUsage
+	help, err := parseToolFlags(flags, arguments)
+	if err != nil {
+		return err
+	}
+	if help {
+		return nil
 	}
 	manifest, err := loadProject(*manifestPath)
 	if err != nil {
@@ -469,6 +559,10 @@ func loadProject(path string) (*project.Manifest, error) {
 }
 
 func handleCheckCommand(arguments []string) error {
+	if len(arguments) == 1 && isHelpArgument(arguments[0]) {
+		fmt.Fprintln(os.Stdout, "Usage:\n  zumbra check [--json] <file.zum>")
+		return nil
+	}
 	jsonOutput := false
 	filename := ""
 	for _, argument := range arguments {

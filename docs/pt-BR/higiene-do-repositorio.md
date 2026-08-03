@@ -57,7 +57,9 @@ Remover arquivos do diretório atual reduz clones e ZIPs futuros, mas não remov
 scripts/check-repository-hygiene.sh
 ```
 
-O comando falha quando encontra diretórios gerados (`build`, `dist`, `out`, `release`, `delivery` ou `tools`) ou arquivos individuais maiores que 5 MB fora de `.git`.
+Em um checkout Git, o comando examina arquivos versionados e arquivos não ignorados que seriam candidatos a commit. Artefatos locais cobertos pelo `.gitignore`, como `build/zumbra` e `nativec/build`, não tornam o repositório inválido. O comando falha quando encontra arquivos versionados ou não ignorados dentro de diretórios gerados (`build`, `dist`, `out`, `release`, `delivery`, `tools` ou `tmp`) ou arquivos individuais maiores que 5 MB.
+
+Em um pacote sem metadados `.git`, todos os arquivos extraídos são examinados. Diretórios gerados vazios são permitidos, mas qualquer artefato dentro deles faz a validação falhar.
 
 ## Diagnóstico do histórico Git
 

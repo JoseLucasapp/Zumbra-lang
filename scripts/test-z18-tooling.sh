@@ -16,6 +16,16 @@ trap 'rm -rf "$tmp_dir"' EXIT
 go build -o "$tmp_dir/zumbra" .
 [[ "$($tmp_dir/zumbra version)" == "0.14.0" ]]
 
+"$tmp_dir/zumbra" check --help >/dev/null 2>&1
+"$tmp_dir/zumbra" fmt --help >/dev/null 2>&1
+"$tmp_dir/zumbra" lint --help >/dev/null 2>&1
+"$tmp_dir/zumbra" doc --help >/dev/null 2>&1
+"$tmp_dir/zumbra" project --help >/dev/null 2>&1
+"$tmp_dir/zumbra" project init --help >/dev/null 2>&1
+"$tmp_dir/zumbra" project build --help >/dev/null 2>&1
+"$tmp_dir/zumbra" profile --help >/dev/null 2>&1
+"$tmp_dir/zumbra" lsp --help >/dev/null 2>&1
+
 "$tmp_dir/zumbra" project init --dir "$tmp_dir/sample" "Z18 Sample"
 cd "$tmp_dir/sample"
 
