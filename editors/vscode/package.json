@@ -1,0 +1,63 @@
+{
+  "name": "zumbra-language",
+  "displayName": "Zumbra Language",
+  "description": "Official Zumbra language support powered by zumbra lsp.",
+  "version": "0.14.0",
+  "publisher": "zumbra",
+  "license": "Apache-2.0",
+  "engines": {
+    "vscode": "^1.85.0"
+  },
+  "categories": [
+    "Programming Languages",
+    "Formatters",
+    "Linters"
+  ],
+  "activationEvents": [
+    "onLanguage:zumbra"
+  ],
+  "main": "./extension.js",
+  "contributes": {
+    "languages": [
+      {
+        "id": "zumbra",
+        "aliases": ["Zumbra", "zumbra"],
+        "extensions": [".zum"],
+        "configuration": "./language-configuration.json"
+      }
+    ],
+    "grammars": [
+      {
+        "language": "zumbra",
+        "scopeName": "source.zumbra",
+        "path": "./syntaxes/zumbra.tmLanguage.json"
+      }
+    ],
+    "configuration": {
+      "title": "Zumbra",
+      "properties": {
+        "zumbra.server.path": {
+          "type": "string",
+          "default": "zumbra",
+          "description": "Path to the Zumbra CLI used to launch the language server."
+        },
+        "zumbra.trace.server": {
+          "type": "string",
+          "enum": ["off", "messages", "verbose"],
+          "default": "off",
+          "description": "Trace communication with zumbra lsp."
+        }
+      }
+    }
+  },
+  "scripts": {
+    "package": "vsce package",
+    "test": "node --check extension.js"
+  },
+  "dependencies": {
+    "vscode-languageclient": "^9.0.1"
+  },
+  "devDependencies": {
+    "@vscode/vsce": "^3.2.1"
+  }
+}

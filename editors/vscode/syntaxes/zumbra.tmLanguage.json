@@ -1,0 +1,92 @@
+{
+  "$schema": "https://raw.githubusercontent.com/martinring/tmlanguage/master/tmlanguage.json",
+  "name": "Zumbra",
+  "scopeName": "source.zumbra",
+  "patterns": [
+    { "include": "#comments" },
+    { "include": "#strings" },
+    { "include": "#numbers" },
+    { "include": "#keywords" },
+    { "include": "#types" },
+    { "include": "#functions" },
+    { "include": "#operators" }
+  ],
+  "repository": {
+    "comments": {
+      "patterns": [
+        {
+          "name": "comment.line.documentation.zumbra",
+          "match": "///.*$"
+        },
+        {
+          "name": "comment.line.double-slash.zumbra",
+          "match": "//.*$"
+        }
+      ]
+    },
+    "strings": {
+      "patterns": [
+        {
+          "name": "string.quoted.double.zumbra",
+          "begin": "\"",
+          "end": "\"",
+          "patterns": [
+            { "name": "constant.character.escape.zumbra", "match": "\\\\." }
+          ]
+        }
+      ]
+    },
+    "numbers": {
+      "patterns": [
+        {
+          "name": "constant.numeric.zumbra",
+          "match": "\\b(?:0[xX][0-9A-Fa-f_]+|0[bB][01_]+|0[oO][0-7_]+|[0-9][0-9_]*(?:\\.[0-9_]+)?(?:u8|u16|u32|u64|i8|i16|i32|i64)?)\\b"
+        }
+      ]
+    },
+    "keywords": {
+      "patterns": [
+        {
+          "name": "keyword.control.zumbra",
+          "match": "\\b(?:if|else|while|for|in|where|return|match|case|break|continue|try|async|await|spawn|unsafe)\\b"
+        },
+        {
+          "name": "keyword.declaration.zumbra",
+          "match": "\\b(?:fct|var|const|struct|enum|type|pub|import|as|extern|from)\\b"
+        },
+        {
+          "name": "constant.language.boolean.zumbra",
+          "match": "\\b(?:true|false)\\b"
+        }
+      ]
+    },
+    "types": {
+      "patterns": [
+        {
+          "name": "storage.type.zumbra",
+          "match": "\\b(?:int|float|bool|string|void|u8|u16|u32|u64|i8|i16|i32|i64|ptr|callback)\\b"
+        },
+        {
+          "name": "entity.name.type.zumbra",
+          "match": "\\b(?:struct|enum|type)\\s+([A-Za-z_][A-Za-z0-9_]*)"
+        }
+      ]
+    },
+    "functions": {
+      "patterns": [
+        {
+          "name": "entity.name.function.zumbra",
+          "match": "(?<=\\bfct\\s)[A-Za-z_][A-Za-z0-9_]*(?=\\s*\\()"
+        }
+      ]
+    },
+    "operators": {
+      "patterns": [
+        {
+          "name": "keyword.operator.zumbra",
+          "match": "<<|==|!=|<=|>=|\\*\\*|\\+\\+|--|->|\\.\\.|[+\\-*/%!<>]|\\b(?:and|or|band|bor|bxor|bnot|shl|shr)\\b"
+        }
+      ]
+    }
+  }
+}

@@ -1085,3 +1085,36 @@ zumbra build --release --sanitize address,undefined app.zum
 ```
 
 Consulte [`docs/pt-BR/programacao-de-sistemas-z17.md`](./pt-BR/programacao-de-sistemas-z17.md) para ownership, arenas, memória mapeada, memória compartilhada, atomics, bibliotecas dinâmicas, syscalls e profiling.
+
+---
+
+## Z18 — Tooling oficial
+
+A versão **0.14.0** adiciona o ambiente oficial de desenvolvimento sem alterar a gramática dos programas existentes.
+
+### Documentação de API
+
+Use comentários `///` imediatamente acima de APIs públicas:
+
+```zumbra
+/// Calcula o dobro de um valor.
+pub fct double(value) {
+    return value * 2;
+}
+```
+
+### Comandos
+
+```bash
+zumbra fmt --check src tests
+zumbra lint --deny-warnings src tests
+zumbra doc src -o docs/api.md
+zumbra project init --kind library "math"
+zumbra project check
+zumbra profile --runs 20 app.zum
+zumbra lsp --stdio
+```
+
+O formatter preserva comentários e é idempotente. O linter combina regras textuais, AST e o pipeline tipado. O gerador de documentação oferece Markdown e JSON. Projetos usam `zumbra.toml`, e o LSP embutido fornece diagnósticos, formatação, completion, hover e símbolos.
+
+Consulte [`docs/pt-BR/tooling-z18.md`](./pt-BR/tooling-z18.md) para o contrato completo da Z18.

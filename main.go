@@ -19,7 +19,7 @@ import (
 	"zumbra/vm"
 )
 
-const version = "0.13.0"
+const version = "0.14.0"
 
 func main() {
 	currentUser, err := user.Current()
@@ -55,11 +55,14 @@ func main() {
 			return
 
 		case "run":
-			if len(args) < 2 {
+			if len(args) != 2 {
 				printUsage()
 				os.Exit(1)
 			}
-			runFile(args[1])
+			if err := executeFile(args[1]); err != nil {
+				fmt.Printf("Execution error: %s\n", err)
+				os.Exit(1)
+			}
 			return
 
 		case "ir":
@@ -75,11 +78,52 @@ func main() {
 			return
 
 		case "check":
-			if len(args) < 2 {
-				printUsage()
+			if err := handleCheckCommand(args[1:]); err != nil {
+				fmt.Printf("Check error: %s\n", err)
 				os.Exit(1)
 			}
-			checkFile(args[1])
+			return
+
+		case "fmt":
+			if err := handleFormatCommand(args[1:]); err != nil {
+				fmt.Printf("Format error: %s\n", err)
+				os.Exit(1)
+			}
+			return
+
+		case "lint":
+			if err := handleLintCommand(args[1:]); err != nil {
+				fmt.Printf("Lint error: %s\n", err)
+				os.Exit(1)
+			}
+			return
+
+		case "doc":
+			if err := handleDocCommand(args[1:]); err != nil {
+				fmt.Printf("Documentation error: %s\n", err)
+				os.Exit(1)
+			}
+			return
+
+		case "project":
+			if err := handleProjectCommand(args[1:]); err != nil {
+				fmt.Printf("Project error: %s\n", err)
+				os.Exit(1)
+			}
+			return
+
+		case "profile":
+			if err := handleProfileCommand(args[1:]); err != nil {
+				fmt.Printf("Profile error: %s\n", err)
+				os.Exit(1)
+			}
+			return
+
+		case "lsp":
+			if err := handleLSPCommand(args[1:]); err != nil {
+				fmt.Fprintf(os.Stderr, "LSP error: %s\n", err)
+				os.Exit(1)
+			}
 			return
 
 		case "modules":
@@ -112,7 +156,10 @@ func main() {
 			return
 
 		default:
-			runFile(args[0])
+			if err := executeFile(args[0]); err != nil {
+				fmt.Printf("Execution error: %s\n", err)
+				os.Exit(1)
+			}
 			return
 		}
 	}
@@ -133,7 +180,13 @@ func printUsage() {
 	fmt.Println("  zumbra app build [--manifest <zumbra.toml>] [--target <os>] [--arch <arch>] [--release|--debug] [--compiler <name>] [-o <path>]")
 	fmt.Println("  zumbra app package [--manifest <zumbra.toml>] [--target <linux|windows|macos>] [--arch <amd64|arm64>] [--format <format>] [--binary <path>] [--output-dir <dir>] [--appimagetool <path>] [--appimage-runtime <path>] [--makensis <path>] [--symbols] [--sign <identity>]")
 	fmt.Println("  zumbra app doctor [--manifest <zumbra.toml>] [--target <os>] [--arch <arch>] [--format <format>] [--binary <path>] [--appimagetool <path>] [--appimage-runtime <path>] [--makensis <path>] [--json]")
-	fmt.Println("  zumbra check <file.zum>")
+	fmt.Println("  zumbra check [--json] <file.zum>")
+	fmt.Println("  zumbra fmt [--check] [--stdout] [--indent <spaces>] [paths...]")
+	fmt.Println("  zumbra lint [--json] [--deny-warnings] [--no-pipeline] [--no-public-docs] [paths...]")
+	fmt.Println("  zumbra doc [--format <markdown|json>] [--private] [-o <path>] [paths...]")
+	fmt.Println("  zumbra project <init|info|check|test|run|build|fmt|lint|doc|clean>")
+	fmt.Println("  zumbra profile [--runs <n>] [--warmup <n>] [--json] [--cpu-profile <path>] [--heap-profile <path>] <file.zum>")
+	fmt.Println("  zumbra lsp [--stdio]")
 	fmt.Println("  zumbra modules <file.zum>")
 	fmt.Println("  zumbra ir <file.zum> [hir|mir|optimized]")
 	fmt.Println("  zumbra bind-c [--link <path>] [--pub] [-o <file.zum>] <header.h>")
@@ -141,10 +194,18 @@ func printUsage() {
 }
 
 func runFile(filename string) {
+	if err := executeFile(filename); err != nil {
+		fmt.Printf("Execution error: %s\n", err)
+	}
+}
+
+func executeFile(filename string) error {
 	result, diagnostics := pipeline.BuildFile(filename, pipeline.Options{Optimize: true})
 	if len(diagnostics) > 0 {
-		printPipelineDiagnostics(filename, diagnostics)
-		return
+		return fmt.Errorf("pipeline failed:\n%s", pipeline.FormatDiagnostics(diagnostics))
+	}
+	if result == nil {
+		return fmt.Errorf("pipeline returned no result")
 	}
 	for _, warning := range result.Warnings {
 		fmt.Printf("%s warning in %s: %s\n", warning.Stage, filename, warning.Message)
@@ -158,13 +219,11 @@ func runFile(filename string) {
 	}
 	absPath, err := filepath.Abs(filename)
 	if err != nil {
-		fmt.Printf("Path error: %s\n", err)
-		return
+		return fmt.Errorf("resolve path: %w", err)
 	}
 	comp := compiler.NewWithStateAndDir(symbolTable, constants, filepath.Dir(absPath))
 	if err := comp.CompilePipeline(result); err != nil {
-		fmt.Printf("Compilation error: %s\n", err)
-		return
+		return fmt.Errorf("compile: %w", err)
 	}
 	if diags := comp.Warnings(); len(diags) > 0 {
 		fmt.Printf("Compiler diagnostics in %s:\n", filename)
@@ -181,8 +240,9 @@ func runFile(filename string) {
 	builtins.SetDesktopInvoker(callbackInvoker)
 	machine := vm.NewWithGlobalsStore(code, globals)
 	if err := machine.Run(); err != nil {
-		fmt.Printf("Error on VM execution: %s\n", err)
+		return fmt.Errorf("VM execution: %w", err)
 	}
+	return nil
 }
 
 func checkFile(filename string) {
