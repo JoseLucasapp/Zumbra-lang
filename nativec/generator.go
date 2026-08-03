@@ -40,7 +40,7 @@ func (d Diagnostic) Error() string {
 }
 
 var supportedBuiltins = map[string]bool{
-	"show": true, "sizeOf": true, "toString": true, "addToArrayStart": true, "addToArrayEnd": true,
+	"show": true, "panic": true, "sizeOf": true, "toString": true, "addToArrayStart": true, "addToArrayEnd": true,
 	"u8": true, "u16": true, "u32": true, "u64": true,
 	"i8": true, "i16": true, "i32": true, "i64": true,
 	"toInt": true, "toFloat": true, "toBool": true,

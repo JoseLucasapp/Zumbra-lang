@@ -21,6 +21,8 @@ Designed for clarity, simplicity, and extensibility, Zumbra is the perfect playg
 
 The rebuild now follows a clear direction: systems, emulation, and game development without abandoning Zumbra's simplicity. See the Portuguese design and feature documentation in [`docs/pt-BR/`](./docs/pt-BR/).
 
+**Zumbra 0.14.2** adds native C11 support for the `panic` builtin. Native programs can now keep defensive validation and assertion helpers without being rejected by `nativec`; a triggered panic writes a diagnostic to `stderr` and exits with a non-zero status. This patch closes the native-build blocker found by the Z19 NES/Famicom foundation. See [`docs/releases/0.14.2.md`](./docs/releases/0.14.2.md).
+
 **Zumbra 0.14.1** fixes boolean negation and equality for fixed-width integer comparisons in the evaluator and VM. This patch was identified while validating the Z19 NES/Famicom foundation. See [`docs/releases/0.14.1.md`](./docs/releases/0.14.1.md).
 
 **Zumbra 0.14.0** completes Z18 as one stable tooling release. It adds the canonical formatter, official linter, API documentation generator, project manager, compiler profiler, structured diagnostics, a built-in Language Server Protocol implementation and an official VS Code extension. See [`docs/pt-BR/tooling-z18.md`](./docs/pt-BR/tooling-z18.md) and [`docs/releases/0.14.0.md`](./docs/releases/0.14.0.md).
@@ -396,6 +398,11 @@ The native C11 renderer now restores the inherited viewport clip before drawing 
 
 Z17 is delivered as one complete systems-programming milestone. Zumbra now provides typed explicit memory, pointer ownership and borrowing, arenas, native layout inspection, mapped/shared memory, atomics, memory protection, dynamic libraries, controlled raw syscalls, profiling and sanitizer builds with evaluator/VM/C11 parity. See [`docs/pt-BR/programacao-de-sistemas-z17.md`](./docs/pt-BR/programacao-de-sistemas-z17.md) and [`docs/releases/0.13.0.md`](./docs/releases/0.13.0.md).
 
+
+
+## Zumbra 0.14.2 — native `panic`
+
+The C11 backend now accepts and executes `panic(value)`. The runtime converts the value to text, reports `zumbra runtime error: panic: <message>` on `stderr`, and terminates with a non-zero exit status. Panic paths inside imported modules and assertion helpers can therefore remain intact in native builds. See [`docs/releases/0.14.2.md`](./docs/releases/0.14.2.md).
 
 ## Zumbra 0.14.1 — fixed-width boolean canonicalization
 

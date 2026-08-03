@@ -14,7 +14,7 @@ tmp_dir="$(mktemp -d)"
 trap 'rm -rf "$tmp_dir"' EXIT
 
 go build -o "$tmp_dir/zumbra" .
-[[ "$($tmp_dir/zumbra version)" == "0.14.1" ]]
+[[ "$($tmp_dir/zumbra version)" == "0.14.2" ]]
 
 "$tmp_dir/zumbra" check --help >/dev/null 2>&1
 "$tmp_dir/zumbra" fmt --help >/dev/null 2>&1

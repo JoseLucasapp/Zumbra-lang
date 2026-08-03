@@ -1,6 +1,7 @@
 package nativec_test
 
 import (
+	"os"
 	"os/exec"
 	"path/filepath"
 	"strings"
@@ -294,5 +295,138 @@ render([{"id": 7, "name": "Final Fantasy IX"}]);
 	}
 	if got, want := string(data), "game-row-7\nFinal Fantasy IX\n"; got != want {
 		t.Fatalf("unexpected native output: want %q, got %q", want, got)
+	}
+}
+
+func TestNativeProgramWithDormantPanic(t *testing.T) {
+	compiler, err := nativec.DetectCompiler("auto")
+	if err != nil {
+		t.Skip(err)
+	}
+	result := buildMIR(t, `
+var ready << true;
+if (!ready) { panic("dormant panic"); }
+show("ok");
+`)
+	directory := t.TempDir()
+	output := filepath.Join(directory, "dormant-panic")
+	_, diagnostics, err := nativec.Build(result.MIR, nativec.BuildOptions{
+		Compiler: compiler,
+		Output:   output,
+		BuildDir: filepath.Join(directory, "src"),
+	})
+	if err != nil || len(diagnostics) != 0 {
+		t.Fatalf("native build failed: err=%v diagnostics=%v", err, diagnostics)
+	}
+	data, err := exec.Command(output).CombinedOutput()
+	if err != nil {
+		t.Fatalf("native executable failed: %v\n%s", err, data)
+	}
+	if got := strings.TrimSpace(string(data)); got != "ok" {
+		t.Fatalf("unexpected output: %q", data)
+	}
+}
+
+func TestNativePanicWritesStderrAndReturnsFailure(t *testing.T) {
+	compiler, err := nativec.DetectCompiler("auto")
+	if err != nil {
+		t.Skip(err)
+	}
+	result := buildMIR(t, `panic("native panic test");`)
+	directory := t.TempDir()
+	output := filepath.Join(directory, "triggered-panic")
+	_, diagnostics, err := nativec.Build(result.MIR, nativec.BuildOptions{
+		Compiler: compiler,
+		Output:   output,
+		BuildDir: filepath.Join(directory, "src"),
+	})
+	if err != nil || len(diagnostics) != 0 {
+		t.Fatalf("native build failed: err=%v diagnostics=%v", err, diagnostics)
+	}
+	command := exec.Command(output)
+	var stdout, stderr strings.Builder
+	command.Stdout = &stdout
+	command.Stderr = &stderr
+	err = command.Run()
+	if err == nil {
+		t.Fatal("native panic must return a non-zero exit status")
+	}
+	if stdout.Len() != 0 {
+		t.Fatalf("panic unexpectedly wrote to stdout: %q", stdout.String())
+	}
+	if !strings.Contains(stderr.String(), "panic: native panic test") {
+		t.Fatalf("panic message missing from stderr: %q", stderr.String())
+	}
+}
+
+func TestNativePanicInsideFunction(t *testing.T) {
+	compiler, err := nativec.DetectCompiler("auto")
+	if err != nil {
+		t.Skip(err)
+	}
+	result := buildMIR(t, `
+var fail << fct(message) { panic(message); };
+fail("function panic");
+`)
+	directory := t.TempDir()
+	output := filepath.Join(directory, "function-panic")
+	_, diagnostics, err := nativec.Build(result.MIR, nativec.BuildOptions{
+		Compiler: compiler,
+		Output:   output,
+		BuildDir: filepath.Join(directory, "src"),
+	})
+	if err != nil || len(diagnostics) != 0 {
+		t.Fatalf("native build failed: err=%v diagnostics=%v", err, diagnostics)
+	}
+	data, err := exec.Command(output).CombinedOutput()
+	if err == nil {
+		t.Fatal("panic inside function must fail")
+	}
+	if !strings.Contains(string(data), "panic: function panic") {
+		t.Fatalf("unexpected panic output: %q", data)
+	}
+}
+
+func TestNativeImportedModuleWithPanicBuilds(t *testing.T) {
+	compiler, err := nativec.DetectCompiler("auto")
+	if err != nil {
+		t.Skip(err)
+	}
+	directory := t.TempDir()
+	modulePath := filepath.Join(directory, "guard.zum")
+	entryPath := filepath.Join(directory, "main.zum")
+	if err := os.WriteFile(modulePath, []byte(`
+pub fct require(value) {
+    if (!value) { panic("module guard failed"); }
+}
+`), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(entryPath, []byte(`
+import "guard.zum" as guard;
+guard.require(true);
+show("module guard ok");
+`), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	result, diagnostics := pipeline.BuildFile(entryPath, pipeline.Options{Optimize: true})
+	if len(diagnostics) != 0 {
+		t.Fatalf("pipeline failed:\n%s", pipeline.FormatDiagnostics(diagnostics))
+	}
+	output := filepath.Join(directory, "module-panic")
+	_, nativeDiagnostics, err := nativec.Build(result.MIR, nativec.BuildOptions{
+		Compiler: compiler,
+		Output:   output,
+		BuildDir: filepath.Join(directory, "src"),
+	})
+	if err != nil || len(nativeDiagnostics) != 0 {
+		t.Fatalf("native build failed: err=%v diagnostics=%v", err, nativeDiagnostics)
+	}
+	data, err := exec.Command(output).CombinedOutput()
+	if err != nil {
+		t.Fatalf("native executable failed: %v\n%s", err, data)
+	}
+	if got := strings.TrimSpace(string(data)); got != "module guard ok" {
+		t.Fatalf("unexpected output: %q", data)
 	}
 }

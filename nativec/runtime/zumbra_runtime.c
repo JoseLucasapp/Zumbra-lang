@@ -64,6 +64,9 @@ static size_t z_active_tasks = 0;
 static _Thread_local jmp_buf *z_task_error_trap = NULL;
 static _Thread_local char z_task_error_message[1024];
 
+static ZValue z_to_string_value(ZValue value);
+static _Noreturn void z_panic_value(ZValue value);
+
 uint32_t z_abi_version(void) { return ZUMBRA_NATIVE_ABI_VERSION; }
 
 #if defined(ZUMBRA_ENABLE_ASSETS)
@@ -238,6 +241,7 @@ void z_fatal(const char *format, ...) {
     vfprintf(stderr, format, arguments);
     va_end(arguments);
     fputc('\n', stderr);
+    fflush(stderr);
     /* Fatal exits rely on the operating system for cleanup. Waiting for tasks
        here could deadlock when the failure originated inside a task. */
     exit(1);
@@ -1139,6 +1143,12 @@ static ZValue z_to_string_value(ZValue value) {
     }
 }
 
+static _Noreturn void z_panic_value(ZValue value) {
+    ZValue message = z_to_string_value(value);
+    z_fatal("panic: %s", message.as.s);
+    abort();
+}
+
 ZValue z_bytes(size_t size) {
     ZBuffer *buffer = (ZBuffer *)z_alloc(sizeof(ZBuffer));
     buffer->data = z_alloc(size == 0 ? 1 : size);
@@ -1987,6 +1997,7 @@ ZValue z_call_builtin(const char *name, const ZValue *args, size_t argc) {
     if(strcmp(name,"atomicAdd")==0){z_expect_args(name,argc,2);if(args[0].tag!=ZV_ATOMIC_INT)z_fatal("atomicAdd expects AtomicInt");return z_int(atomic_fetch_add((_Atomic int64_t*)args[0].as.p,z_as_i64(args[1]))+z_as_i64(args[1]));}
     if(strcmp(name,"atomicSwap")==0){z_expect_args(name,argc,2);if(args[0].tag!=ZV_ATOMIC_INT)z_fatal("atomicSwap expects AtomicInt");return z_int(atomic_exchange((_Atomic int64_t*)args[0].as.p,z_as_i64(args[1])));}
     if(strcmp(name,"atomicCompareSwap")==0){z_expect_args(name,argc,3);if(args[0].tag!=ZV_ATOMIC_INT)z_fatal("atomicCompareSwap expects AtomicInt");int64_t expected=z_as_i64(args[1]);return z_bool(atomic_compare_exchange_strong((_Atomic int64_t*)args[0].as.p,&expected,z_as_i64(args[2])));}
+    if (strcmp(name,"panic")==0){z_expect_args(name,argc,1);z_panic_value(args[0]);}
     if (strcmp(name,"show")==0){z_expect_args(name,argc,1);z_show(args[0]);return z_null();}
     if (strcmp(name,"toString")==0){z_expect_args(name,argc,1);return z_to_string_value(args[0]);}
     if (strcmp(name,"sizeOf")==0){z_expect_args(name,argc,1);return z_int((int64_t)z_size_of(args[0]));}

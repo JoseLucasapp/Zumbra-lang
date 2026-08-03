@@ -13,8 +13,8 @@ import (
 )
 
 func TestZ18VersionAndIntegratedTooling(t *testing.T) {
-	if version != "0.14.1" {
-		t.Fatalf("Z18 patch line must expose version 0.14.1, got %s", version)
+	if version != "0.14.2" {
+		t.Fatalf("Z18 patch line must expose version 0.14.2, got %s", version)
 	}
 	source := "/// Main entry.\npub fct main(){show(1);}\nmain();"
 	formatted, err := formatter.Format("main.zum", source, formatter.Options{})
@@ -125,5 +125,32 @@ func TestZumbra0141ReleaseDocumentation(t *testing.T) {
 	}
 	if !strings.Contains(string(readme), "docs/releases/0.14.1.md") {
 		t.Fatal("README.MD must link to the Zumbra 0.14.1 release notes")
+	}
+}
+
+func TestZumbra0142ReleaseDocumentation(t *testing.T) {
+	content, err := os.ReadFile(filepath.Join("docs", "releases", "0.14.2.md"))
+	if err != nil {
+		t.Fatalf("required 0.14.2 release notes are unavailable: %v", err)
+	}
+	notes := string(content)
+	for _, required := range []string{
+		"# Zumbra 0.14.2",
+		"panic",
+		"nativec",
+		"scripts/test-0.14.2-native-panic.sh",
+		"EXPECTED_ZUMBRA_VERSION=0.14.2",
+	} {
+		if !strings.Contains(notes, required) {
+			t.Fatalf("0.14.2 release notes must contain %q", required)
+		}
+	}
+
+	readme, err := os.ReadFile("README.MD")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(readme), "docs/releases/0.14.2.md") {
+		t.Fatal("README.MD must link to the Zumbra 0.14.2 release notes")
 	}
 }
