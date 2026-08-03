@@ -15,6 +15,14 @@
 #include <time.h>
 #include <ctype.h>
 
+#if defined(_WIN32)
+#include <direct.h>
+#else
+#include <sys/stat.h>
+#include <sys/types.h>
+#include <unistd.h>
+#endif
+
 #if defined(ZUMBRA_ENABLE_NETWORK)
 #include <arpa/inet.h>
 #include <fcntl.h>
@@ -63,11 +71,19 @@ static pthread_cond_t z_task_count_condition = PTHREAD_COND_INITIALIZER;
 static size_t z_active_tasks = 0;
 static _Thread_local jmp_buf *z_task_error_trap = NULL;
 static _Thread_local char z_task_error_message[1024];
+static int z_process_argc = 0;
+static char **z_process_argv = NULL;
 
 static ZValue z_to_string_value(ZValue value);
 static _Noreturn void z_panic_value(ZValue value);
 
 uint32_t z_abi_version(void) { return ZUMBRA_NATIVE_ABI_VERSION; }
+
+void z_runtime_set_args(int argc, char **argv) {
+    z_process_argc = argc < 0 ? 0 : argc;
+    z_process_argv = argv;
+}
+
 
 #if defined(ZUMBRA_ENABLE_ASSETS)
 static void z_expect_args(const char *name, size_t argc, size_t expected);
@@ -1203,14 +1219,65 @@ ZValue z_read_bytes(const char *path) {
     return result;
 }
 
+static void z_ensure_parent_directories(const char *path) {
+    if (path == NULL || *path == '\0') return;
+    size_t length = strlen(path);
+    char *copy = (char *)malloc(length + 1);
+    if (copy == NULL) z_fatal("out of memory");
+    memcpy(copy, path, length + 1);
+    char *last_separator = NULL;
+    for (char *cursor = copy; *cursor != '\0'; cursor++) {
+        if (*cursor == '/' || *cursor == '\\') last_separator = cursor;
+    }
+    if (last_separator == NULL) { free(copy); return; }
+    *last_separator = '\0';
+    for (char *cursor = copy; *cursor != '\0'; cursor++) {
+        if (*cursor != '/' && *cursor != '\\') continue;
+#if defined(_WIN32)
+        if (cursor == copy + 2 && copy[1] == ':') continue;
+#endif
+        char saved = *cursor;
+        *cursor = '\0';
+        if (*copy != '\0') {
+#if defined(_WIN32)
+            if (_mkdir(copy) != 0 && errno != EEXIST) z_fatal("cannot create directory %s: %s", copy, strerror(errno));
+#else
+            if (mkdir(copy, 0755) != 0 && errno != EEXIST) z_fatal("cannot create directory %s: %s", copy, strerror(errno));
+#endif
+        }
+        *cursor = saved;
+    }
+    if (*copy != '\0') {
+#if defined(_WIN32)
+        if (_mkdir(copy) != 0 && errno != EEXIST) z_fatal("cannot create directory %s: %s", copy, strerror(errno));
+#else
+        if (mkdir(copy, 0755) != 0 && errno != EEXIST) z_fatal("cannot create directory %s: %s", copy, strerror(errno));
+#endif
+    }
+    free(copy);
+}
+
 size_t z_write_bytes(const char *path, ZValue value) {
     ZBuffer *buffer = z_expect_byte_buffer(value);
+    z_ensure_parent_directories(path);
     FILE *file = fopen(path, "wb");
     if (file == NULL) z_fatal("cannot create %s: %s", path, strerror(errno));
     size_t written = fwrite(buffer->data, 1, buffer->len, file);
     if (written != buffer->len) z_fatal("could not write all bytes to %s", path);
     fclose(file);
     return written;
+}
+
+static ZValue z_create_file(const char *path, ZValue value) {
+    z_ensure_parent_directories(path);
+    ZValue text = z_to_string_value(value);
+    FILE *file = fopen(path, "wb");
+    if (file == NULL) z_fatal("cannot create %s: %s", path, strerror(errno));
+    size_t length = strlen(text.as.s);
+    size_t written = fwrite(text.as.s, 1, length, file);
+    if (written != length) z_fatal("could not write all text to %s", path);
+    fclose(file);
+    return z_string(path);
 }
 
 ZValue z_read_uint(ZValue value, size_t offset, unsigned bits, bool little_endian) {
@@ -1926,6 +1993,8 @@ ZValue z_call_builtin(const char *name, const ZValue *args, size_t argc) {
     ZValue http_result = z_http_call_builtin(name, args, argc, &http_handled);
     if (http_handled) return http_result;
 #endif
+    if(strcmp(name,"processArgs")==0){z_expect_args(name,argc,0);size_t count=(size_t)z_process_argc;ZValue*items=count==0?NULL:(ZValue*)z_alloc(sizeof(ZValue)*count);for(size_t i=0;i<count;i++)items[i]=z_string(z_process_argv&&z_process_argv[i]?z_process_argv[i]:"");return z_array_from(items,count);}
+    if(strcmp(name,"unixTimeSeconds")==0){z_expect_args(name,argc,0);return z_uint((uint64_t)time(NULL),ZK_U64);}
 #if defined(ZUMBRA_ENABLE_NETWORK)
     if(strcmp(name,"tcpListen")==0){z_expect_args(name,argc,2);return z_tcp_listen_native(z_as_cstring(args[0]),z_as_i64(args[1]));}
     if(strcmp(name,"tcpConnect")==0){z_expect_args(name,argc,2);return z_tcp_connect_native(z_as_cstring(args[0]),z_as_i64(args[1]),-1);}
@@ -2029,6 +2098,7 @@ ZValue z_call_builtin(const char *name, const ZValue *args, size_t argc) {
     if (strcmp(name,"fill")==0){z_expect_args(name,argc,2);z_fill(args[0],args[1]);return args[0];}
     if (strcmp(name,"readBytes")==0){z_expect_args(name,argc,1);if(args[0].tag!=ZV_STRING)z_fatal("readBytes path must be a string");return z_read_bytes(args[0].as.s);}
     if (strcmp(name,"writeBytes")==0){z_expect_args(name,argc,2);if(args[0].tag!=ZV_STRING)z_fatal("writeBytes path must be a string");return z_int((int64_t)z_write_bytes(args[0].as.s,args[1]));}
+    if (strcmp(name,"createFile")==0){z_expect_args(name,argc,2);if(args[0].tag!=ZV_STRING)z_fatal("createFile path must be a string");return z_create_file(args[0].as.s,args[1]);}
     if (strcmp(name,"copyBytes")==0){z_expect_args(name,argc,5);z_copy_bytes(args[0],(size_t)z_as_u64(args[1]),args[2],(size_t)z_as_u64(args[3]),(size_t)z_as_u64(args[4]));return args[0];}
     if (strcmp(name,"bytesEqual")==0){z_expect_args(name,argc,2);return z_bool(z_bytes_equal(args[0],args[1]));}
     if (strcmp(name,"sha256")==0){z_expect_args(name,argc,1);return z_sha256(args[0]);}

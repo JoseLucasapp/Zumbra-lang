@@ -203,6 +203,10 @@ func builtinType(name string) (*Type, bool) {
 		return FuncOf([]*Type{TaskOf(Simple(Unknown)), Simple(Int)}, ArrayOf(Simple(Unknown))), true
 	case "sleepMs":
 		return FuncOf([]*Type{Simple(Int)}, Simple(Null)), true
+	case "processArgs":
+		return FuncOf(nil, ArrayOf(Simple(String))), true
+	case "unixTimeSeconds":
+		return FuncOf(nil, Simple(U64)), true
 	case "channel":
 		return FuncOf([]*Type{Simple(Int)}, ChannelOf(Simple(Unknown))), true
 	case "send":
@@ -590,6 +594,18 @@ func builtinType(name string) (*Type, bool) {
 		return FuncOf([]*Type{Simple(DesktopWindow), Simple(Int), Simple(Int)}, Simple(DesktopWindow)), true
 	case "desktopWindowSetFullscreen":
 		return FuncOf([]*Type{Simple(DesktopWindow), Simple(Bool)}, Simple(DesktopWindow)), true
+	case "desktopWindowPresentRGBA":
+		return FuncOf([]*Type{Simple(DesktopWindow), ByteArrayOf(), Simple(Int), Simple(Int)}, Simple(Bool)), true
+	case "desktopWindowSetVSync":
+		return FuncOf([]*Type{Simple(DesktopWindow), Simple(Bool)}, Simple(DesktopWindow)), true
+	case "desktopKeyDown":
+		return FuncOf([]*Type{Simple(DesktopApp), Simple(Int)}, Simple(Bool)), true
+	case "desktopGamepadButton":
+		return FuncOf([]*Type{Simple(DesktopApp), Simple(Int), Simple(Int)}, Simple(Bool)), true
+	case "desktopAudioQueue":
+		return FuncOf([]*Type{Simple(DesktopApp), ByteArrayOf(), Simple(Int), Simple(Bool)}, Simple(Int)), true
+	case "desktopAudioQueued":
+		return FuncOf([]*Type{Simple(DesktopApp)}, Simple(Int)), true
 	case "desktopWindowDisplayScale", "desktopWindowPixelDensity":
 		return FuncOf([]*Type{Simple(DesktopWindow)}, Simple(Float)), true
 

@@ -153,6 +153,7 @@ var Names = []string{
 	"jsonStringify", "jwtSignHS256", "jwtVerifyHS256",
 	"webSocketUpgrade", "webSocketConnect", "webSocketRead", "webSocketReadTimeout", "webSocketWriteText", "webSocketWriteBinary",
 	"webSocketPing", "webSocketClose", "webSocketClosed",
+	"processArgs", "unixTimeSeconds",
 }
 
 func Contains(name string) bool {

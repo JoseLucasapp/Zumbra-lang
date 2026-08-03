@@ -14,5 +14,7 @@ func init() {
 		"desktopWindowSetFullscreen", "desktopWindowMaximize", "desktopWindowMinimize",
 		"desktopWindowRestore", "desktopWindowFocus", "desktopWindowDisplayScale",
 		"desktopWindowPixelDensity", "desktopWindowSetIcon",
+		"desktopWindowPresentRGBA", "desktopWindowSetVSync", "desktopKeyDown",
+		"desktopGamepadButton", "desktopAudioQueue", "desktopAudioQueued",
 	)
 }

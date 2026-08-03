@@ -13,12 +13,13 @@ import (
 )
 
 type headlessDesktopBackend struct {
-	mu        sync.Mutex
-	nextID    int64
-	windows   map[int64]*headlessWindow
-	events    chan *object.DesktopEvent
-	clipboard string
-	closed    bool
+	mu          sync.Mutex
+	nextID      int64
+	windows     map[int64]*headlessWindow
+	events      chan *object.DesktopEvent
+	clipboard   string
+	closed      bool
+	audioQueued int64
 }
 
 func newHeadlessDesktopBackend() *headlessDesktopBackend {
@@ -152,6 +153,35 @@ func (b *headlessDesktopBackend) OpenExternal(target string) error {
 	b.emit("external_opened", 0, map[string]object.Object{"target": NewString(target)})
 	return nil
 }
+
+func (b *headlessDesktopBackend) KeyDown(scancode int64) bool {
+	_ = scancode
+	return false
+}
+func (b *headlessDesktopBackend) GamepadButton(player, button int64) bool {
+	_, _ = player, button
+	return false
+}
+func (b *headlessDesktopBackend) QueueAudio(samples []byte, volume int64, muted bool) (int64, error) {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	if b.closed {
+		return 0, errors.New("desktop backend is closed")
+	}
+	if muted || volume <= 0 {
+		return int64(len(samples)), nil
+	}
+	b.audioQueued += int64(len(samples) * 2)
+	return int64(len(samples)), nil
+}
+func (b *headlessDesktopBackend) AudioQueued() int64 {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	queued := b.audioQueued
+	b.audioQueued = 0
+	return queued
+}
+
 func (b *headlessDesktopBackend) Close() error {
 	b.mu.Lock()
 	defer b.mu.Unlock()
@@ -187,6 +217,9 @@ type headlessWindow struct {
 	scale, density                               float64
 	icon                                         string
 	lastUI                                       *object.UIRenderFrame
+	lastPixels                                   []byte
+	frameWidth, frameHeight                      int64
+	vsync                                        bool
 }
 
 func (w *headlessWindow) ID() int64 { return w.id }
@@ -338,6 +371,30 @@ func (w *headlessWindow) SetIcon(path string) error {
 		return errors.New("window is closed")
 	}
 	w.icon = path
+	return nil
+}
+
+func (w *headlessWindow) PresentRGBA(pixels []byte, width, height int64) error {
+	if width < 1 || height < 1 || int64(len(pixels)) != width*height*4 {
+		return errors.New("invalid RGBA framebuffer dimensions")
+	}
+	w.mu.Lock()
+	defer w.mu.Unlock()
+	if !w.open {
+		return errors.New("window is closed")
+	}
+	w.lastPixels = append(w.lastPixels[:0], pixels...)
+	w.frameWidth = width
+	w.frameHeight = height
+	return nil
+}
+func (w *headlessWindow) SetVSync(enabled bool) error {
+	w.mu.Lock()
+	defer w.mu.Unlock()
+	if !w.open {
+		return errors.New("window is closed")
+	}
+	w.vsync = enabled
 	return nil
 }
 

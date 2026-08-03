@@ -63,13 +63,14 @@ var supportedBuiltins = map[string]bool{
 	"memoryProtect": true, "memoryLock": true, "memoryUnlock": true,
 	"dynamicOpen": true, "dynamicSymbol": true, "dynamicCall": true, "dynamicClose": true, "dynamicIsOpen": true, "dynamicError": true,
 	"systemInfo": true, "pageSize": true, "cpuCount": true, "rawSyscall": true, "profileNowNs": true, "profileElapsedNs": true,
-	"readBytes": true, "writeBytes": true,
+	"readBytes": true, "writeBytes": true, "createFile": true,
 	"readU16LE": true, "readU16BE": true, "readU32LE": true, "readU32BE": true,
 	"readU64LE": true, "readU64BE": true,
 	"writeU16LE": true, "writeU16BE": true, "writeU32LE": true, "writeU32BE": true,
 	"writeU64LE": true, "writeU64BE": true,
 	"copyBytes": true, "bytesEqual": true, "sha256": true,
 	"join": true, "cancel": true, "taskDone": true, "taskCancelled": true, "joinTimeout": true, "sleepMs": true,
+	"processArgs": true, "unixTimeSeconds": true,
 	"channel": true, "send": true, "receive": true, "receiveOk": true, "receiveTimeout": true, "closeChannel": true, "channelClosed": true, "channelLen": true, "channelCap": true,
 	"mutex": true, "lock": true, "unlock": true, "rwMutex": true, "rLock": true, "rUnlock": true,
 	"waitGroup": true, "wgAdd": true, "wgDone": true, "wgWait": true, "semaphore": true, "acquire": true, "release": true,
@@ -223,7 +224,9 @@ var desktopNativeBuiltins = map[string]bool{
 	"desktopWindowPosition": true, "desktopWindowSetPosition": true, "desktopWindowFullscreen": true,
 	"desktopWindowSetFullscreen": true, "desktopWindowMaximize": true, "desktopWindowMinimize": true,
 	"desktopWindowRestore": true, "desktopWindowFocus": true, "desktopWindowDisplayScale": true,
-	"desktopWindowPixelDensity": true, "desktopWindowSetIcon": true,
+	"desktopWindowPixelDensity": true, "desktopWindowSetIcon": true, "desktopWindowPresentRGBA": true,
+	"desktopWindowSetVSync": true, "desktopKeyDown": true, "desktopGamepadButton": true,
+	"desktopAudioQueue": true, "desktopAudioQueued": true,
 }
 
 var uiNativeBuiltins = map[string]bool{
@@ -747,8 +750,9 @@ func (g *generator) emitDispatch() {
 }
 
 func (g *generator) emitMain() {
-	g.line("int main(void) {")
+	g.line("int main(int argc, char **argv) {")
 	g.indent++
+	g.line("z_runtime_set_args(argc, argv);")
 	g.line("z_runtime_init();")
 	for _, name := range sortedKeys(g.globals) {
 		g.line("%s = z_null();", g.globals[name])

@@ -101,6 +101,9 @@ struct ZDesktopWindowNative {
     ZDesktopAppNative *app;
     void *handle;
     void *renderer;
+    void *frame_texture;
+    int64_t frame_width, frame_height;
+    bool vsync;
     int64_t id;
     char *title;
     int64_t width, height, pixel_width, pixel_height, x, y;
@@ -144,6 +147,9 @@ struct ZDesktopAppNative {
     ZDesktopHandlerNative *shortcuts;
     ZDesktopEventNative *event_head, *event_tail;
     struct ZUIContextNative *ui_contexts;
+    void *audio_stream;
+    void *gamepads[2];
+    uint32_t gamepad_ids[2];
 };
 
 /* -------- dictionary and value helpers -------- */
@@ -235,6 +241,11 @@ typedef struct SDL_TrayEntry SDL_TrayEntry;
 typedef struct SDL_Renderer SDL_Renderer;
 typedef struct SDL_Texture SDL_Texture;
 typedef struct SDL_Cursor SDL_Cursor;
+typedef struct SDL_AudioStream SDL_AudioStream;
+typedef struct SDL_Gamepad SDL_Gamepad;
+typedef uint32_t SDL_AudioDeviceID;
+typedef uint32_t SDL_JoystickID;
+typedef struct { uint32_t format; int channels; int freq; } ZDesktopSDLAudioSpec;
 typedef struct { float x,y,w,h; } ZDesktopSDLFRect;
 typedef struct { int32_t x,y,w,h; } ZDesktopSDLRect;
 typedef union ZDesktopSDLEvent { uint32_t type; uint8_t padding[128]; } ZDesktopSDLEvent;
@@ -265,6 +276,9 @@ typedef bool (*ZD_SDL_SetRenderDrawColor)(SDL_Renderer*,uint8_t,uint8_t,uint8_t,
 typedef bool (*ZD_SDL_RenderFillRect)(SDL_Renderer*,const ZDesktopSDLFRect*); typedef bool (*ZD_SDL_RenderRect)(SDL_Renderer*,const ZDesktopSDLFRect*);
 typedef bool (*ZD_SDL_RenderLine)(SDL_Renderer*,float,float,float,float); typedef bool (*ZD_SDL_RenderPresent)(SDL_Renderer*); typedef bool (*ZD_SDL_RenderDebugText)(SDL_Renderer*,float,float,const char*);
 typedef SDL_Texture *(*ZD_SDL_CreateTextureFromSurface)(SDL_Renderer*,SDL_Surface*); typedef SDL_Surface *(*ZD_SDL_CreateSurfaceFrom)(int,int,uint32_t,void*,int); typedef SDL_Surface *(*ZD_SDL_RenderReadPixels)(SDL_Renderer*,const ZDesktopSDLRect*); typedef SDL_Surface *(*ZD_SDL_ConvertSurface)(SDL_Surface*,uint32_t); typedef bool (*ZD_SDL_RenderTexture)(SDL_Renderer*,SDL_Texture*,const ZDesktopSDLFRect*,const ZDesktopSDLFRect*); typedef void (*ZD_SDL_DestroyTexture)(SDL_Texture*); typedef bool (*ZD_SDL_GetTextureSize)(SDL_Texture*,float*,float*);
+typedef SDL_Texture *(*ZD_SDL_CreateTexture)(SDL_Renderer*,uint32_t,int,int,int); typedef bool (*ZD_SDL_UpdateTexture)(SDL_Texture*,const ZDesktopSDLRect*,const void*,int); typedef bool (*ZD_SDL_SetRenderLogicalPresentation)(SDL_Renderer*,int,int,int); typedef bool (*ZD_SDL_SetRenderVSync)(SDL_Renderer*,int);
+typedef const bool *(*ZD_SDL_GetKeyboardState)(int*); typedef SDL_JoystickID *(*ZD_SDL_GetGamepads)(int*); typedef SDL_Gamepad *(*ZD_SDL_OpenGamepad)(SDL_JoystickID); typedef void (*ZD_SDL_CloseGamepad)(SDL_Gamepad*); typedef bool (*ZD_SDL_GetGamepadButton)(SDL_Gamepad*,int); typedef bool (*ZD_SDL_GamepadConnected)(SDL_Gamepad*);
+typedef SDL_AudioStream *(*ZD_SDL_OpenAudioDeviceStream)(SDL_AudioDeviceID,const ZDesktopSDLAudioSpec*,void*,void*); typedef bool (*ZD_SDL_PutAudioStreamData)(SDL_AudioStream*,const void*,int); typedef int (*ZD_SDL_GetAudioStreamQueued)(SDL_AudioStream*); typedef bool (*ZD_SDL_ResumeAudioStreamDevice)(SDL_AudioStream*); typedef void (*ZD_SDL_DestroyAudioStream)(SDL_AudioStream*);
 
 typedef struct {
     void *lib; bool initialized; char error[512];
@@ -276,6 +290,7 @@ typedef struct {
     ZD_SDL_IOFromFile IOFromFile; ZD_SDL_LoadBMP_IO LoadBMP_IO; ZD_SDL_DestroySurface DestroySurface; ZD_SDL_SetWindowIcon SetWindowIcon;
     ZD_SDL_CreateTray CreateTray; ZD_SDL_CreateTrayMenu CreateTrayMenu; ZD_SDL_InsertTrayEntryAt InsertTrayEntryAt; ZD_SDL_SetTrayEntryCallback SetTrayEntryCallback; ZD_SDL_SetTrayTooltip SetTrayTooltip; ZD_SDL_DestroyTray DestroyTray;
     ZD_SDL_CreateRenderer CreateRenderer; ZD_SDL_DestroyRenderer DestroyRenderer; ZD_SDL_SetRenderDrawColor SetRenderDrawColor; ZD_SDL_SetRenderDrawBlendMode SetRenderDrawBlendMode; ZD_SDL_SetRenderClipRect SetRenderClipRect; ZD_SDL_RenderClear RenderClear; ZD_SDL_RenderFillRect RenderFillRect; ZD_SDL_RenderRect RenderRect; ZD_SDL_RenderLine RenderLine; ZD_SDL_RenderPresent RenderPresent; ZD_SDL_RenderDebugText RenderDebugText; ZD_SDL_CreateTextureFromSurface CreateTextureFromSurface; ZD_SDL_CreateSurfaceFrom CreateSurfaceFrom; ZD_SDL_RenderReadPixels RenderReadPixels; ZD_SDL_ConvertSurface ConvertSurface; ZD_SDL_RenderTexture RenderTexture; ZD_SDL_DestroyTexture DestroyTexture; ZD_SDL_GetTextureSize GetTextureSize;
+    ZD_SDL_CreateTexture CreateTexture; ZD_SDL_UpdateTexture UpdateTexture; ZD_SDL_SetRenderLogicalPresentation SetRenderLogicalPresentation; ZD_SDL_SetRenderVSync SetRenderVSync; ZD_SDL_GetKeyboardState GetKeyboardState; ZD_SDL_GetGamepads GetGamepads; ZD_SDL_OpenGamepad OpenGamepad; ZD_SDL_CloseGamepad CloseGamepad; ZD_SDL_GetGamepadButton GetGamepadButton; ZD_SDL_GamepadConnected GamepadConnected; ZD_SDL_OpenAudioDeviceStream OpenAudioDeviceStream; ZD_SDL_PutAudioStreamData PutAudioStreamData; ZD_SDL_GetAudioStreamQueued GetAudioStreamQueued; ZD_SDL_ResumeAudioStreamDevice ResumeAudioStreamDevice; ZD_SDL_DestroyAudioStream DestroyAudioStream;
 } ZDesktopSDL;
 static ZDesktopSDL z_desktop_sdl;
 #define ZD_LOAD_REQUIRED(field, symbol, type) do { z_desktop_sdl.field=(type)z_desktop_library_symbol(z_desktop_sdl.lib,symbol); if(z_desktop_sdl.field==NULL){snprintf(z_desktop_sdl.error,sizeof(z_desktop_sdl.error),"missing SDL3 symbol %s",symbol);return false;} } while(0)
@@ -302,8 +317,37 @@ static bool z_desktop_sdl_load(void) {
     ZD_LOAD_OPTIONAL(IOFromFile,"SDL_IOFromFile",ZD_SDL_IOFromFile); ZD_LOAD_OPTIONAL(LoadBMP_IO,"SDL_LoadBMP_IO",ZD_SDL_LoadBMP_IO); ZD_LOAD_OPTIONAL(DestroySurface,"SDL_DestroySurface",ZD_SDL_DestroySurface); ZD_LOAD_OPTIONAL(SetWindowIcon,"SDL_SetWindowIcon",ZD_SDL_SetWindowIcon);
     ZD_LOAD_OPTIONAL(CreateTray,"SDL_CreateTray",ZD_SDL_CreateTray); ZD_LOAD_OPTIONAL(CreateTrayMenu,"SDL_CreateTrayMenu",ZD_SDL_CreateTrayMenu); ZD_LOAD_OPTIONAL(InsertTrayEntryAt,"SDL_InsertTrayEntryAt",ZD_SDL_InsertTrayEntryAt); ZD_LOAD_OPTIONAL(SetTrayEntryCallback,"SDL_SetTrayEntryCallback",ZD_SDL_SetTrayEntryCallback); ZD_LOAD_OPTIONAL(SetTrayTooltip,"SDL_SetTrayTooltip",ZD_SDL_SetTrayTooltip); ZD_LOAD_OPTIONAL(DestroyTray,"SDL_DestroyTray",ZD_SDL_DestroyTray);
     ZD_LOAD_REQUIRED(CreateRenderer,"SDL_CreateRenderer",ZD_SDL_CreateRenderer); ZD_LOAD_REQUIRED(DestroyRenderer,"SDL_DestroyRenderer",ZD_SDL_DestroyRenderer); ZD_LOAD_REQUIRED(SetRenderDrawColor,"SDL_SetRenderDrawColor",ZD_SDL_SetRenderDrawColor); ZD_LOAD_OPTIONAL(SetRenderDrawBlendMode,"SDL_SetRenderDrawBlendMode",ZD_SDL_SetRenderDrawBlendMode); ZD_LOAD_OPTIONAL(SetRenderClipRect,"SDL_SetRenderClipRect",ZD_SDL_SetRenderClipRect); ZD_LOAD_REQUIRED(RenderClear,"SDL_RenderClear",ZD_SDL_RenderClear); ZD_LOAD_REQUIRED(RenderFillRect,"SDL_RenderFillRect",ZD_SDL_RenderFillRect); ZD_LOAD_REQUIRED(RenderRect,"SDL_RenderRect",ZD_SDL_RenderRect); ZD_LOAD_REQUIRED(RenderLine,"SDL_RenderLine",ZD_SDL_RenderLine); ZD_LOAD_REQUIRED(RenderPresent,"SDL_RenderPresent",ZD_SDL_RenderPresent); ZD_LOAD_OPTIONAL(RenderDebugText,"SDL_RenderDebugText",ZD_SDL_RenderDebugText); ZD_LOAD_OPTIONAL(CreateTextureFromSurface,"SDL_CreateTextureFromSurface",ZD_SDL_CreateTextureFromSurface); ZD_LOAD_OPTIONAL(CreateSurfaceFrom,"SDL_CreateSurfaceFrom",ZD_SDL_CreateSurfaceFrom); ZD_LOAD_OPTIONAL(RenderReadPixels,"SDL_RenderReadPixels",ZD_SDL_RenderReadPixels); ZD_LOAD_OPTIONAL(ConvertSurface,"SDL_ConvertSurface",ZD_SDL_ConvertSurface); ZD_LOAD_OPTIONAL(RenderTexture,"SDL_RenderTexture",ZD_SDL_RenderTexture); ZD_LOAD_OPTIONAL(DestroyTexture,"SDL_DestroyTexture",ZD_SDL_DestroyTexture); ZD_LOAD_OPTIONAL(GetTextureSize,"SDL_GetTextureSize",ZD_SDL_GetTextureSize);
-    if (!z_desktop_sdl.Init(0x00000020u)) { snprintf(z_desktop_sdl.error,sizeof(z_desktop_sdl.error),"%s",z_desktop_sdl.GetError()); return false; }
+    ZD_LOAD_OPTIONAL(CreateTexture,"SDL_CreateTexture",ZD_SDL_CreateTexture); ZD_LOAD_OPTIONAL(UpdateTexture,"SDL_UpdateTexture",ZD_SDL_UpdateTexture); ZD_LOAD_OPTIONAL(SetRenderLogicalPresentation,"SDL_SetRenderLogicalPresentation",ZD_SDL_SetRenderLogicalPresentation); ZD_LOAD_OPTIONAL(SetRenderVSync,"SDL_SetRenderVSync",ZD_SDL_SetRenderVSync); ZD_LOAD_OPTIONAL(GetKeyboardState,"SDL_GetKeyboardState",ZD_SDL_GetKeyboardState); ZD_LOAD_OPTIONAL(GetGamepads,"SDL_GetGamepads",ZD_SDL_GetGamepads); ZD_LOAD_OPTIONAL(OpenGamepad,"SDL_OpenGamepad",ZD_SDL_OpenGamepad); ZD_LOAD_OPTIONAL(CloseGamepad,"SDL_CloseGamepad",ZD_SDL_CloseGamepad); ZD_LOAD_OPTIONAL(GetGamepadButton,"SDL_GetGamepadButton",ZD_SDL_GetGamepadButton); ZD_LOAD_OPTIONAL(GamepadConnected,"SDL_GamepadConnected",ZD_SDL_GamepadConnected); ZD_LOAD_OPTIONAL(OpenAudioDeviceStream,"SDL_OpenAudioDeviceStream",ZD_SDL_OpenAudioDeviceStream); ZD_LOAD_OPTIONAL(PutAudioStreamData,"SDL_PutAudioStreamData",ZD_SDL_PutAudioStreamData); ZD_LOAD_OPTIONAL(GetAudioStreamQueued,"SDL_GetAudioStreamQueued",ZD_SDL_GetAudioStreamQueued); ZD_LOAD_OPTIONAL(ResumeAudioStreamDevice,"SDL_ResumeAudioStreamDevice",ZD_SDL_ResumeAudioStreamDevice); ZD_LOAD_OPTIONAL(DestroyAudioStream,"SDL_DestroyAudioStream",ZD_SDL_DestroyAudioStream);
+    if (!z_desktop_sdl.Init(0x00000020u|0x00000010u|0x00002000u)) { snprintf(z_desktop_sdl.error,sizeof(z_desktop_sdl.error),"%s",z_desktop_sdl.GetError()); return false; }
     z_desktop_sdl.initialized=true; return true;
+}
+
+static void z_desktop_refresh_gamepads(ZDesktopAppNative *app) {
+    if(app==NULL||app->headless||z_desktop_sdl.GetGamepads==NULL||z_desktop_sdl.OpenGamepad==NULL)return;
+    for(int slot=0;slot<2;slot++){
+        SDL_Gamepad*pad=(SDL_Gamepad*)app->gamepads[slot];
+        if(pad!=NULL&&z_desktop_sdl.GamepadConnected!=NULL&&!z_desktop_sdl.GamepadConnected(pad)){
+            if(z_desktop_sdl.CloseGamepad!=NULL)z_desktop_sdl.CloseGamepad(pad);
+            app->gamepads[slot]=NULL;app->gamepad_ids[slot]=0;
+        }
+    }
+    int count=0;SDL_JoystickID*ids=z_desktop_sdl.GetGamepads(&count);if(ids==NULL)return;
+    for(int i=0;i<count;i++){
+        bool open=false;for(int slot=0;slot<2;slot++)if(app->gamepad_ids[slot]==ids[i])open=true;
+        if(open)continue;
+        for(int slot=0;slot<2;slot++)if(app->gamepads[slot]==NULL){SDL_Gamepad*pad=z_desktop_sdl.OpenGamepad(ids[i]);if(pad!=NULL){app->gamepads[slot]=pad;app->gamepad_ids[slot]=ids[i];}break;}
+    }
+    if(z_desktop_sdl.Free!=NULL)z_desktop_sdl.Free(ids);else free(ids);
+}
+
+static SDL_AudioStream *z_desktop_audio_stream(ZDesktopAppNative *app) {
+    if(app==NULL||app->headless)return NULL;
+    if(app->audio_stream!=NULL)return (SDL_AudioStream*)app->audio_stream;
+    if(z_desktop_sdl.OpenAudioDeviceStream==NULL)return NULL;
+    ZDesktopSDLAudioSpec spec={UINT32_C(0x8010),1,44100};
+    SDL_AudioStream*stream=z_desktop_sdl.OpenAudioDeviceStream(UINT32_MAX,&spec,NULL,NULL);
+    if(stream!=NULL&&z_desktop_sdl.ResumeAudioStreamDevice!=NULL)(void)z_desktop_sdl.ResumeAudioStreamDevice(stream);
+    app->audio_stream=stream;return stream;
 }
 
 static SDL_Cursor *z_desktop_system_cursors[3]={NULL,NULL,NULL};
@@ -393,7 +437,7 @@ static void z_desktop_close_window_native(ZDesktopWindowNative *window) {
     if (window == NULL || !window->open) return;
     window->open = false;
 #if defined(ZUMBRA_DESKTOP_SDL3)
-    if(!window->app->headless&&window->handle!=NULL){if(window->renderer!=NULL){z_ui_release_renderer_resources(window->renderer);z_desktop_sdl.DestroyRenderer((SDL_Renderer*)window->renderer);window->renderer=NULL;}z_desktop_sdl.DestroyWindow((SDL_Window *)window->handle);window->handle=NULL;}
+    if(!window->app->headless&&window->handle!=NULL){if(window->frame_texture!=NULL&&z_desktop_sdl.DestroyTexture!=NULL){z_desktop_sdl.DestroyTexture((SDL_Texture*)window->frame_texture);window->frame_texture=NULL;}if(window->renderer!=NULL){z_ui_release_renderer_resources(window->renderer);z_desktop_sdl.DestroyRenderer((SDL_Renderer*)window->renderer);window->renderer=NULL;}z_desktop_sdl.DestroyWindow((SDL_Window *)window->handle);window->handle=NULL;}
 #endif
     z_desktop_queue(window->app,"window_closed",window->id,z_dict_from(NULL,0));
 }
@@ -564,8 +608,16 @@ static ZValue z_desktop_call_builtin(const char*name,const ZValue*args,size_t ar
     if(strcmp(name,"desktopWindow")==0){z_expect_args(name,argc,2);return z_desktop_window_new(z_desktop_expect_app(args[0]),args[1]);}
     if(strcmp(name,"desktopOn")==0){z_expect_args(name,argc,3);ZDesktopAppNative*app=z_desktop_expect_app(args[0]);z_desktop_add_handler(&app->handlers,z_as_cstring(args[1]),args[2]);return args[0];}
     if(strcmp(name,"desktopShortcut")==0){z_expect_args(name,argc,3);ZDesktopAppNative*app=z_desktop_expect_app(args[0]);char normalized[256];z_desktop_normalize_shortcut(z_as_cstring(args[1]),normalized,sizeof(normalized));z_desktop_add_handler(&app->shortcuts,normalized,args[2]);return args[0];}
-    if(strcmp(name,"desktopPoll")==0){z_expect_args(name,argc,2);ZDesktopAppNative*app=z_desktop_expect_app(args[0]);ZDesktopEventNative*event=z_desktop_next_event(app,z_as_i64(args[1]));if(event==NULL){z_ui_render_all(app);return z_null();}z_desktop_dispatch(app,event);z_ui_render_all(app);return z_desktop_event_value(event);}
-    if(strcmp(name,"desktopRun")==0){z_expect_args(name,argc,1);ZDesktopAppNative*app=z_desktop_expect_app(args[0]);if(app->closed)z_fatal("desktop app is closed");app->running=true;app->run_thread=pthread_self();app->run_thread_set=true;z_ui_render_all(app);while(app->running&&!app->closed){if(z_ui_any_dirty(app))z_ui_render_all(app);int64_t wait_ms=app->headless?app->poll_interval_ms:-1;ZDesktopEventNative*event=z_desktop_next_event(app,wait_ms);if(event!=NULL)z_desktop_dispatch(app,event);size_t drained=0;while(app->running&&!app->closed&&drained<256){ZDesktopEventNative*pending=z_desktop_dequeue(app);if(pending==NULL)break;z_desktop_dispatch(app,pending);drained++;}z_ui_render_all(app);}app->run_thread_set=false;return z_bool(true);}
+    if(strcmp(name,"desktopPoll")==0){z_expect_args(name,argc,2);ZDesktopAppNative*app=z_desktop_expect_app(args[0]);
+#if defined(ZUMBRA_DESKTOP_SDL3)
+        z_desktop_refresh_gamepads(app);
+#endif
+        ZDesktopEventNative*event=z_desktop_next_event(app,z_as_i64(args[1]));if(event==NULL){z_ui_render_all(app);return z_null();}z_desktop_dispatch(app,event);z_ui_render_all(app);return z_desktop_event_value(event);}
+    if(strcmp(name,"desktopRun")==0){z_expect_args(name,argc,1);ZDesktopAppNative*app=z_desktop_expect_app(args[0]);if(app->closed)z_fatal("desktop app is closed");app->running=true;app->run_thread=pthread_self();app->run_thread_set=true;z_ui_render_all(app);while(app->running&&!app->closed){if(z_ui_any_dirty(app))z_ui_render_all(app);
+#if defined(ZUMBRA_DESKTOP_SDL3)
+        z_desktop_refresh_gamepads(app);
+#endif
+        int64_t wait_ms=app->headless?app->poll_interval_ms:-1;ZDesktopEventNative*event=z_desktop_next_event(app,wait_ms);if(event!=NULL)z_desktop_dispatch(app,event);size_t drained=0;while(app->running&&!app->closed&&drained<256){ZDesktopEventNative*pending=z_desktop_dequeue(app);if(pending==NULL)break;z_desktop_dispatch(app,pending);drained++;}z_ui_render_all(app);}app->run_thread_set=false;return z_bool(true);}
     if(strcmp(name,"desktopQuit")==0){z_expect_args(name,argc,1);z_desktop_expect_app(args[0])->running=false;return z_bool(true);}
     if(strcmp(name,"desktopRunning")==0){z_expect_args(name,argc,1);return z_bool(z_desktop_expect_app(args[0])->running);}
     if(strcmp(name,"desktopClose")==0){z_expect_args(name,argc,1);ZDesktopAppNative*app=z_desktop_expect_app(args[0]);if(!app->closed){app->running=false;app->closed=true;for(ZDesktopWindowNative*w=app->windows;w!=NULL;w=w->next)z_desktop_close_window_native(w);for(ZDesktopTrayNative*t=app->trays;t!=NULL;t=t->next){if(t->open){
@@ -574,9 +626,51 @@ static ZValue z_desktop_call_builtin(const char*name,const ZValue*args,size_t ar
 #endif
             t->open=false;}}
 #if defined(ZUMBRA_DESKTOP_SDL3)
+        if(!app->headless){if(app->audio_stream!=NULL&&z_desktop_sdl.DestroyAudioStream!=NULL){z_desktop_sdl.DestroyAudioStream((SDL_AudioStream*)app->audio_stream);app->audio_stream=NULL;}for(int slot=0;slot<2;slot++){if(app->gamepads[slot]!=NULL&&z_desktop_sdl.CloseGamepad!=NULL)z_desktop_sdl.CloseGamepad((SDL_Gamepad*)app->gamepads[slot]);app->gamepads[slot]=NULL;app->gamepad_ids[slot]=0;}}
         if(!app->headless&&z_desktop_sdl.initialized){z_desktop_destroy_system_cursors();z_desktop_sdl.Quit();z_desktop_sdl.initialized=false;}
 #endif
         }return z_bool(true);}
+    if(strcmp(name,"desktopKeyDown")==0){z_expect_args(name,argc,2);ZDesktopAppNative*app=z_desktop_expect_app(args[0]);int64_t scancode=z_as_i64(args[1]);if(app->headless||scancode<0)return z_bool(false);
+#if defined(ZUMBRA_DESKTOP_SDL3)
+        if(z_desktop_sdl.GetKeyboardState==NULL)return z_bool(false);int count=0;const bool*keys=z_desktop_sdl.GetKeyboardState(&count);return z_bool(keys!=NULL&&scancode<count&&keys[scancode]);
+#else
+        return z_bool(false);
+#endif
+    }
+    if(strcmp(name,"desktopGamepadButton")==0){z_expect_args(name,argc,3);ZDesktopAppNative*app=z_desktop_expect_app(args[0]);int64_t player=z_as_i64(args[1]),button=z_as_i64(args[2]);if(app->headless||player<1||player>2||button<0)return z_bool(false);
+#if defined(ZUMBRA_DESKTOP_SDL3)
+        z_desktop_refresh_gamepads(app);SDL_Gamepad*pad=(SDL_Gamepad*)app->gamepads[player-1];return z_bool(pad!=NULL&&z_desktop_sdl.GetGamepadButton!=NULL&&z_desktop_sdl.GetGamepadButton(pad,(int)button));
+#else
+        return z_bool(false);
+#endif
+    }
+    if(strcmp(name,"desktopAudioQueue")==0){z_expect_args(name,argc,4);ZDesktopAppNative*app=z_desktop_expect_app(args[0]);ZValue samples=args[1];int64_t volume=z_as_i64(args[2]);bool muted=z_as_bool(args[3]);if(samples.tag!=ZV_BUFFER||samples.kind!=ZK_BYTE_ARRAY||samples.as.buffer==NULL)z_fatal("desktopAudioQueue expects ByteArray samples");size_t count=samples.as.buffer->len;if(app->headless||count==0)return z_int((int64_t)count);
+#if defined(ZUMBRA_DESKTOP_SDL3)
+        SDL_AudioStream*stream=z_desktop_audio_stream(app);if(stream==NULL||z_desktop_sdl.PutAudioStreamData==NULL)return z_int(0);if(volume<0)volume=0;if(volume>100)volume=100;int16_t*converted=(int16_t*)malloc(count*sizeof(int16_t));if(converted==NULL)z_fatal("desktopAudioQueue out of memory");const uint8_t*source=(const uint8_t*)samples.as.buffer->data;int64_t effective=muted?0:volume;for(size_t i=0;i<count;i++){int centered=((int)source[i]-32)*1024;converted[i]=(int16_t)((centered*effective)/100);}bool ok=z_desktop_sdl.PutAudioStreamData(stream,converted,(int)(count*sizeof(int16_t)));free(converted);return z_int(ok?(int64_t)count:0);
+#else
+        return z_int(0);
+#endif
+    }
+    if(strcmp(name,"desktopAudioQueued")==0){z_expect_args(name,argc,1);ZDesktopAppNative*app=z_desktop_expect_app(args[0]);if(app->headless)return z_int(0);
+#if defined(ZUMBRA_DESKTOP_SDL3)
+        SDL_AudioStream*stream=z_desktop_audio_stream(app);return z_int(stream!=NULL&&z_desktop_sdl.GetAudioStreamQueued!=NULL?(int64_t)z_desktop_sdl.GetAudioStreamQueued(stream):0);
+#else
+        return z_int(0);
+#endif
+    }
+    if(strcmp(name,"desktopWindowPresentRGBA")==0){z_expect_args(name,argc,4);ZDesktopWindowNative*w=z_desktop_expect_window(args[0]);ZValue pixels=args[1];int64_t width=z_as_i64(args[2]),height=z_as_i64(args[3]);if(!w->open)z_fatal("window is closed");if(pixels.tag!=ZV_BUFFER||pixels.kind!=ZK_BYTE_ARRAY||pixels.as.buffer==NULL)z_fatal("desktopWindowPresentRGBA expects ByteArray pixels");if(width<1||height<1||(uint64_t)width>(uint64_t)SIZE_MAX/4u/(uint64_t)height||pixels.as.buffer->len!=(size_t)(width*height*4))z_fatal("desktopWindowPresentRGBA expects width*height*4 bytes");if(w->app->headless)return z_bool(true);
+#if defined(ZUMBRA_DESKTOP_SDL3)
+        if(z_desktop_sdl.CreateTexture==NULL||z_desktop_sdl.UpdateTexture==NULL||z_desktop_sdl.RenderTexture==NULL)z_fatal("SDL3 streaming texture APIs are unavailable");if(w->renderer==NULL){w->renderer=z_desktop_sdl.CreateRenderer((SDL_Window*)w->handle,NULL);if(w->renderer==NULL)z_fatal("desktopWindowPresentRGBA renderer: %s",z_desktop_sdl.GetError());if(z_desktop_sdl.SetRenderLogicalPresentation!=NULL)(void)z_desktop_sdl.SetRenderLogicalPresentation((SDL_Renderer*)w->renderer,(int)width,(int)height,4);if(z_desktop_sdl.SetRenderVSync!=NULL)(void)z_desktop_sdl.SetRenderVSync((SDL_Renderer*)w->renderer,w->vsync?1:0);}if(w->frame_texture==NULL||w->frame_width!=width||w->frame_height!=height){if(w->frame_texture!=NULL&&z_desktop_sdl.DestroyTexture!=NULL)z_desktop_sdl.DestroyTexture((SDL_Texture*)w->frame_texture);w->frame_texture=z_desktop_sdl.CreateTexture((SDL_Renderer*)w->renderer,UINT32_C(0x16762004),1,(int)width,(int)height);w->frame_width=width;w->frame_height=height;if(w->frame_texture==NULL)z_fatal("desktopWindowPresentRGBA texture: %s",z_desktop_sdl.GetError());}if(!z_desktop_sdl.UpdateTexture((SDL_Texture*)w->frame_texture,NULL,pixels.as.buffer->data,(int)(width*4)))return z_bool(false);(void)z_desktop_sdl.RenderClear((SDL_Renderer*)w->renderer);if(!z_desktop_sdl.RenderTexture((SDL_Renderer*)w->renderer,(SDL_Texture*)w->frame_texture,NULL,NULL))return z_bool(false);return z_bool(z_desktop_sdl.RenderPresent((SDL_Renderer*)w->renderer));
+#else
+        return z_bool(false);
+#endif
+    }
+    if(strcmp(name,"desktopWindowSetVSync")==0){z_expect_args(name,argc,2);ZDesktopWindowNative*w=z_desktop_expect_window(args[0]);w->vsync=z_as_bool(args[1]);
+#if defined(ZUMBRA_DESKTOP_SDL3)
+        if(!w->app->headless&&w->renderer!=NULL&&z_desktop_sdl.SetRenderVSync!=NULL&&!z_desktop_sdl.SetRenderVSync((SDL_Renderer*)w->renderer,w->vsync?1:0))z_fatal("desktopWindowSetVSync: %s",z_desktop_sdl.GetError());
+#endif
+        return args[0];
+    }
     if(strcmp(name,"desktopEmit")==0){z_expect_args(name,argc,2);ZDesktopAppNative*app=z_desktop_expect_app(args[0]);ZValue event=args[1];if(event.tag!=ZV_DICT)z_fatal("desktopEmit event must be dictionary");const char*type=z_desktop_opt_string(event,"type","custom");int64_t window_id=z_desktop_opt_int(event,"windowId",0);ZValue data=z_desktop_dict_get(event,"data");if(data.tag!=ZV_DICT)data=z_dict_from(NULL,0);z_desktop_queue(app,type,window_id,data);return z_bool(true);}
     if(strcmp(name,"desktopSetClipboard")==0){z_expect_args(name,argc,2);ZDesktopAppNative*app=z_desktop_expect_app(args[0]);const char*text=z_as_cstring(args[1]);if(app->headless){app->clipboard=z_strdup(text);z_desktop_queue(app,"clipboard_updated",0,z_dict_from(NULL,0));return z_bool(true);}
 #if defined(ZUMBRA_DESKTOP_SDL3)

@@ -30,6 +30,23 @@ type DesktopBackend interface {
 	Close() error
 }
 
+// DesktopMediaBackend exposes low-level game/runtime services used by real-time
+// applications without requiring project-local C bridges. Implementations may
+// provide deterministic headless behavior for tests.
+type DesktopMediaBackend interface {
+	KeyDown(scancode int64) bool
+	GamepadButton(player, button int64) bool
+	QueueAudio(samples []byte, volume int64, muted bool) (int64, error)
+	AudioQueued() int64
+}
+
+// DesktopFramebufferRuntime exposes direct RGBA presentation and VSync control
+// on an existing desktop window.
+type DesktopFramebufferRuntime interface {
+	PresentRGBA(pixels []byte, width, height int64) error
+	SetVSync(enabled bool) error
+}
+
 type DesktopWindowRuntime interface {
 	ID() int64
 	Show() error

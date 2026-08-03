@@ -387,6 +387,8 @@ var Builtins = []struct {
 	{"taskCancelled", TaskCancelledBuiltin()},
 	{"joinTimeout", JoinTimeoutBuiltin()},
 	{"sleepMs", SleepMsBuiltin()},
+	{"processArgs", ProcessArgsBuiltin()},
+	{"unixTimeSeconds", UnixTimeSecondsBuiltin()},
 	{"channel", ChannelBuiltin()},
 	{"send", SendBuiltin()},
 	{"receive", ReceiveBuiltin()},
@@ -602,6 +604,12 @@ var Builtins = []struct {
 	{"desktopWindowDisplayScale", DesktopWindowDisplayScaleBuiltin()},
 	{"desktopWindowPixelDensity", DesktopWindowPixelDensityBuiltin()},
 	{"desktopWindowSetIcon", DesktopWindowSetIconBuiltin()},
+	{"desktopWindowPresentRGBA", DesktopWindowPresentRGBABuiltin()},
+	{"desktopWindowSetVSync", DesktopWindowSetVSyncBuiltin()},
+	{"desktopKeyDown", DesktopKeyDownBuiltin()},
+	{"desktopGamepadButton", DesktopGamepadButtonBuiltin()},
+	{"desktopAudioQueue", DesktopAudioQueueBuiltin()},
+	{"desktopAudioQueued", DesktopAudioQueuedBuiltin()},
 
 	// Z14 retained-mode GUI toolkit
 	{"uiTheme", UIThemeBuiltin()},

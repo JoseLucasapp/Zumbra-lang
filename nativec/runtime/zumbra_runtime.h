@@ -215,6 +215,7 @@ struct ZBoundMethod {
 uint32_t z_abi_version(void);
 void z_runtime_init(void);
 void z_runtime_shutdown(void);
+void z_runtime_set_args(int argc, char **argv);
 void z_fatal(const char *format, ...);
 void *z_alloc(size_t size);
 char *z_strdup(const char *value);

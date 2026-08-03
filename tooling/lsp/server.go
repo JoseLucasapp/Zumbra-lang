@@ -23,7 +23,7 @@ import (
 	"zumbra/tooling/lint"
 )
 
-const ServerVersion = "0.14.2"
+const ServerVersion = "0.14.3"
 
 type request struct {
 	JSONRPC string          `json:"jsonrpc"`

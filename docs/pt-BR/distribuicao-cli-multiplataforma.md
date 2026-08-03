@@ -63,7 +63,7 @@ scripts/test-release-platform.sh
 Para também validar a versão esperada:
 
 ```bash
-EXPECTED_VERSION=0.14.2 scripts/test-release-platform.sh
+EXPECTED_VERSION=0.14.3 scripts/test-release-platform.sh
 ```
 
 ## Publicação
@@ -71,8 +71,8 @@ EXPECTED_VERSION=0.14.2 scripts/test-release-platform.sh
 O workflow é disparado por tags com prefixo `v`:
 
 ```bash
-git tag -a v0.14.2 -m "Zumbra 0.14.2"
-git push origin v0.14.2
+git tag -a v0.14.3 -m "Zumbra 0.14.3"
+git push origin v0.14.3
 ```
 
 A release só é publicada depois que Linux, Windows e os dois jobs de macOS geram seus
