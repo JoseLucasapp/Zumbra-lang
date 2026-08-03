@@ -398,3 +398,8 @@ Z17 is delivered as one complete systems-programming milestone. Zumbra now provi
 ## Zumbra 0.14.0 — Z18 official tooling
 
 Z18 is delivered as one complete tooling milestone. Zumbra now includes a canonical comment-preserving formatter, an AST and pipeline-aware linter, Markdown/JSON API documentation, reproducible project scaffolding and commands, per-stage compiler profiling, stable structured diagnostics, a JSON-RPC 2.0 language server and an official VS Code extension. See [`docs/pt-BR/tooling-z18.md`](./docs/pt-BR/tooling-z18.md) and [`docs/releases/0.14.0.md`](./docs/releases/0.14.0.md).
+
+
+## Distribuição
+
+- [Distribuição multiplataforma da CLI](docs/pt-BR/distribuicao-cli-multiplataforma.md)

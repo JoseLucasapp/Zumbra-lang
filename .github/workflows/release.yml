@@ -1,4 +1,4 @@
-name: Build and publish Zumbra
+name: Build and publish Zumbra CLI
 
 on:
   push:
@@ -8,14 +8,20 @@ on:
 permissions:
   contents: write
 
+concurrency:
+  group: zumbra-release-${{ github.ref }}
+  cancel-in-progress: false
+
 jobs:
   linux-amd64:
     name: Linux AMD64
-    runs-on: ubuntu-22.04
+    runs-on: ubuntu-latest
 
     steps:
-      - name: Checkout
+      - name: Checkout release source
         uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
 
       - name: Setup Go
         uses: actions/setup-go@v7
@@ -23,67 +29,69 @@ jobs:
           go-version-file: go.mod
           cache-dependency-path: go.sum
 
-      - name: Install dependencies
+      - name: Install Linux native dependencies
         run: |
           sudo apt-get update
-          sudo apt-get install -y \
+          sudo apt-get install -y --no-install-recommends \
             build-essential \
-            libsqlite3-dev
+            clang \
+            libhiredis-dev \
+            libpq-dev \
+            libsqlite3-dev \
+            libssl-dev \
+            zlib1g-dev
 
-      - name: Resolve version
+      - name: Resolve release version
         shell: bash
-        run: echo "VERSION=${GITHUB_REF_NAME#v}" >> "$GITHUB_ENV"
-
-      - name: Test
         run: |
-          go test ./...
-          go vet -unsafeptr=false ./...
-          scripts/check-repository-hygiene.sh
-
-      - name: Build
-        env:
-          CGO_ENABLED: "1"
-        run: |
-          mkdir -p package
-
-          go build \
-            -trimpath \
-            -ldflags="-s -w" \
-            -o package/zumbra \
-            .
-
-          ACTUAL_VERSION="$(./package/zumbra --version)"
-
-          if [ "$ACTUAL_VERSION" != "$VERSION" ]; then
-            echo "Tag version: $VERSION"
-            echo "Binary version: $ACTUAL_VERSION"
+          VERSION="${GITHUB_REF_NAME#v}"
+          if [[ -z "$VERSION" || "$VERSION" == "$GITHUB_REF_NAME" ]]; then
+            echo "Release workflow must run from a v-prefixed tag." >&2
             exit 1
           fi
+          echo "VERSION=$VERSION" >> "$GITHUB_ENV"
 
-          cp README.MD package/
-          cp LICENSE-APACHE package/
+      - name: Run canonical release gate
+        env:
+          EXPECTED_VERSION: ${{ github.ref_name }}
+        run: scripts/test-release-platform.sh
 
-      - name: Package
+      - name: Build Linux package
+        shell: bash
         run: |
-          tar \
-            -C package \
-            -czf "zumbra-${VERSION}-linux-amd64.tar.gz" \
+          package_root="zumbra-${VERSION}-linux-amd64"
+          mkdir -p "dist/${package_root}"
+
+          CGO_ENABLED=1 go build \
+            -trimpath \
+            -ldflags="-s -w" \
+            -o "dist/${package_root}/zumbra" \
             .
 
-      - name: Upload artifact
+          test "$(dist/${package_root}/zumbra --version)" = "$VERSION"
+          cp README.MD LICENSE-APACHE "dist/${package_root}/"
+          tar -C dist -czf "dist/${package_root}.tar.gz" "$package_root"
+
+      - name: Upload Linux package
         uses: actions/upload-artifact@v7
         with:
           name: zumbra-linux-amd64
-          path: zumbra-${{ env.VERSION }}-linux-amd64.tar.gz
+          path: dist/*-linux-amd64.tar.gz
           if-no-files-found: error
 
   windows-amd64:
     name: Windows AMD64
     runs-on: windows-latest
 
+    defaults:
+      run:
+        shell: msys2 {0}
+
     steps:
-      - name: Checkout
+      - name: Checkout release source
         uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
 
       - name: Setup Go
         uses: actions/setup-go@v7
@@ -91,75 +99,69 @@ jobs:
           go-version-file: go.mod
           cache-dependency-path: go.sum
 
-      - name: Setup MSYS2
+      - name: Setup MSYS2 UCRT64
         uses: msys2/setup-msys2@v2
         with:
           msystem: UCRT64
           update: true
           path-type: inherit
           install: >-
+            mingw-w64-ucrt-x86_64-binutils
             mingw-w64-ucrt-x86_64-gcc
             mingw-w64-ucrt-x86_64-sqlite
 
-      - name: Resolve version
-        shell: msys2 {0}
-        run: echo "VERSION=${GITHUB_REF_NAME#v}" >> "$GITHUB_ENV"
-
-      - name: Test and build
-        shell: msys2 {0}
-        env:
-          CGO_ENABLED: "1"
-          CC: gcc
+      - name: Resolve release version
         run: |
-          go test ./...
-          go vet -unsafeptr=false ./...
+          VERSION="${GITHUB_REF_NAME#v}"
+          if [[ -z "$VERSION" || "$VERSION" == "$GITHUB_REF_NAME" ]]; then
+            echo "Release workflow must run from a v-prefixed tag." >&2
+            exit 1
+          fi
+          echo "VERSION=$VERSION" >> "$GITHUB_ENV"
 
-          mkdir -p package
+      - name: Validate Windows CLI host
+        env:
+          CC: gcc
+          CGO_ENABLED: "1"
+          EXPECTED_VERSION: ${{ github.ref_name }}
+        run: |
+          export PATH="/ucrt64/bin:$PATH"
+          scripts/test-release-platform.sh
+
+      - name: Build Windows package
+        env:
+          CC: gcc
+          CGO_ENABLED: "1"
+        run: |
+          export PATH="/ucrt64/bin:$PATH"
+          package_root="zumbra-${VERSION}-windows-amd64"
+          mkdir -p "dist/${package_root}"
 
           go build \
             -trimpath \
             -ldflags="-s -w" \
-            -o package/zumbra.exe \
+            -o "dist/${package_root}/zumbra.exe" \
             .
 
-          ACTUAL_VERSION="$(./package/zumbra.exe --version)"
+          test "$(dist/${package_root}/zumbra.exe --version | tr -d '\r')" = "$VERSION"
+          cp README.MD LICENSE-APACHE "dist/${package_root}/"
 
-          if [ "$ACTUAL_VERSION" != "$VERSION" ]; then
-            echo "Tag version: $VERSION"
-            echo "Binary version: $ACTUAL_VERSION"
-            exit 1
-          fi
+          # Copy only non-system DLLs actually required by the CGO executable.
+          while IFS= read -r dll; do
+            [[ -n "$dll" ]] && cp "$dll" "dist/${package_root}/"
+          done < <(ldd "dist/${package_root}/zumbra.exe" | awk '/\/ucrt64\/bin\// {print $3}')
 
-          cp README.MD package/
-          cp LICENSE-APACHE package/
-
-          # Bibliotecas exigidas pelo executável CGO/MinGW.
-          cp /ucrt64/bin/libsqlite3-0.dll package/
-
-          if [ -f /ucrt64/bin/libgcc_s_seh-1.dll ]; then
-            cp /ucrt64/bin/libgcc_s_seh-1.dll package/
-          fi
-
-          if [ -f /ucrt64/bin/libwinpthread-1.dll ]; then
-            cp /ucrt64/bin/libwinpthread-1.dll package/
-          fi
-
-          echo "Windows binary dependencies:"
-          ldd package/zumbra.exe || true
-
-      - name: Package
+      - name: Package Windows archive
         shell: pwsh
         run: |
-          Compress-Archive `
-            -Path package\* `
-            -DestinationPath "zumbra-${env:VERSION}-windows-amd64.zip" `
-            -Force
+          $root = "zumbra-$env:VERSION-windows-amd64"
+          Compress-Archive -Path "dist\$root" -DestinationPath "dist\$root.zip" -Force
 
-      - name: Upload artifact
+      - name: Upload Windows package
         uses: actions/upload-artifact@v7
         with:
           name: zumbra-windows-amd64
-          path: zumbra-${{ env.VERSION }}-windows-amd64.zip
+          path: dist/*-windows-amd64.zip
           if-no-files-found: error
 
   macos:
@@ -170,14 +172,18 @@ jobs:
         include:
           - runner: macos-latest
             arch: arm64
+            machine: arm64
           - runner: macos-15-intel
             arch: amd64
+            machine: x86_64
 
     runs-on: ${{ matrix.runner }}
 
     steps:
-      - name: Checkout
+      - name: Checkout release source
         uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
 
       - name: Setup Go
         uses: actions/setup-go@v7
@@ -185,55 +191,58 @@ jobs:
           go-version-file: go.mod
           cache-dependency-path: go.sum
 
-      - name: Resolve version
+      - name: Install SQLite development files
         shell: bash
-        run: echo "VERSION=${GITHUB_REF_NAME#v}" >> "$GITHUB_ENV"
+        run: |
+          brew install sqlite
+          sqlite_prefix="$(brew --prefix sqlite)"
+          echo "CGO_CFLAGS=-I${sqlite_prefix}/include" >> "$GITHUB_ENV"
+          echo "CGO_LDFLAGS=-L${sqlite_prefix}/lib" >> "$GITHUB_ENV"
 
-      - name: Test
+      - name: Resolve release version and validate runner
+        shell: bash
+        run: |
+          VERSION="${GITHUB_REF_NAME#v}"
+          if [[ -z "$VERSION" || "$VERSION" == "$GITHUB_REF_NAME" ]]; then
+            echo "Release workflow must run from a v-prefixed tag." >&2
+            exit 1
+          fi
+          test "$(uname -m)" = "${{ matrix.machine }}"
+          echo "VERSION=$VERSION" >> "$GITHUB_ENV"
+
+      - name: Validate macOS CLI host
+        shell: bash
         env:
+          CC: clang
+          CGO_ENABLED: "1"
+          EXPECTED_VERSION: ${{ github.ref_name }}
+        run: scripts/test-release-platform.sh
+
+      - name: Build macOS package
+        shell: bash
+        env:
+          CC: clang
           CGO_ENABLED: "1"
         run: |
-          go test ./...
-          go vet -unsafeptr=false ./...
-
-      - name: Build
-        env:
-          CGO_ENABLED: "1"
-        run: |
-          mkdir -p package
+          package_root="zumbra-${VERSION}-macos-${{ matrix.arch }}"
+          mkdir -p "dist/${package_root}"
 
           go build \
             -trimpath \
             -ldflags="-s -w" \
-            -o package/zumbra \
+            -o "dist/${package_root}/zumbra" \
             .
 
-          ACTUAL_VERSION="$(./package/zumbra --version)"
+          test "$(dist/${package_root}/zumbra --version)" = "$VERSION"
+          file "dist/${package_root}/zumbra"
+          cp README.MD LICENSE-APACHE "dist/${package_root}/"
+          tar -C dist -czf "dist/${package_root}.tar.gz" "$package_root"
 
-          if [ "$ACTUAL_VERSION" != "$VERSION" ]; then
-            echo "Tag version: $VERSION"
-            echo "Binary version: $ACTUAL_VERSION"
-            exit 1
-          fi
-
-          ACTUAL_ARCH="$(uname -m)"
-          echo "Built architecture: $ACTUAL_ARCH"
-
-          cp README.MD package/
-          cp LICENSE-APACHE package/
-
-      - name: Package
-        run: |
-          tar \
-            -C package \
-            -czf "zumbra-${VERSION}-macos-${{ matrix.arch }}.tar.gz" \
-            .
-
-      - name: Upload artifact
+      - name: Upload macOS package
         uses: actions/upload-artifact@v7
         with:
           name: zumbra-macos-${{ matrix.arch }}
-          path: zumbra-${{ env.VERSION }}-macos-${{ matrix.arch }}.tar.gz
+          path: dist/*-macos-${{ matrix.arch }}.tar.gz
           if-no-files-found: error
 
   publish:
@@ -242,57 +251,71 @@ jobs:
       - linux-amd64
       - windows-amd64
       - macos
-
     runs-on: ubuntu-latest
 
     steps:
-      - name: Checkout
+      - name: Checkout release source
         uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
 
-      - name: Resolve version
-        run: echo "VERSION=${GITHUB_REF_NAME#v}" >> "$GITHUB_ENV"
+      - name: Resolve release version
+        shell: bash
+        run: |
+          VERSION="${GITHUB_REF_NAME#v}"
+          echo "VERSION=$VERSION" >> "$GITHUB_ENV"
 
-      - name: Download packages
+      - name: Download platform packages
         uses: actions/download-artifact@v8
         with:
+          pattern: zumbra-*
           path: release
           merge-multiple: true
 
-      - name: Generate checksums
+      - name: Add source archive and checksums
         shell: bash
         run: |
-          cd release
-          sha256sum \
-            zumbra-${VERSION}-linux-amd64.tar.gz \
-            zumbra-${VERSION}-windows-amd64.zip \
-            zumbra-${VERSION}-macos-arm64.tar.gz \
-            zumbra-${VERSION}-macos-amd64.tar.gz \
-            > SHA256SUMS
+          expected=(
+            "zumbra-${VERSION}-linux-amd64.tar.gz"
+            "zumbra-${VERSION}-windows-amd64.zip"
+            "zumbra-${VERSION}-macos-arm64.tar.gz"
+            "zumbra-${VERSION}-macos-amd64.tar.gz"
+          )
 
-          cat SHA256SUMS
+          for artifact in "${expected[@]}"; do
+            test -f "release/${artifact}" || {
+              echo "Missing release artifact: ${artifact}" >&2
+              exit 1
+            }
+          done
 
-      - name: Publish release
+          git archive \
+            --format=zip \
+            --prefix="Zumbra-${VERSION}/" \
+            -o "release/zumbra-${VERSION}-source.zip" \
+            "$GITHUB_SHA"
+
+          (
+            cd release
+            sha256sum * > SHA256SUMS
+            cat SHA256SUMS
+          )
+
+      - name: Create or update GitHub Release
         shell: bash
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          NOTES="docs/releases/${VERSION}.md"
+          notes="docs/releases/${VERSION}.md"
 
           if gh release view "$GITHUB_REF_NAME" >/dev/null 2>&1; then
-            gh release upload \
-              "$GITHUB_REF_NAME" \
-              release/* \
-              --clobber
-          elif [ -f "$NOTES" ]; then
-            gh release create \
-              "$GITHUB_REF_NAME" \
-              release/* \
+            gh release upload "$GITHUB_REF_NAME" release/* --clobber
+          elif [[ -f "$notes" ]]; then
+            gh release create "$GITHUB_REF_NAME" release/* \
               --title "Zumbra ${VERSION}" \
-              --notes-file "$NOTES"
+              --notes-file "$notes"
           else
-            gh release create \
-              "$GITHUB_REF_NAME" \
-              release/* \
+            gh release create "$GITHUB_REF_NAME" release/* \
               --title "Zumbra ${VERSION}" \
               --generate-notes
           fi
