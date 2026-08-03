@@ -3,6 +3,7 @@ package main
 import (
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"zumbra/tooling/docgen"
@@ -65,5 +66,38 @@ func TestZ18ToolingHelpCommands(t *testing.T) {
 				t.Fatalf("help returned an error: %v", err)
 			}
 		})
+	}
+}
+
+func TestZ18ReleaseDocumentation(t *testing.T) {
+	read := func(path string) string {
+		t.Helper()
+		content, err := os.ReadFile(path)
+		if err != nil {
+			t.Fatalf("required Z18 documentation %s is unavailable: %v", path, err)
+		}
+		return string(content)
+	}
+
+	readme := read("README.MD")
+	if !strings.Contains(readme, "docs/releases/0.14.0.md") {
+		t.Fatal("README.MD must link to the Zumbra 0.14.0 release notes")
+	}
+
+	releaseNotes := read(filepath.Join("docs", "releases", "0.14.0.md"))
+	for _, required := range []string{
+		"# Zumbra 0.14.0",
+		"Z18",
+		"scripts/test-z18-tooling.sh",
+		"scripts/check-repository-hygiene.sh",
+	} {
+		if !strings.Contains(releaseNotes, required) {
+			t.Fatalf("release notes must contain %q", required)
+		}
+	}
+
+	toolingGuide := read(filepath.Join("docs", "pt-BR", "tooling-z18.md"))
+	if !strings.Contains(toolingGuide, "0.14.0") || !strings.Contains(toolingGuide, "Z18") {
+		t.Fatal("Z18 tooling guide must identify the 0.14.0 milestone")
 	}
 }
