@@ -262,6 +262,16 @@ type structInfo struct {
 	Methods map[string]int
 }
 
+type structFieldCandidate struct {
+	StructID int
+	Field    int
+}
+
+type structMethodCandidate struct {
+	StructID   int
+	FunctionID int
+}
+
 type enumMember struct {
 	Name    string
 	Ordinal int
@@ -290,6 +300,12 @@ type generator struct {
 
 	scopes []map[string]string
 	errs   []Diagnostic
+
+	definitions     map[mir.ValueID]*mir.Instruction
+	valueTypes      map[mir.ValueID]*types.Type
+	uses            map[mir.ValueID]int
+	calleeUses      map[mir.ValueID]int
+	globalFunctions map[string]int
 }
 
 func Generate(module *mir.Module) (*Sources, []Diagnostic) {
@@ -297,14 +313,20 @@ func Generate(module *mir.Module) (*Sources, []Diagnostic) {
 		return nil, []Diagnostic{{Message: "cannot generate native code from a nil MIR module"}}
 	}
 	g := &generator{
-		module:         module,
-		structByName:   map[string]int{},
-		enumByName:     map[string]int{},
-		functions:      map[*mir.Function]int{},
-		functionByName: map[string]int{},
-		externByName:   map[string]int{},
-		globals:        map[string]string{},
+		module:          module,
+		structByName:    map[string]int{},
+		enumByName:      map[string]int{},
+		functions:       map[*mir.Function]int{},
+		functionByName:  map[string]int{},
+		externByName:    map[string]int{},
+		globals:         map[string]string{},
+		definitions:     map[mir.ValueID]*mir.Instruction{},
+		valueTypes:      map[mir.ValueID]*types.Type{},
+		uses:            map[mir.ValueID]int{},
+		calleeUses:      map[mir.ValueID]int{},
+		globalFunctions: map[string]int{},
 	}
+	g.collectValueMetadata()
 	g.collectMetadata()
 	g.validateModule()
 	if len(g.errs) != 0 {
@@ -410,6 +432,561 @@ func Generate(module *mir.Module) (*Sources, []Diagnostic) {
 	return &Sources{Program: g.out.Bytes(), Runtime: runtimeSource, Header: header}, nil
 }
 
+func (g *generator) collectValueMetadata() {
+	for _, function := range g.module.Functions {
+		g.collectRegionValues(function.Body)
+	}
+	g.collectRegionValues(g.module.Entry)
+}
+
+func (g *generator) collectRegionValues(region *mir.Region) {
+	if region == nil {
+		return
+	}
+	for _, instruction := range region.Instructions {
+		if instruction == nil {
+			continue
+		}
+		if instruction.Result != 0 {
+			g.definitions[instruction.Result] = instruction
+			g.valueTypes[instruction.Result] = instruction.Type
+		}
+		for index, argument := range instruction.Args {
+			if argument == 0 {
+				continue
+			}
+			g.uses[argument]++
+			if instruction.Op == mir.OpCall && index == 0 {
+				g.calleeUses[argument]++
+			}
+		}
+		for _, child := range instruction.Regions {
+			g.collectRegionValues(child)
+		}
+	}
+}
+
+func (g *generator) valueDefinition(value mir.ValueID) *mir.Instruction {
+	return g.definitions[value]
+}
+
+func (g *generator) valueType(value mir.ValueID) *types.Type {
+	return g.valueTypes[value]
+}
+
+func (g *generator) structInfoForValue(value mir.ValueID) (structInfo, bool) {
+	typeInfo := g.valueType(value)
+	if typeInfo == nil || typeInfo.Kind != types.Struct || typeInfo.Name == "" {
+		return structInfo{}, false
+	}
+	id, ok := g.structByName[typeInfo.Name]
+	if !ok || id < 0 || id >= len(g.structs) {
+		return structInfo{}, false
+	}
+	return g.structs[id], true
+}
+
+func (g *generator) structFieldIndex(value mir.ValueID, name string) (int, bool) {
+	info, ok := g.structInfoForValue(value)
+	if !ok {
+		return -1, false
+	}
+	for index, field := range info.Fields {
+		if field == name {
+			return index, true
+		}
+	}
+	return -1, false
+}
+
+func (g *generator) structMethodID(value mir.ValueID, name string) (int, bool) {
+	info, ok := g.structInfoForValue(value)
+	if !ok {
+		return -1, false
+	}
+	id, ok := info.Methods[name]
+	return id, ok
+}
+
+func (g *generator) structFieldCandidates(name string) []structFieldCandidate {
+	candidates := []structFieldCandidate{}
+	for _, info := range g.structs {
+		for field, fieldName := range info.Fields {
+			if fieldName == name {
+				candidates = append(candidates, structFieldCandidate{StructID: info.ID, Field: field})
+			}
+		}
+	}
+	return candidates
+}
+
+func (g *generator) structMethodCandidates(name string) []structMethodCandidate {
+	candidates := []structMethodCandidate{}
+	for _, info := range g.structs {
+		if functionID, ok := info.Methods[name]; ok {
+			candidates = append(candidates, structMethodCandidate{StructID: info.ID, FunctionID: functionID})
+		}
+	}
+	return candidates
+}
+
+func (g *generator) functionIsAsync(functionID int) bool {
+	return functionID >= 0 && functionID < len(g.module.Functions) && g.module.Functions[functionID] != nil && g.module.Functions[functionID].Async
+}
+
+func (g *generator) allMethodCandidatesSync(name string) bool {
+	candidates := g.structMethodCandidates(name)
+	if len(candidates) == 0 {
+		return false
+	}
+	for _, candidate := range candidates {
+		if g.functionIsAsync(candidate.FunctionID) {
+			return false
+		}
+	}
+	return true
+}
+
+func (g *generator) emitDynamicMethodCall(result string, instruction *mir.Instruction) bool {
+	if instruction == nil || len(instruction.Args) == 0 {
+		return false
+	}
+	callee := g.valueDefinition(instruction.Args[0])
+	if callee == nil || callee.Op != mir.OpField || len(callee.Args) != 1 {
+		return false
+	}
+	receiver := callee.Args[0]
+	if _, ok := g.structInfoForValue(receiver); ok {
+		return false
+	}
+	candidates := g.structMethodCandidates(callee.Name)
+	if len(candidates) == 0 || !g.allMethodCandidatesSync(callee.Name) {
+		return false
+	}
+	directValues := append([]mir.ValueID{receiver}, instruction.Args[1:]...)
+	g.emitValueArray("zdm", instruction.ID, directValues)
+	g.emitValueArray("zdf", instruction.ID, instruction.Args[1:])
+	g.line("ZValue %s = z_null();", result)
+	g.line("bool z_method_handled_%d = false;", instruction.ID)
+	g.line("if (%s.tag == ZV_STRUCT) {", valueName(receiver))
+	g.indent++
+	g.line("switch (%s.as.structure->type_id) {", valueName(receiver))
+	g.indent++
+	for _, candidate := range candidates {
+		g.line("case %d: %s = zf_%d(%s, %d); z_method_handled_%d = true; break;", candidate.StructID, result, candidate.FunctionID, arrayNameOrNull("zdm", instruction.ID, len(directValues)), len(directValues), instruction.ID)
+	}
+	g.line("default: break;")
+	g.indent--
+	g.line("}")
+	g.indent--
+	g.line("}")
+	g.line("if (!z_method_handled_%d) {", instruction.ID)
+	g.indent++
+	g.line("ZValue z_dynamic_method_%d = z_get_field(%s, %s);", instruction.ID, valueName(receiver), cString(callee.Name))
+	g.line("%s = z_call(z_dynamic_method_%d, %s, %d);", result, instruction.ID, arrayNameOrNull("zdf", instruction.ID, len(instruction.Args)-1), max(0, len(instruction.Args)-1))
+	g.indent--
+	g.line("}")
+	g.line("(void)%s;", result)
+	return true
+}
+
+func (g *generator) constString(value mir.ValueID) (string, bool) {
+	definition := g.valueDefinition(value)
+	if definition == nil || definition.Op != mir.OpConst {
+		return "", false
+	}
+	kind := types.Unknown
+	if definition.Type != nil {
+		kind = definition.Type.Kind
+	}
+	if kind == types.Unknown && definition.Meta != nil && definition.Meta["literal_kind"] == string(hir.StringKind) {
+		kind = types.String
+	}
+	if kind != types.String {
+		return "", false
+	}
+	return definition.Literal, true
+}
+
+func (g *generator) directCallTarget(instruction *mir.Instruction) (int, mir.ValueID, bool) {
+	if instruction == nil || len(instruction.Args) == 0 {
+		return -1, 0, false
+	}
+	callee := g.valueDefinition(instruction.Args[0])
+	if callee == nil {
+		return -1, 0, false
+	}
+	if callee.Op == mir.OpField && len(callee.Args) == 1 {
+		id, ok := g.structMethodID(callee.Args[0], callee.Name)
+		if ok && !g.functionIsAsync(id) {
+			return id, callee.Args[0], true
+		}
+	}
+	return -1, 0, false
+}
+
+func (g *generator) directBuiltinName(instruction *mir.Instruction) (string, bool) {
+	if instruction == nil || len(instruction.Args) == 0 {
+		return "", false
+	}
+	callee := g.valueDefinition(instruction.Args[0])
+	if callee == nil || callee.Op != mir.OpLoad || !builtinspec.Contains(callee.Name) {
+		return "", false
+	}
+	return callee.Name, true
+}
+
+func nativeBinaryOperator(operator string) (string, bool) {
+	switch operator {
+	case "+":
+		return "ZOP_ADD", true
+	case "-":
+		return "ZOP_SUB", true
+	case "*":
+		return "ZOP_MUL", true
+	case "/":
+		return "ZOP_DIV", true
+	case "%":
+		return "ZOP_MOD", true
+	case "**":
+		return "ZOP_POW", true
+	case "<":
+		return "ZOP_LT", true
+	case ">":
+		return "ZOP_GT", true
+	case "<=":
+		return "ZOP_LE", true
+	case ">=":
+		return "ZOP_GE", true
+	case "==":
+		return "ZOP_EQ", true
+	case "!=":
+		return "ZOP_NE", true
+	case "and", "&&":
+		return "ZOP_AND", true
+	case "or", "||":
+		return "ZOP_OR", true
+	case "band", "&":
+		return "ZOP_BAND", true
+	case "bor", "|":
+		return "ZOP_BOR", true
+	case "bxor", "^":
+		return "ZOP_BXOR", true
+	case "shl", "<<":
+		return "ZOP_SHL", true
+	case "shr", ">>":
+		return "ZOP_SHR", true
+	default:
+		return "", false
+	}
+}
+
+func signedIntegerKind(kind types.Kind) bool {
+	switch kind {
+	case types.Int, types.I8, types.I16, types.I32, types.I64:
+		return true
+	default:
+		return false
+	}
+}
+
+func unsignedIntegerKind(kind types.Kind) bool {
+	switch kind {
+	case types.U8, types.U16, types.U32, types.U64:
+		return true
+	default:
+		return false
+	}
+}
+
+func integerKind(kind types.Kind) bool {
+	return signedIntegerKind(kind) || unsignedIntegerKind(kind)
+}
+
+func cIntegerCast(kind types.Kind) string {
+	switch kind {
+	case types.U8:
+		return "uint8_t"
+	case types.U16:
+		return "uint16_t"
+	case types.U32:
+		return "uint32_t"
+	case types.U64:
+		return "uint64_t"
+	case types.I8:
+		return "int8_t"
+	case types.I16:
+		return "int16_t"
+	case types.I32:
+		return "int32_t"
+	case types.I64, types.Int:
+		return "int64_t"
+	default:
+		return ""
+	}
+}
+
+func fastValueExpression(kind types.Kind, expression string) (string, bool) {
+	switch kind {
+	case types.Int:
+		return fmt.Sprintf("((ZValue){.tag=ZV_INT,.kind=ZK_INT,.as.i=(int64_t)(%s)})", expression), true
+	case types.U8, types.U16, types.U32, types.U64:
+		cast := cIntegerCast(kind)
+		return fmt.Sprintf("((ZValue){.tag=ZV_UINT,.kind=%s,.as.u=(uint64_t)(%s)(%s)})", cKind(types.Simple(kind)), cast, expression), true
+	case types.I8, types.I16, types.I32, types.I64:
+		cast := cIntegerCast(kind)
+		return fmt.Sprintf("((ZValue){.tag=ZV_INT,.kind=%s,.as.i=(int64_t)(%s)(%s)})", cKind(types.Simple(kind)), cast, expression), true
+	case types.Bool:
+		return fmt.Sprintf("((ZValue){.tag=ZV_BOOL,.kind=ZK_BOOL,.as.b=(bool)(%s)})", expression), true
+	case types.Float:
+		return fmt.Sprintf("((ZValue){.tag=ZV_FLOAT,.kind=ZK_FLOAT,.as.f=(double)(%s)})", expression), true
+	default:
+		return "", false
+	}
+}
+
+func fastSignedExpression(name string) string {
+	return fmt.Sprintf("(%s).as.i", name)
+}
+
+func fastUnsignedExpression(name string) string {
+	return fmt.Sprintf("(%s).as.u", name)
+}
+
+func fastRawIntegerExpression(name string, kind types.Kind) string {
+	if unsignedIntegerKind(kind) {
+		return fastUnsignedExpression(name)
+	}
+	return fmt.Sprintf("(uint64_t)%s", fastSignedExpression(name))
+}
+
+func (g *generator) emitFastUnary(result string, instruction *mir.Instruction) bool {
+	if instruction == nil || len(instruction.Args) == 0 {
+		return false
+	}
+	valueName := argName(instruction.Args, 0)
+	switch instruction.Operator {
+	case "!", "not":
+		expression, _ := fastValueExpression(types.Bool, fmt.Sprintf("!z_truthy(%s)", valueName))
+		g.line("ZValue %s = %s;", result, expression)
+		return true
+	case "-":
+		kind := types.Unknown
+		if instruction.Type != nil {
+			kind = instruction.Type.Kind
+		}
+		if expression, ok := fastValueExpression(kind, fmt.Sprintf("-z_as_i64(%s)", valueName)); ok && integerKind(kind) {
+			g.line("ZValue %s = %s;", result, expression)
+			return true
+		}
+		if kind == types.Float {
+			expression, _ := fastValueExpression(types.Float, fmt.Sprintf("-z_as_f64(%s)", valueName))
+			g.line("ZValue %s = %s;", result, expression)
+			return true
+		}
+	case "bnot", "~":
+		kind := types.Unknown
+		if instruction.Type != nil {
+			kind = instruction.Type.Kind
+		}
+		if expression, ok := fastValueExpression(kind, fmt.Sprintf("~z_as_u64(%s)", valueName)); ok && integerKind(kind) {
+			g.line("ZValue %s = %s;", result, expression)
+			return true
+		}
+	}
+	return false
+}
+
+func (g *generator) emitCachedStringIndex(result string, instruction *mir.Instruction, key string) {
+	collection := argName(instruction.Args, 0)
+	id := instruction.ID
+	g.line("if (%s.tag != ZV_DICT) z_fatal(\"string-key lookup requires a dictionary\");", collection)
+	g.line("ZDict *zcd_%d = %s.as.dict;", id, collection)
+	g.line("static Z_GEN_THREAD_LOCAL ZDict *zcc_dict_%d = NULL;", id)
+	g.line("static Z_GEN_THREAD_LOCAL size_t zcc_index_%d = SIZE_MAX;", id)
+	g.line("static Z_GEN_THREAD_LOCAL size_t zcc_len_%d = SIZE_MAX;", id)
+	g.line("if (zcc_dict_%d != zcd_%d || (zcc_index_%d == SIZE_MAX && zcc_len_%d != zcd_%d->len)) {", id, id, id, id, id)
+	g.indent++
+	g.line("zcc_dict_%d = zcd_%d;", id, id)
+	g.line("zcc_len_%d = zcd_%d->len;", id, id)
+	g.line("zcc_index_%d = z_gen_dict_find_cstr(zcd_%d, %s);", id, id, cString(key))
+	g.indent--
+	g.line("}")
+	g.line("ZValue %s = zcc_index_%d == SIZE_MAX ? z_null() : zcd_%d->values[zcc_index_%d];", result, id, id, id)
+}
+
+func (g *generator) emitCachedStringSet(instruction *mir.Instruction, key string) {
+	collection := argName(instruction.Args, 0)
+	value := argName(instruction.Args, 2)
+	id := instruction.ID
+	g.line("if (%s.tag != ZV_DICT) z_fatal(\"string-key assignment requires a dictionary\");", collection)
+	g.line("ZDict *zsd_%d = %s.as.dict;", id, collection)
+	g.line("static Z_GEN_THREAD_LOCAL ZDict *zsc_dict_%d = NULL;", id)
+	g.line("static Z_GEN_THREAD_LOCAL size_t zsc_index_%d = SIZE_MAX;", id)
+	g.line("static Z_GEN_THREAD_LOCAL size_t zsc_len_%d = SIZE_MAX;", id)
+	g.line("if (zsc_dict_%d != zsd_%d || (zsc_index_%d == SIZE_MAX && zsc_len_%d != zsd_%d->len)) {", id, id, id, id, id)
+	g.indent++
+	g.line("zsc_dict_%d = zsd_%d;", id, id)
+	g.line("zsc_len_%d = zsd_%d->len;", id, id)
+	g.line("zsc_index_%d = z_gen_dict_find_cstr(zsd_%d, %s);", id, id, cString(key))
+	g.indent--
+	g.line("}")
+	g.line("if (zsc_index_%d != SIZE_MAX) {", id)
+	g.indent++
+	g.line("zsd_%d->values[zsc_index_%d] = %s;", id, id, value)
+	g.indent--
+	g.line("} else {")
+	g.indent++
+	g.line("z_set_index_cstr(%s, %s, %s);", collection, cString(key), value)
+	g.line("zsc_dict_%d = zsd_%d;", id, id)
+	g.line("zsc_len_%d = zsd_%d->len;", id, id)
+	g.line("zsc_index_%d = z_gen_dict_find_cstr(zsd_%d, %s);", id, id, cString(key))
+	g.indent--
+	g.line("}")
+}
+
+func (g *generator) emitFastBinary(result string, instruction *mir.Instruction) bool {
+	if instruction == nil || len(instruction.Args) < 2 {
+		return false
+	}
+	leftType := g.valueType(instruction.Args[0])
+	rightType := g.valueType(instruction.Args[1])
+	if leftType == nil || rightType == nil {
+		return false
+	}
+	leftName := argName(instruction.Args, 0)
+	rightName := argName(instruction.Args, 1)
+	leftKind := leftType.Kind
+	rightKind := rightType.Kind
+
+	if (instruction.Operator == "and" || instruction.Operator == "&&" || instruction.Operator == "or" || instruction.Operator == "||") && leftKind == types.Bool && rightKind == types.Bool {
+		op := "&&"
+		if instruction.Operator == "or" || instruction.Operator == "||" {
+			op = "||"
+		}
+		expression, _ := fastValueExpression(types.Bool, fmt.Sprintf("(%s).as.b %s (%s).as.b", leftName, op, rightName))
+		g.line("ZValue %s = %s;", result, expression)
+		return true
+	}
+
+	if instruction.Operator == "==" || instruction.Operator == "!=" {
+		operator := instruction.Operator
+		if leftKind == types.Bool && rightKind == types.Bool {
+			expression, _ := fastValueExpression(types.Bool, fmt.Sprintf("(%s).as.b %s (%s).as.b", leftName, operator, rightName))
+			g.line("ZValue %s = %s;", result, expression)
+			return true
+		}
+		if integerKind(leftKind) && integerKind(rightKind) {
+			left := fastSignedExpression(leftName)
+			right := fastSignedExpression(rightName)
+			if unsignedIntegerKind(leftKind) || unsignedIntegerKind(rightKind) {
+				left = fastRawIntegerExpression(leftName, leftKind)
+				right = fastRawIntegerExpression(rightName, rightKind)
+			}
+			expression, _ := fastValueExpression(types.Bool, fmt.Sprintf("%s %s %s", left, operator, right))
+			g.line("ZValue %s = %s;", result, expression)
+			return true
+		}
+	}
+
+	if instruction.Operator == "<" || instruction.Operator == ">" || instruction.Operator == "<=" || instruction.Operator == ">=" {
+		if integerKind(leftKind) && integerKind(rightKind) && signedIntegerKind(leftKind) == signedIntegerKind(rightKind) {
+			left := fastSignedExpression(leftName)
+			right := fastSignedExpression(rightName)
+			if unsignedIntegerKind(leftKind) {
+				left = fastUnsignedExpression(leftName)
+				right = fastUnsignedExpression(rightName)
+			}
+			expression, _ := fastValueExpression(types.Bool, fmt.Sprintf("%s %s %s", left, instruction.Operator, right))
+			g.line("ZValue %s = %s;", result, expression)
+			return true
+		}
+	}
+
+	resultKind := types.Unknown
+	if instruction.Type != nil {
+		resultKind = instruction.Type.Kind
+	}
+	if !integerKind(resultKind) || !integerKind(leftKind) || !integerKind(rightKind) {
+		return false
+	}
+	operator := ""
+	switch instruction.Operator {
+	case "+", "-", "*":
+		operator = instruction.Operator
+	case "band", "&":
+		operator = "&"
+	case "bor", "|":
+		operator = "|"
+	case "bxor", "^":
+		operator = "^"
+	default:
+		return false
+	}
+	left := fastRawIntegerExpression(leftName, leftKind)
+	right := fastRawIntegerExpression(rightName, rightKind)
+	expression, ok := fastValueExpression(resultKind, fmt.Sprintf("%s %s %s", left, operator, right))
+	if !ok {
+		return false
+	}
+	g.line("ZValue %s = %s;", result, expression)
+	return true
+}
+
+func nativeConversionKind(name string) (string, bool) {
+	switch name {
+	case "toInt":
+		return "ZK_INT", true
+	case "toFloat":
+		return "ZK_FLOAT", true
+	case "toBool":
+		return "ZK_BOOL", true
+	case "u8":
+		return "ZK_U8", true
+	case "u16":
+		return "ZK_U16", true
+	case "u32":
+		return "ZK_U32", true
+	case "u64":
+		return "ZK_U64", true
+	case "i8":
+		return "ZK_I8", true
+	case "i16":
+		return "ZK_I16", true
+	case "i32":
+		return "ZK_I32", true
+	case "i64":
+		return "ZK_I64", true
+	default:
+		return "", false
+	}
+}
+
+func (g *generator) emitDirectBuiltinCall(result string, instruction *mir.Instruction) bool {
+	name, ok := g.directBuiltinName(instruction)
+	if !ok {
+		return false
+	}
+	arguments := instruction.Args[1:]
+	if kind, conversion := nativeConversionKind(name); conversion && len(arguments) == 1 {
+		g.line("ZValue %s = z_convert(%s, %s);", result, argName(arguments, 0), kind)
+		return true
+	}
+	switch name {
+	case "sizeOf":
+		if len(arguments) == 1 {
+			g.line("ZValue %s = z_int((int64_t)z_size_of(%s));", result, argName(arguments, 0))
+			return true
+		}
+	case "bytes":
+		if len(arguments) == 1 {
+			g.line("ZValue %s = z_bytes((size_t)z_as_u64(%s));", result, argName(arguments, 0))
+			return true
+		}
+	}
+	return false
+}
+
 func (g *generator) collectMetadata() {
 	for _, declaration := range g.module.Declarations {
 		switch declaration.Op {
@@ -459,8 +1036,19 @@ func (g *generator) collectMetadata() {
 		g.structs[structID].Methods[function.Name] = g.functions[function]
 	}
 	for _, instruction := range g.module.Entry.Instructions {
-		if instruction.Op == mir.OpDeclare {
-			g.globals[instruction.Name] = "zg_" + sanitize(instruction.Name)
+		if instruction.Op != mir.OpDeclare {
+			continue
+		}
+		g.globals[instruction.Name] = "zg_" + sanitize(instruction.Name)
+		if len(instruction.Args) == 0 {
+			continue
+		}
+		definition := g.valueDefinition(instruction.Args[0])
+		if definition == nil || definition.Op != mir.OpFunctionRef {
+			continue
+		}
+		if id := g.functionIDForRef(definition); id >= 0 {
+			g.globalFunctions[instruction.Name] = id
 		}
 	}
 }
@@ -508,6 +1096,7 @@ func (g *generator) emitProgram() {
 	g.line("#include <string.h>")
 	g.line("_Static_assert(ZUMBRA_NATIVE_ABI_VERSION == 7u, \"unsupported Zumbra native ABI\");")
 	g.line("")
+	g.emitGeneratedFastRuntime()
 	g.emitFFIDeclarations()
 	for _, name := range sortedKeys(g.globals) {
 		g.line("static ZValue %s;", g.globals[name])
@@ -527,6 +1116,81 @@ func (g *generator) emitProgram() {
 	}
 	g.emitDispatch()
 	g.emitMain()
+}
+
+func (g *generator) emitGeneratedFastRuntime() {
+	// Native programs execute these tiny value operations in extremely hot loops.
+	// Keeping them in the generated translation unit lets the C optimizer inline
+	// and constant-fold them while the exported runtime ABI remains unchanged.
+	g.line("#if defined(__GNUC__) || defined(__clang__)")
+	g.line("#define Z_GEN_UNUSED __attribute__((unused))")
+	g.line("#else")
+	g.line("#define Z_GEN_UNUSED")
+	g.line("#endif")
+	g.line("#if defined(_MSC_VER)")
+	g.line("#define Z_GEN_THREAD_LOCAL __declspec(thread)")
+	g.line("#else")
+	g.line("#define Z_GEN_THREAD_LOCAL _Thread_local")
+	g.line("#endif")
+	g.line("static inline Z_GEN_UNUSED ZValue z_gen_value(ZTag tag, ZKind kind) { ZValue value = {0}; value.tag = tag; value.kind = kind; return value; }")
+	g.line("static inline Z_GEN_UNUSED ZValue z_gen_null(void) { return z_gen_value(ZV_NULL, ZK_NULL); }")
+	g.line("static inline Z_GEN_UNUSED ZValue z_gen_int(int64_t value) { ZValue result = z_gen_value(ZV_INT, ZK_INT); result.as.i = value; return result; }")
+	g.line("static inline Z_GEN_UNUSED ZValue z_gen_uint(uint64_t value, ZKind kind) { ZValue result = z_gen_value(ZV_UINT, kind); result.as.u = value; return result; }")
+	g.line("static inline Z_GEN_UNUSED ZValue z_gen_signed(int64_t value, ZKind kind) { ZValue result = z_gen_value(ZV_INT, kind); result.as.i = value; return result; }")
+	g.line("static inline Z_GEN_UNUSED ZValue z_gen_float(double value) { ZValue result = z_gen_value(ZV_FLOAT, ZK_FLOAT); result.as.f = value; return result; }")
+	g.line("static inline Z_GEN_UNUSED ZValue z_gen_bool(bool value) { ZValue result = z_gen_value(ZV_BOOL, ZK_BOOL); result.as.b = value; return result; }")
+	g.line("static inline Z_GEN_UNUSED ZValue z_gen_string_static(const char *value) { ZValue result = z_gen_value(ZV_STRING, ZK_STRING); result.as.s = value == NULL ? \"\" : value; return result; }")
+	g.line("static inline Z_GEN_UNUSED ZValue z_gen_function(int id) { ZValue result = z_gen_value(ZV_FUNCTION, ZK_FUNCTION); result.as.id = id; return result; }")
+	g.line("static inline Z_GEN_UNUSED ZValue z_gen_builtin(const char *name) { ZValue result = z_gen_value(ZV_BUILTIN, ZK_FUNCTION); result.as.s = name; return result; }")
+	g.line("static inline Z_GEN_UNUSED ZValue z_gen_struct_type(int id) { ZValue result = z_gen_value(ZV_STRUCT_TYPE, ZK_STRUCT); result.as.id = id; return result; }")
+	g.line("static inline Z_GEN_UNUSED ZValue z_gen_enum_type(int id) { ZValue result = z_gen_value(ZV_ENUM_TYPE, ZK_ENUM); result.as.id = id; return result; }")
+	g.line("static inline Z_GEN_UNUSED ZValue z_gen_enum(int type_id, int ordinal) { ZValue result = z_gen_value(ZV_ENUM, ZK_ENUM); result.as.id = (type_id << 16) | (ordinal & 0xffff); return result; }")
+	g.line("static inline Z_GEN_UNUSED bool z_gen_is_numeric(ZValue value) { return value.tag == ZV_INT || value.tag == ZV_UINT || value.tag == ZV_FLOAT || value.tag == ZV_BOOL; }")
+	g.line("static inline Z_GEN_UNUSED int64_t z_gen_as_i64(ZValue value) { switch (value.tag) { case ZV_INT: return value.as.i; case ZV_UINT: return (int64_t)value.as.u; case ZV_FLOAT: return (int64_t)value.as.f; case ZV_BOOL: return value.as.b ? 1 : 0; default: z_fatal(\"expected numeric value\"); return 0; } }")
+	g.line("static inline Z_GEN_UNUSED uint64_t z_gen_as_u64(ZValue value) { switch (value.tag) { case ZV_INT: return (uint64_t)value.as.i; case ZV_UINT: return value.as.u; case ZV_FLOAT: return (uint64_t)value.as.f; case ZV_BOOL: return value.as.b ? 1u : 0u; default: z_fatal(\"expected numeric value\"); return 0; } }")
+	g.line("static inline Z_GEN_UNUSED double z_gen_as_f64(ZValue value) { switch (value.tag) { case ZV_INT: return (double)value.as.i; case ZV_UINT: return (double)value.as.u; case ZV_FLOAT: return value.as.f; case ZV_BOOL: return value.as.b ? 1.0 : 0.0; default: z_fatal(\"expected numeric value\"); return 0.0; } }")
+	g.line("static inline Z_GEN_UNUSED bool z_gen_truthy(ZValue value) { switch (value.tag) { case ZV_NULL: return false; case ZV_BOOL: return value.as.b; case ZV_INT: return value.as.i != 0; case ZV_UINT: return value.as.u != 0; case ZV_FLOAT: return value.as.f != 0.0; case ZV_STRING: return value.as.s != NULL && value.as.s[0] != '\\0'; case ZV_ARRAY: return value.as.array != NULL && value.as.array->len != 0; case ZV_DICT: return value.as.dict != NULL && value.as.dict->len != 0; case ZV_BUFFER: return value.as.buffer != NULL && value.as.buffer->len != 0; default: return true; } }")
+	g.line("static inline Z_GEN_UNUSED unsigned z_gen_kind_bits(ZKind kind) { switch (kind) { case ZK_U8: case ZK_I8: return 8; case ZK_U16: case ZK_I16: return 16; case ZK_U32: case ZK_I32: return 32; case ZK_U64: case ZK_I64: return 64; default: return 64; } }")
+	g.line("static inline Z_GEN_UNUSED bool z_gen_kind_signed(ZKind kind) { return kind == ZK_I8 || kind == ZK_I16 || kind == ZK_I32 || kind == ZK_I64 || kind == ZK_INT; }")
+	g.line("static inline Z_GEN_UNUSED bool z_gen_kind_fixed(ZKind kind) { return kind >= ZK_U8 && kind <= ZK_I64; }")
+	g.line("static inline Z_GEN_UNUSED uint64_t z_gen_mask(unsigned bits) { return bits >= 64 ? UINT64_MAX : ((UINT64_C(1) << bits) - UINT64_C(1)); }")
+	g.line("static inline Z_GEN_UNUSED ZValue z_gen_from_raw(uint64_t raw, ZKind kind) { if (!z_gen_kind_fixed(kind)) return z_gen_int((int64_t)raw); unsigned bits = z_gen_kind_bits(kind); raw &= z_gen_mask(bits); if (!z_gen_kind_signed(kind)) return z_gen_uint(raw, kind); if (bits < 64 && (raw & (UINT64_C(1) << (bits - 1))) != 0) raw |= ~z_gen_mask(bits); return z_gen_signed((int64_t)raw, kind); }")
+	g.line("static inline Z_GEN_UNUSED bool z_gen_equal(ZValue left, ZValue right) { if (z_gen_is_numeric(left) && z_gen_is_numeric(right)) { if (left.tag == ZV_FLOAT || right.tag == ZV_FLOAT) return z_gen_as_f64(left) == z_gen_as_f64(right); if (left.tag == ZV_UINT || right.tag == ZV_UINT) return z_gen_as_u64(left) == z_gen_as_u64(right); return z_gen_as_i64(left) == z_gen_as_i64(right); } if (left.tag != right.tag) return false; switch (left.tag) { case ZV_NULL: return true; case ZV_BOOL: return left.as.b == right.as.b; case ZV_STRING: return strcmp(left.as.s, right.as.s) == 0; case ZV_ENUM: return left.as.id == right.as.id; case ZV_STRUCT: return left.as.structure == right.as.structure; case ZV_ARRAY: return left.as.array == right.as.array; case ZV_DICT: return left.as.dict == right.as.dict; case ZV_BUFFER: return left.as.buffer == right.as.buffer; case ZV_FUNCTION: return left.as.id == right.as.id; default: return false; } }")
+	g.line("static inline Z_GEN_UNUSED ZValue z_gen_convert(ZValue value, ZKind target) { switch (target) { case ZK_INT: return z_gen_int(z_gen_as_i64(value)); case ZK_FLOAT: return z_gen_float(z_gen_as_f64(value)); case ZK_BOOL: return z_gen_bool(z_gen_truthy(value)); case ZK_U8: case ZK_U16: case ZK_U32: case ZK_U64: case ZK_I8: case ZK_I16: case ZK_I32: case ZK_I64: return z_gen_from_raw(z_gen_as_u64(value), target); default: return value; } }")
+	g.line("static inline Z_GEN_UNUSED ZValue z_gen_binary_op(ZBinaryOp op, ZValue left, ZValue right, ZKind target) { if (op == ZOP_AND) return z_gen_bool(z_gen_truthy(left) && z_gen_truthy(right)); if (op == ZOP_OR) return z_gen_bool(z_gen_truthy(left) || z_gen_truthy(right)); if (op == ZOP_EQ) return z_gen_bool(z_gen_equal(left, right)); if (op == ZOP_NE) return z_gen_bool(!z_gen_equal(left, right)); if (!z_gen_is_numeric(left) || !z_gen_is_numeric(right) || left.tag == ZV_FLOAT || right.tag == ZV_FLOAT || op == ZOP_POW) return z_binary_op(op, left, right, target); if (op == ZOP_LT) return z_gen_bool(z_gen_as_f64(left) < z_gen_as_f64(right)); if (op == ZOP_GT) return z_gen_bool(z_gen_as_f64(left) > z_gen_as_f64(right)); if (op == ZOP_LE) return z_gen_bool(z_gen_as_f64(left) <= z_gen_as_f64(right)); if (op == ZOP_GE) return z_gen_bool(z_gen_as_f64(left) >= z_gen_as_f64(right)); ZKind numeric_kind = z_gen_kind_fixed(target) ? target : (z_gen_kind_fixed(left.kind) ? left.kind : (z_gen_kind_fixed(right.kind) ? right.kind : ZK_INT)); uint64_t a = z_gen_as_u64(left), b = z_gen_as_u64(right), raw = 0; switch (op) { case ZOP_ADD: raw = a + b; break; case ZOP_SUB: raw = a - b; break; case ZOP_MUL: raw = a * b; break; case ZOP_DIV: if (b == 0) z_fatal(\"division by zero\"); if (z_gen_kind_signed(numeric_kind)) return z_gen_from_raw((uint64_t)(z_gen_as_i64(left) / z_gen_as_i64(right)), numeric_kind); raw = a / b; break; case ZOP_MOD: if (b == 0) z_fatal(\"division by zero\"); if (z_gen_kind_signed(numeric_kind)) return z_gen_from_raw((uint64_t)(z_gen_as_i64(left) %% z_gen_as_i64(right)), numeric_kind); raw = a %% b; break; case ZOP_BAND: raw = a & b; break; case ZOP_BOR: raw = a | b; break; case ZOP_BXOR: raw = a ^ b; break; case ZOP_SHL: { unsigned bits = z_gen_kind_fixed(numeric_kind) ? z_gen_kind_bits(numeric_kind) : 64; if (b >= bits) z_fatal(\"shift count must be smaller than %%u\", bits); raw = a << b; break; } case ZOP_SHR: { unsigned bits = z_gen_kind_fixed(numeric_kind) ? z_gen_kind_bits(numeric_kind) : 64; if (b >= bits) z_fatal(\"shift count must be smaller than %%u\", bits); if (z_gen_kind_signed(numeric_kind)) return z_gen_from_raw((uint64_t)(z_gen_as_i64(left) >> b), numeric_kind); raw = a >> b; break; } default: return z_binary_op(op, left, right, target); } return z_gen_from_raw(raw, numeric_kind); }")
+	g.line("static inline Z_GEN_UNUSED uint64_t z_gen_hash_cstr(const char *text) { const unsigned char *cursor = (const unsigned char *)(text == NULL ? \"\" : text); uint64_t hash = UINT64_C(1469598103934665603); while (*cursor != 0) { hash ^= (uint64_t)*cursor++; hash *= UINT64_C(1099511628211); } return hash; }")
+	g.line("static inline Z_GEN_UNUSED size_t z_gen_dict_find_cstr(const ZDict *dict, const char *key) { if (dict == NULL || dict->len == 0) return SIZE_MAX; const char *wanted = key == NULL ? \"\" : key; if (dict->hash_cap != 0 && dict->hash_slots != NULL) { size_t slot = (size_t)z_gen_hash_cstr(wanted) & (dict->hash_cap - 1u); size_t start = slot; while (dict->hash_slots[slot] != 0) { size_t index = dict->hash_slots[slot] - 1u; ZValue candidate = dict->keys[index]; if (candidate.tag == ZV_STRING && strcmp(candidate.as.s, wanted) == 0) return index; slot = (slot + 1u) & (dict->hash_cap - 1u); if (slot == start) break; } return SIZE_MAX; } for (size_t index = 0; index < dict->len; index++) { ZValue candidate = dict->keys[index]; if (candidate.tag == ZV_STRING && strcmp(candidate.as.s, wanted) == 0) return index; } return SIZE_MAX; }")
+	g.line("static inline Z_GEN_UNUSED ZValue z_gen_buffer_get(ZBuffer *buffer, size_t position) { if (buffer == NULL || position >= buffer->len) z_fatal(\"buffer index out of range\"); uint8_t *address = (uint8_t *)buffer->data + position * buffer->elem_size; uint64_t raw = 0; memcpy(&raw, address, buffer->elem_size); return z_gen_from_raw(raw, buffer->elem_kind); }")
+	g.line("static inline Z_GEN_UNUSED void z_gen_buffer_set(ZBuffer *buffer, size_t position, ZValue value) { if (buffer == NULL || position >= buffer->len) z_fatal(\"buffer index out of range\"); uint64_t raw = z_gen_as_u64(z_gen_convert(value, buffer->elem_kind)); uint8_t *address = (uint8_t *)buffer->data + position * buffer->elem_size; memcpy(address, &raw, buffer->elem_size); }")
+	g.line("static inline Z_GEN_UNUSED ZValue z_gen_index_at(ZValue collection, size_t position) { if (collection.tag == ZV_ARRAY) { if (position >= collection.as.array->len) z_fatal(\"array index out of range\"); return collection.as.array->items[position]; } if (collection.tag == ZV_BUFFER) return z_gen_buffer_get(collection.as.buffer, position); return z_index_at(collection, position); }")
+	g.line("static inline Z_GEN_UNUSED ZValue z_gen_index(ZValue collection, ZValue index) { if (collection.tag == ZV_ARRAY || collection.tag == ZV_BUFFER) { int64_t position = z_gen_as_i64(index); if (position < 0) z_fatal(\"index cannot be negative\"); return z_gen_index_at(collection, (size_t)position); } return z_index(collection, index); }")
+	g.line("static inline Z_GEN_UNUSED void z_gen_set_index_at(ZValue collection, size_t position, ZValue value) { if (collection.tag == ZV_ARRAY) { if (position >= collection.as.array->len) z_fatal(\"array index out of range\"); collection.as.array->items[position] = value; return; } if (collection.tag == ZV_BUFFER) { z_gen_buffer_set(collection.as.buffer, position, value); return; } z_set_index_at(collection, position, value); }")
+	g.line("static inline Z_GEN_UNUSED void z_gen_set_index(ZValue collection, ZValue index, ZValue value) { if (collection.tag == ZV_ARRAY || collection.tag == ZV_BUFFER) { int64_t position = z_gen_as_i64(index); if (position < 0) z_fatal(\"index cannot be negative\"); z_gen_set_index_at(collection, (size_t)position, value); return; } z_set_index(collection, index, value); }")
+	g.line("#define z_null() z_gen_null()")
+	g.line("#define z_int(value) z_gen_int(value)")
+	g.line("#define z_uint(value, kind) z_gen_uint((value), (kind))")
+	g.line("#define z_signed(value, kind) z_gen_signed((value), (kind))")
+	g.line("#define z_float(value) z_gen_float(value)")
+	g.line("#define z_bool(value) z_gen_bool(value)")
+	g.line("#define z_string_static(value) z_gen_string_static(value)")
+	g.line("#define z_function(id) z_gen_function(id)")
+	g.line("#define z_builtin(name) z_gen_builtin(name)")
+	g.line("#define z_struct_type(id) z_gen_struct_type(id)")
+	g.line("#define z_enum_type(id) z_gen_enum_type(id)")
+	g.line("#define z_enum(type_id, ordinal) z_gen_enum((type_id), (ordinal))")
+	g.line("#define z_as_i64(value) z_gen_as_i64(value)")
+	g.line("#define z_as_u64(value) z_gen_as_u64(value)")
+	g.line("#define z_as_f64(value) z_gen_as_f64(value)")
+	g.line("#define z_as_bool(value) z_gen_truthy(value)")
+	g.line("#define z_truthy(value) z_gen_truthy(value)")
+	g.line("#define z_equal(left, right) z_gen_equal((left), (right))")
+	g.line("#define z_convert(value, target) z_gen_convert((value), (target))")
+	g.line("#define z_binary_op(op, left, right, target) z_gen_binary_op((op), (left), (right), (target))")
+	g.line("#define z_index_at(collection, position) z_gen_index_at((collection), (position))")
+	g.line("#define z_index(collection, index) z_gen_index((collection), (index))")
+	g.line("#define z_set_index_at(collection, position, value) z_gen_set_index_at((collection), (position), (value))")
+	g.line("#define z_set_index(collection, index, value) z_gen_set_index((collection), (index), (value))")
+	g.line("")
 }
 
 func (g *generator) emitMetadataFunctions() {
@@ -822,9 +1486,18 @@ func (g *generator) emitInstruction(instruction *mir.Instruction, rootEntry bool
 		}
 		g.line("%s = %s;", binding, argName(instruction.Args, 0))
 	case mir.OpUnary:
-		g.line("ZValue %s = z_unary(%s, %s, %s);", result, cString(instruction.Operator), argName(instruction.Args, 0), cKind(instruction.Type))
+		if !g.emitFastUnary(result, instruction) {
+			g.line("ZValue %s = z_unary(%s, %s, %s);", result, cString(instruction.Operator), argName(instruction.Args, 0), cKind(instruction.Type))
+		}
 	case mir.OpBinary:
-		g.line("ZValue %s = z_binary(%s, %s, %s, %s);", result, cString(instruction.Operator), argName(instruction.Args, 0), argName(instruction.Args, 1), cKind(instruction.Type))
+		if g.emitFastBinary(result, instruction) {
+			break
+		}
+		if operator, ok := nativeBinaryOperator(instruction.Operator); ok {
+			g.line("ZValue %s = z_binary_op(%s, %s, %s, %s);", result, operator, argName(instruction.Args, 0), argName(instruction.Args, 1), cKind(instruction.Type))
+		} else {
+			g.line("ZValue %s = z_binary(%s, %s, %s, %s);", result, cString(instruction.Operator), argName(instruction.Args, 0), argName(instruction.Args, 1), cKind(instruction.Type))
+		}
 	case mir.OpFunctionRef:
 		functionID := g.functionIDForRef(instruction)
 		if functionID < 0 {
@@ -839,8 +1512,23 @@ func (g *generator) emitInstruction(instruction *mir.Instruction, rootEntry bool
 	case mir.OpAwait:
 		g.line("ZValue %s = z_task_await(%s);", result, argName(instruction.Args, 0))
 	case mir.OpCall:
-		g.emitValueArray("za", instruction.ID, instruction.Args[1:])
-		g.line("ZValue %s = z_call(%s, %s, %d);", result, argName(instruction.Args, 0), arrayNameOrNull("za", instruction.ID, len(instruction.Args)-1), max(0, len(instruction.Args)-1))
+		if g.emitDirectBuiltinCall(result, instruction) {
+			break
+		}
+		if g.emitDynamicMethodCall(result, instruction) {
+			break
+		}
+		if functionID, receiver, ok := g.directCallTarget(instruction); ok {
+			values := append([]mir.ValueID{}, instruction.Args[1:]...)
+			if receiver != 0 {
+				values = append([]mir.ValueID{receiver}, values...)
+			}
+			g.emitValueArray("za", instruction.ID, values)
+			g.line("ZValue %s = zf_%d(%s, %d);", result, functionID, arrayNameOrNull("za", instruction.ID, len(values)), len(values))
+		} else {
+			g.emitValueArray("za", instruction.ID, instruction.Args[1:])
+			g.line("ZValue %s = z_call(%s, %s, %d);", result, argName(instruction.Args, 0), arrayNameOrNull("za", instruction.ID, len(instruction.Args)-1), max(0, len(instruction.Args)-1))
+		}
 	case mir.OpArray:
 		g.emitValueArray("za", instruction.ID, instruction.Args)
 		g.line("ZValue %s = z_array_from(%s, %d);", result, arrayNameOrNull("za", instruction.ID, len(instruction.Args)), len(instruction.Args))
@@ -850,13 +1538,74 @@ func (g *generator) emitInstruction(instruction *mir.Instruction, rootEntry bool
 		g.emitValueArray("zd", instruction.ID, instruction.Args)
 		g.line("ZValue %s = z_dict_from(%s, %d);", result, arrayNameOrNull("zd", instruction.ID, len(instruction.Args)), len(instruction.Args))
 	case mir.OpIndex:
-		g.line("ZValue %s = z_index(%s, %s);", result, argName(instruction.Args, 0), argName(instruction.Args, 1))
+		if key, ok := g.constString(instruction.Args[1]); ok {
+			g.emitCachedStringIndex(result, instruction, key)
+		} else if collectionType := g.valueType(instruction.Args[0]); collectionType != nil && (collectionType.Kind == types.Array || collectionType.Kind == types.ByteArray || collectionType.Kind == types.TypedArray || collectionType.Kind == types.Slice) {
+			g.line("ZValue %s = z_index_at(%s, (size_t)z_as_u64(%s));", result, argName(instruction.Args, 0), argName(instruction.Args, 1))
+		} else {
+			g.line("ZValue %s = z_index(%s, %s);", result, argName(instruction.Args, 0), argName(instruction.Args, 1))
+		}
 	case mir.OpSetIndex:
-		g.line("z_set_index(%s, %s, %s);", argName(instruction.Args, 0), argName(instruction.Args, 1), argName(instruction.Args, 2))
+		if key, ok := g.constString(instruction.Args[1]); ok {
+			g.emitCachedStringSet(instruction, key)
+		} else if collectionType := g.valueType(instruction.Args[0]); collectionType != nil && (collectionType.Kind == types.Array || collectionType.Kind == types.ByteArray || collectionType.Kind == types.TypedArray || collectionType.Kind == types.Slice) {
+			g.line("z_set_index_at(%s, (size_t)z_as_u64(%s), %s);", argName(instruction.Args, 0), argName(instruction.Args, 1), argName(instruction.Args, 2))
+		} else {
+			g.line("z_set_index(%s, %s, %s);", argName(instruction.Args, 0), argName(instruction.Args, 1), argName(instruction.Args, 2))
+		}
 	case mir.OpField:
-		g.line("ZValue %s = z_get_field(%s, %s);", result, argName(instruction.Args, 0), cString(instruction.Name))
+		if field, ok := g.structFieldIndex(instruction.Args[0], instruction.Name); ok {
+			// The MIR type proves this value is the expected struct. Read the indexed
+			// field directly so hot typed code does not pay tag/range checks millions
+			// of times per second. Dynamic field access keeps the checked runtime path.
+			g.line("ZValue %s = %s.as.structure->fields[%d];", result, argName(instruction.Args, 0), field)
+		} else if g.uses[instruction.Result] > 0 && g.uses[instruction.Result] == g.calleeUses[instruction.Result] && g.allMethodCandidatesSync(instruction.Name) {
+			// Direct static/dynamic method-call emission consumes the receiver directly.
+			// Avoid materializing a bound-method value in hot loops such as CPU.step().
+			g.line("ZValue %s = z_null();", result)
+		} else if candidates := g.structFieldCandidates(instruction.Name); len(candidates) > 0 {
+			object := argName(instruction.Args, 0)
+			g.line("ZValue %s = z_null();", result)
+			g.line("bool z_field_handled_%d = false;", instruction.ID)
+			g.line("if (%s.tag == ZV_STRUCT) {", object)
+			g.indent++
+			g.line("switch (%s.as.structure->type_id) {", object)
+			g.indent++
+			for _, candidate := range candidates {
+				g.line("case %d: %s = %s.as.structure->fields[%d]; z_field_handled_%d = true; break;", candidate.StructID, result, object, candidate.Field, instruction.ID)
+			}
+			g.line("default: break;")
+			g.indent--
+			g.line("}")
+			g.indent--
+			g.line("}")
+			g.line("if (!z_field_handled_%d) %s = z_get_field(%s, %s);", instruction.ID, result, object, cString(instruction.Name))
+		} else {
+			g.line("ZValue %s = z_get_field(%s, %s);", result, argName(instruction.Args, 0), cString(instruction.Name))
+		}
 	case mir.OpSetField:
-		g.line("z_set_field(%s, %s, %s);", argName(instruction.Args, 0), cString(instruction.Name), argName(instruction.Args, 1))
+		if field, ok := g.structFieldIndex(instruction.Args[0], instruction.Name); ok {
+			g.line("%s.as.structure->fields[%d] = %s;", argName(instruction.Args, 0), field, argName(instruction.Args, 1))
+		} else if candidates := g.structFieldCandidates(instruction.Name); len(candidates) > 0 {
+			object := argName(instruction.Args, 0)
+			value := argName(instruction.Args, 1)
+			g.line("bool z_set_field_handled_%d = false;", instruction.ID)
+			g.line("if (%s.tag == ZV_STRUCT) {", object)
+			g.indent++
+			g.line("switch (%s.as.structure->type_id) {", object)
+			g.indent++
+			for _, candidate := range candidates {
+				g.line("case %d: %s.as.structure->fields[%d] = %s; z_set_field_handled_%d = true; break;", candidate.StructID, object, candidate.Field, value, instruction.ID)
+			}
+			g.line("default: break;")
+			g.indent--
+			g.line("}")
+			g.indent--
+			g.line("}")
+			g.line("if (!z_set_field_handled_%d) z_set_field(%s, %s, %s);", instruction.ID, object, cString(instruction.Name), value)
+		} else {
+			g.line("z_set_field(%s, %s, %s);", argName(instruction.Args, 0), cString(instruction.Name), argName(instruction.Args, 1))
+		}
 	case mir.OpIf:
 		g.line("ZValue %s = z_null();", result)
 		g.line("if (z_truthy(%s)) {", argName(instruction.Args, 0))

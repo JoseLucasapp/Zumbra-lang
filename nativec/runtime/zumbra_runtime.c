@@ -309,18 +309,35 @@ ZValue z_signed(int64_t value, ZKind kind) { ZValue result = z_value(ZV_INT, kin
 ZValue z_float(double value) { ZValue result = z_value(ZV_FLOAT, ZK_FLOAT); result.as.f = value; return result; }
 ZValue z_bool(bool value) { ZValue result = z_value(ZV_BOOL, ZK_BOOL); result.as.b = value; return result; }
 ZValue z_string(const char *value) { ZValue result = z_value(ZV_STRING, ZK_STRING); result.as.s = z_strdup(value); return result; }
+ZValue z_string_static(const char *value) { ZValue result = z_value(ZV_STRING, ZK_STRING); result.as.s = value == NULL ? "" : value; return result; }
 ZValue z_pointer(void *value) { ZValue result = z_value(ZV_POINTER, ZK_POINTER); result.as.p = value; return result; }
 ZValue z_function(int id) { ZValue result = z_value(ZV_FUNCTION, ZK_FUNCTION); result.as.id = id; return result; }
 ZValue z_builtin(const char *name) { ZValue result = z_value(ZV_BUILTIN, ZK_FUNCTION); result.as.s = name; return result; }
 ZValue z_struct_type(int id) { ZValue result = z_value(ZV_STRUCT_TYPE, ZK_STRUCT); result.as.id = id; return result; }
 ZValue z_enum_type(int id) { ZValue result = z_value(ZV_ENUM_TYPE, ZK_ENUM); result.as.id = id; return result; }
 ZValue z_enum(int type_id, int ordinal) { ZValue result = z_value(ZV_ENUM, ZK_ENUM); result.as.id = (type_id << 16) | (ordinal & 0xffff); return result; }
+typedef struct {
+    ZStruct *receiver;
+    int function_id;
+    ZBoundMethod *method;
+} ZBoundMethodCacheEntry;
+
+#define Z_BOUND_METHOD_CACHE_SIZE 1024u
+static ZBoundMethodCacheEntry z_bound_method_cache[Z_BOUND_METHOD_CACHE_SIZE];
+
 ZValue z_bound_method(int function_id, ZStruct *receiver) {
-    ZBoundMethod *method = (ZBoundMethod *)z_alloc(sizeof(ZBoundMethod));
-    method->function_id = function_id;
-    method->receiver = receiver;
+    size_t slot = (size_t)((((uintptr_t)receiver >> 4u) ^ (uintptr_t)(unsigned)function_id * UINT64_C(11400714819323198485)) & (Z_BOUND_METHOD_CACHE_SIZE - 1u));
+    ZBoundMethodCacheEntry *entry = &z_bound_method_cache[slot];
+    if (entry->receiver != receiver || entry->function_id != function_id || entry->method == NULL) {
+        ZBoundMethod *method = (ZBoundMethod *)z_alloc(sizeof(ZBoundMethod));
+        method->function_id = function_id;
+        method->receiver = receiver;
+        entry->receiver = receiver;
+        entry->function_id = function_id;
+        entry->method = method;
+    }
     ZValue result = z_value(ZV_BOUND_METHOD, ZK_FUNCTION);
-    result.as.method = method;
+    result.as.method = entry->method;
     return result;
 }
 
@@ -500,65 +517,124 @@ static ZValue z_concat(ZValue left, ZValue right) {
     return result;
 }
 
-ZValue z_binary(const char *op, ZValue left, ZValue right, ZKind target) {
-    if (strcmp(op, "&&") == 0 || strcmp(op, "and") == 0) return z_bool(z_truthy(left) && z_truthy(right));
-    if (strcmp(op, "||") == 0 || strcmp(op, "or") == 0) return z_bool(z_truthy(left) || z_truthy(right));
-    if (strcmp(op, "==") == 0) return z_bool(z_equal(left, right));
-    if (strcmp(op, "!=") == 0) return z_bool(!z_equal(left, right));
-    if (strcmp(op, "+") == 0 && left.tag == ZV_STRING && right.tag == ZV_STRING) return z_concat(left, right);
+static const char *z_binary_op_name(ZBinaryOp op) {
+    switch (op) {
+    case ZOP_ADD: return "+";
+    case ZOP_SUB: return "-";
+    case ZOP_MUL: return "*";
+    case ZOP_DIV: return "/";
+    case ZOP_MOD: return "%";
+    case ZOP_POW: return "**";
+    case ZOP_LT: return "<";
+    case ZOP_GT: return ">";
+    case ZOP_LE: return "<=";
+    case ZOP_GE: return ">=";
+    case ZOP_EQ: return "==";
+    case ZOP_NE: return "!=";
+    case ZOP_AND: return "and";
+    case ZOP_OR: return "or";
+    case ZOP_BAND: return "band";
+    case ZOP_BOR: return "bor";
+    case ZOP_BXOR: return "bxor";
+    case ZOP_SHL: return "shl";
+    case ZOP_SHR: return "shr";
+    }
+    return "<unknown>";
+}
+
+ZValue z_binary_op(ZBinaryOp op, ZValue left, ZValue right, ZKind target) {
+    if (op == ZOP_AND) return z_bool(z_truthy(left) && z_truthy(right));
+    if (op == ZOP_OR) return z_bool(z_truthy(left) || z_truthy(right));
+    if (op == ZOP_EQ) return z_bool(z_equal(left, right));
+    if (op == ZOP_NE) return z_bool(!z_equal(left, right));
+    if (op == ZOP_ADD && left.tag == ZV_STRING && right.tag == ZV_STRING) return z_concat(left, right);
 
     if (!z_is_numeric(left) || !z_is_numeric(right)) {
-        z_fatal("operator %s requires numeric operands", op);
+        z_fatal("operator %s requires numeric operands", z_binary_op_name(op));
     }
 
-    if (strcmp(op, "<") == 0) return z_bool(z_as_f64(left) < z_as_f64(right));
-    if (strcmp(op, ">") == 0) return z_bool(z_as_f64(left) > z_as_f64(right));
-    if (strcmp(op, "<=") == 0) return z_bool(z_as_f64(left) <= z_as_f64(right));
-    if (strcmp(op, ">=") == 0) return z_bool(z_as_f64(left) >= z_as_f64(right));
+    if (op == ZOP_LT) return z_bool(z_as_f64(left) < z_as_f64(right));
+    if (op == ZOP_GT) return z_bool(z_as_f64(left) > z_as_f64(right));
+    if (op == ZOP_LE) return z_bool(z_as_f64(left) <= z_as_f64(right));
+    if (op == ZOP_GE) return z_bool(z_as_f64(left) >= z_as_f64(right));
 
     if (target == ZK_FLOAT || left.tag == ZV_FLOAT || right.tag == ZV_FLOAT) {
         double a = z_as_f64(left), b = z_as_f64(right);
-        if (strcmp(op, "+") == 0) return z_float(a + b);
-        if (strcmp(op, "-") == 0) return z_float(a - b);
-        if (strcmp(op, "*") == 0) return z_float(a * b);
-        if (strcmp(op, "/") == 0) { if (b == 0.0) z_fatal("division by zero"); return z_float(a / b); }
-        if (strcmp(op, "%") == 0) { if (b == 0.0) z_fatal("division by zero"); return z_float(fmod(a, b)); }
-        if (strcmp(op, "**") == 0) return z_float(pow(a, b));
-        z_fatal("unsupported floating-point operator %s", op);
+        switch (op) {
+        case ZOP_ADD: return z_float(a + b);
+        case ZOP_SUB: return z_float(a - b);
+        case ZOP_MUL: return z_float(a * b);
+        case ZOP_DIV: if (b == 0.0) z_fatal("division by zero"); return z_float(a / b);
+        case ZOP_MOD: if (b == 0.0) z_fatal("division by zero"); return z_float(fmod(a, b));
+        case ZOP_POW: return z_float(pow(a, b));
+        default: z_fatal("unsupported floating-point operator %s", z_binary_op_name(op));
+        }
     }
 
     ZKind numeric_kind = z_kind_fixed(target) ? target : (z_kind_fixed(left.kind) ? left.kind : (z_kind_fixed(right.kind) ? right.kind : ZK_INT));
     uint64_t a = z_as_u64(left), b = z_as_u64(right), raw = 0;
-    if (strcmp(op, "+") == 0) raw = a + b;
-    else if (strcmp(op, "-") == 0) raw = a - b;
-    else if (strcmp(op, "*") == 0) raw = a * b;
-    else if (strcmp(op, "/") == 0) {
+    switch (op) {
+    case ZOP_ADD: raw = a + b; break;
+    case ZOP_SUB: raw = a - b; break;
+    case ZOP_MUL: raw = a * b; break;
+    case ZOP_DIV:
         if (b == 0) z_fatal("division by zero");
         if (z_kind_signed(numeric_kind)) return z_from_raw((uint64_t)(z_as_i64(left) / z_as_i64(right)), numeric_kind);
         raw = a / b;
-    } else if (strcmp(op, "%") == 0) {
+        break;
+    case ZOP_MOD:
         if (b == 0) z_fatal("division by zero");
         if (z_kind_signed(numeric_kind)) return z_from_raw((uint64_t)(z_as_i64(left) % z_as_i64(right)), numeric_kind);
         raw = a % b;
-    } else if (strcmp(op, "band") == 0 || strcmp(op, "&") == 0) raw = a & b;
-    else if (strcmp(op, "bor") == 0 || strcmp(op, "|") == 0) raw = a | b;
-    else if (strcmp(op, "bxor") == 0 || strcmp(op, "^") == 0) raw = a ^ b;
-    else if (strcmp(op, "shl") == 0 || strcmp(op, "<<") == 0) {
+        break;
+    case ZOP_BAND: raw = a & b; break;
+    case ZOP_BOR: raw = a | b; break;
+    case ZOP_BXOR: raw = a ^ b; break;
+    case ZOP_SHL: {
         unsigned bits = z_kind_fixed(numeric_kind) ? z_kind_bits(numeric_kind) : 64;
         if (b >= bits) z_fatal("shift count must be smaller than %u", bits);
         raw = a << b;
-    } else if (strcmp(op, "shr") == 0 || strcmp(op, ">>") == 0) {
+        break;
+    }
+    case ZOP_SHR: {
         unsigned bits = z_kind_fixed(numeric_kind) ? z_kind_bits(numeric_kind) : 64;
         if (b >= bits) z_fatal("shift count must be smaller than %u", bits);
         if (z_kind_signed(numeric_kind)) return z_from_raw((uint64_t)(z_as_i64(left) >> b), numeric_kind);
         raw = a >> b;
-    } else if (strcmp(op, "**") == 0) {
+        break;
+    }
+    case ZOP_POW:
         raw = 1;
         while (b > 0) { if ((b & 1u) != 0) raw *= a; a *= a; b >>= 1u; }
-    } else {
-        z_fatal("unsupported integer operator %s", op);
+        break;
+    default:
+        z_fatal("unsupported integer operator %s", z_binary_op_name(op));
     }
     return z_from_raw(raw, numeric_kind);
+}
+
+ZValue z_binary(const char *op, ZValue left, ZValue right, ZKind target) {
+    if (strcmp(op, "+") == 0) return z_binary_op(ZOP_ADD, left, right, target);
+    if (strcmp(op, "-") == 0) return z_binary_op(ZOP_SUB, left, right, target);
+    if (strcmp(op, "*") == 0) return z_binary_op(ZOP_MUL, left, right, target);
+    if (strcmp(op, "/") == 0) return z_binary_op(ZOP_DIV, left, right, target);
+    if (strcmp(op, "%") == 0) return z_binary_op(ZOP_MOD, left, right, target);
+    if (strcmp(op, "**") == 0) return z_binary_op(ZOP_POW, left, right, target);
+    if (strcmp(op, "<") == 0) return z_binary_op(ZOP_LT, left, right, target);
+    if (strcmp(op, ">") == 0) return z_binary_op(ZOP_GT, left, right, target);
+    if (strcmp(op, "<=") == 0) return z_binary_op(ZOP_LE, left, right, target);
+    if (strcmp(op, ">=") == 0) return z_binary_op(ZOP_GE, left, right, target);
+    if (strcmp(op, "==") == 0) return z_binary_op(ZOP_EQ, left, right, target);
+    if (strcmp(op, "!=") == 0) return z_binary_op(ZOP_NE, left, right, target);
+    if (strcmp(op, "&&") == 0 || strcmp(op, "and") == 0) return z_binary_op(ZOP_AND, left, right, target);
+    if (strcmp(op, "||") == 0 || strcmp(op, "or") == 0) return z_binary_op(ZOP_OR, left, right, target);
+    if (strcmp(op, "band") == 0 || strcmp(op, "&") == 0) return z_binary_op(ZOP_BAND, left, right, target);
+    if (strcmp(op, "bor") == 0 || strcmp(op, "|") == 0) return z_binary_op(ZOP_BOR, left, right, target);
+    if (strcmp(op, "bxor") == 0 || strcmp(op, "^") == 0) return z_binary_op(ZOP_BXOR, left, right, target);
+    if (strcmp(op, "shl") == 0 || strcmp(op, "<<") == 0) return z_binary_op(ZOP_SHL, left, right, target);
+    if (strcmp(op, "shr") == 0 || strcmp(op, ">>") == 0) return z_binary_op(ZOP_SHR, left, right, target);
+    z_fatal("unsupported binary operator %s", op);
+    return z_null();
 }
 
 ZValue z_array_from(const ZValue *items, size_t count) {
@@ -581,17 +657,87 @@ ZValue z_pair(ZValue key, ZValue value) {
     return result;
 }
 
+static uint64_t z_hash_cstr(const char *text) {
+    const unsigned char *cursor = (const unsigned char *)(text == NULL ? "" : text);
+    uint64_t hash = UINT64_C(1469598103934665603);
+    while (*cursor != 0) {
+        hash ^= (uint64_t)*cursor++;
+        hash *= UINT64_C(1099511628211);
+    }
+    return hash;
+}
+
+static size_t z_hash_capacity(size_t minimum) {
+    size_t capacity = 8;
+    while (capacity < minimum) capacity <<= 1u;
+    return capacity;
+}
+
+static void z_dict_rebuild_hash(ZDict *dict, size_t minimum) {
+    if (dict == NULL) return;
+    size_t capacity = z_hash_capacity(minimum > dict->len * 2 ? minimum : dict->len * 2);
+    size_t *slots = (size_t *)z_alloc(sizeof(size_t) * capacity);
+    for (size_t index = 0; index < dict->len; index++) {
+        ZValue key = dict->keys[index];
+        if (key.tag != ZV_STRING) continue;
+        size_t slot = (size_t)z_hash_cstr(key.as.s) & (capacity - 1u);
+        while (slots[slot] != 0) slot = (slot + 1u) & (capacity - 1u);
+        slots[slot] = index + 1u;
+    }
+    dict->hash_cap = capacity;
+    dict->hash_slots = slots;
+}
+
+static size_t z_dict_find_cstr(const ZDict *dict, const char *key) {
+    if (dict == NULL || dict->len == 0) return SIZE_MAX;
+    const char *wanted = key == NULL ? "" : key;
+    if (dict->hash_cap != 0 && dict->hash_slots != NULL) {
+        size_t slot = (size_t)z_hash_cstr(wanted) & (dict->hash_cap - 1u);
+        size_t start = slot;
+        while (dict->hash_slots[slot] != 0) {
+            size_t index = dict->hash_slots[slot] - 1u;
+            ZValue candidate = dict->keys[index];
+            if (candidate.tag == ZV_STRING && strcmp(candidate.as.s, wanted) == 0) return index;
+            slot = (slot + 1u) & (dict->hash_cap - 1u);
+            if (slot == start) break;
+        }
+        return SIZE_MAX;
+    }
+    for (size_t index = 0; index < dict->len; index++) {
+        ZValue candidate = dict->keys[index];
+        if (candidate.tag == ZV_STRING && strcmp(candidate.as.s, wanted) == 0) return index;
+    }
+    return SIZE_MAX;
+}
+
+static void z_dict_prepare_string_insert(ZDict *dict) {
+    if (dict->hash_cap == 0 || dict->hash_slots == NULL || (dict->len + 1u) * 10u >= dict->hash_cap * 7u) {
+        z_dict_rebuild_hash(dict, dict->hash_cap == 0 ? 8u : dict->hash_cap * 2u);
+    }
+}
+
+static void z_dict_hash_insert_index(ZDict *dict, size_t index) {
+    if (dict == NULL || index >= dict->len || dict->keys[index].tag != ZV_STRING) return;
+    z_dict_prepare_string_insert(dict);
+    size_t slot = (size_t)z_hash_cstr(dict->keys[index].as.s) & (dict->hash_cap - 1u);
+    while (dict->hash_slots[slot] != 0) slot = (slot + 1u) & (dict->hash_cap - 1u);
+    dict->hash_slots[slot] = index + 1u;
+}
+
 ZValue z_dict_from(const ZValue *pairs, size_t count) {
     ZDict *dict = (ZDict *)z_alloc(sizeof(ZDict));
     dict->len = count;
     dict->cap = count;
     dict->keys = count == 0 ? NULL : (ZValue *)z_alloc(sizeof(ZValue) * count);
     dict->values = count == 0 ? NULL : (ZValue *)z_alloc(sizeof(ZValue) * count);
+    dict->hash_cap = 0;
+    dict->hash_slots = NULL;
     for (size_t i = 0; i < count; i++) {
         if (pairs[i].tag != ZV_PAIR) z_fatal("dictionary entry is not a key/value pair");
         dict->keys[i] = pairs[i].as.pair->key;
         dict->values[i] = pairs[i].as.pair->value;
     }
+    if (count != 0) z_dict_rebuild_hash(dict, count * 2u);
     ZValue result = z_value(ZV_DICT, ZK_DICT);
     result.as.dict = dict;
     return result;
@@ -628,14 +774,7 @@ static void z_buffer_set(ZBuffer *buffer, size_t index, ZValue value) {
     memcpy(address, &raw, buffer->elem_size);
 }
 
-ZValue z_index(ZValue collection, ZValue index) {
-    if (collection.tag == ZV_DICT) {
-        for (size_t i = 0; i < collection.as.dict->len; i++) {
-            if (z_equal(collection.as.dict->keys[i], index)) return collection.as.dict->values[i];
-        }
-        return z_null();
-    }
-    size_t position = z_index_value(index);
+ZValue z_index_at(ZValue collection, size_t position) {
     if (collection.tag == ZV_ARRAY) {
         if (position >= collection.as.array->len) z_fatal("array index %zu out of range", position);
         return collection.as.array->items[position];
@@ -652,12 +791,79 @@ ZValue z_index(ZValue collection, ZValue index) {
         char text[2] = { collection.as.s[position], '\0' };
         return z_string(text);
     }
-    z_fatal("value is not indexable");
+    z_fatal("value is not indexable by position");
     return z_null();
+}
+
+ZValue z_index_cstr(ZValue collection, const char *key) {
+    if (collection.tag != ZV_DICT) z_fatal("string-key lookup requires a dictionary");
+    size_t index = z_dict_find_cstr(collection.as.dict, key);
+    return index == SIZE_MAX ? z_null() : collection.as.dict->values[index];
+}
+
+ZValue z_index(ZValue collection, ZValue index) {
+    if (collection.tag == ZV_DICT) {
+        if (index.tag == ZV_STRING) return z_index_cstr(collection, index.as.s);
+        for (size_t i = 0; i < collection.as.dict->len; i++) {
+            if (z_equal(collection.as.dict->keys[i], index)) return collection.as.dict->values[i];
+        }
+        return z_null();
+    }
+    return z_index_at(collection, z_index_value(index));
+}
+
+void z_set_index_at(ZValue collection, size_t position, ZValue value) {
+    if (collection.tag == ZV_ARRAY) {
+        if (position >= collection.as.array->len) z_fatal("array index %zu out of range", position);
+        collection.as.array->items[position] = value;
+        return;
+    }
+    if (collection.tag == ZV_BUFFER) {
+        z_buffer_set(collection.as.buffer, position, value);
+        return;
+    }
+#if defined(ZUMBRA_ENABLE_SYSTEMS)
+    bool systems_handled = false;
+    z_systems_pointer_set(collection, position, value, &systems_handled);
+    if (systems_handled) return;
+#endif
+    z_fatal("value does not support positional index assignment");
+}
+
+void z_set_index_cstr(ZValue collection, const char *key, ZValue value) {
+    if (collection.tag != ZV_DICT) z_fatal("string-key assignment requires a dictionary");
+    ZDict *dict = collection.as.dict;
+    const char *wanted = key == NULL ? "" : key;
+    size_t existing = z_dict_find_cstr(dict, wanted);
+    if (existing != SIZE_MAX) {
+        dict->values[existing] = value;
+        return;
+    }
+    if (dict->len == dict->cap) {
+        size_t next_cap = dict->cap == 0 ? 4 : dict->cap * 2;
+        ZValue *next_keys = (ZValue *)z_alloc(sizeof(ZValue) * next_cap);
+        ZValue *next_values = (ZValue *)z_alloc(sizeof(ZValue) * next_cap);
+        if (dict->len != 0) {
+            memcpy(next_keys, dict->keys, sizeof(ZValue) * dict->len);
+            memcpy(next_values, dict->values, sizeof(ZValue) * dict->len);
+        }
+        dict->keys = next_keys;
+        dict->values = next_values;
+        dict->cap = next_cap;
+    }
+    size_t inserted = dict->len;
+    dict->keys[inserted] = z_string_static(wanted);
+    dict->values[inserted] = value;
+    dict->len++;
+    z_dict_hash_insert_index(dict, inserted);
 }
 
 void z_set_index(ZValue collection, ZValue index, ZValue value) {
     if (collection.tag == ZV_DICT) {
+        if (index.tag == ZV_STRING) {
+            z_set_index_cstr(collection, index.as.s, value);
+            return;
+        }
         ZDict *dict = collection.as.dict;
         for (size_t i = 0; i < dict->len; i++) {
             if (z_equal(dict->keys[i], index)) {
@@ -682,22 +888,7 @@ void z_set_index(ZValue collection, ZValue index, ZValue value) {
         dict->len++;
         return;
     }
-    size_t position = z_index_value(index);
-    if (collection.tag == ZV_ARRAY) {
-        if (position >= collection.as.array->len) z_fatal("array index %zu out of range", position);
-        collection.as.array->items[position] = value;
-        return;
-    }
-    if (collection.tag == ZV_BUFFER) {
-        z_buffer_set(collection.as.buffer, position, value);
-        return;
-    }
-#if defined(ZUMBRA_ENABLE_SYSTEMS)
-    bool systems_handled = false;
-    z_systems_pointer_set(collection, position, value, &systems_handled);
-    if (systems_handled) return;
-#endif
-    z_fatal("value does not support index assignment");
+    z_set_index_at(collection, z_index_value(index), value);
 }
 
 ZValue z_slice(ZValue collection, size_t start, size_t end) {
@@ -755,7 +946,53 @@ size_t z_size_of(ZValue value) {
     }
 }
 
+ZValue z_get_struct_field_at(ZValue object, size_t field) {
+    if (object.tag != ZV_STRUCT) z_fatal("direct field access requires a struct instance");
+    if (field >= object.as.structure->field_count) z_fatal("struct field index %zu out of range", field);
+    return object.as.structure->fields[field];
+}
+
+void z_set_struct_field_at(ZValue object, size_t field, ZValue value) {
+    if (object.tag != ZV_STRUCT) z_fatal("direct field assignment requires a struct instance");
+    if (field >= object.as.structure->field_count) z_fatal("struct field index %zu out of range", field);
+    object.as.structure->fields[field] = value;
+}
+
+typedef struct {
+    int type_key;
+    const char *name;
+    int field;
+    int method;
+} ZStructMemberCache;
+
+#define Z_STRUCT_MEMBER_CACHE_SIZE 512u
+static ZStructMemberCache z_struct_member_cache[Z_STRUCT_MEMBER_CACHE_SIZE];
+
+static ZStructMemberCache *z_struct_member_cache_entry(int type_id, const char *name) {
+    uintptr_t pointer = (uintptr_t)name;
+    size_t slot = (size_t)(((pointer >> 3u) ^ (uintptr_t)(unsigned)type_id * UINT64_C(11400714819323198485)) & (Z_STRUCT_MEMBER_CACHE_SIZE - 1u));
+    ZStructMemberCache *entry = &z_struct_member_cache[slot];
+    int key = type_id + 1;
+    if (entry->type_key == key && entry->name == name) return entry;
+    entry->type_key = key;
+    entry->name = name;
+    entry->field = z_struct_field_index(type_id, name);
+    entry->method = entry->field >= 0 ? -1 : z_struct_method_id(type_id, name);
+    return entry;
+}
+
 ZValue z_get_field(ZValue object, const char *name) {
+    if (object.tag == ZV_STRUCT) {
+        ZStructMemberCache *entry = z_struct_member_cache_entry(object.as.structure->type_id, name);
+        if (entry->field >= 0) return object.as.structure->fields[entry->field];
+        if (entry->method >= 0) return z_bound_method(entry->method, object.as.structure);
+        z_fatal("%s has no field or method named %s", z_struct_type_name(object.as.structure->type_id), name);
+    }
+    if (object.tag == ZV_ENUM_TYPE) {
+        int ordinal = z_enum_member_ordinal(object.as.id, name);
+        if (ordinal < 0) z_fatal("%s has no member named %s", z_enum_type_name(object.as.id), name);
+        return z_enum(object.as.id, ordinal);
+    }
 #if defined(ZUMBRA_ENABLE_UI)
     bool ui_handled = false;
     ZValue ui_value = z_ui_get_field(object, name, &ui_handled);
@@ -781,27 +1018,15 @@ ZValue z_get_field(ZValue object, const char *name) {
     ZValue http_value = z_http_get_field(object, name, &http_handled);
     if (http_handled) return http_value;
 #endif
-    if (object.tag == ZV_STRUCT) {
-        int field = z_struct_field_index(object.as.structure->type_id, name);
-        if (field >= 0) return object.as.structure->fields[field];
-        int method = z_struct_method_id(object.as.structure->type_id, name);
-        if (method >= 0) return z_bound_method(method, object.as.structure);
-        z_fatal("%s has no field or method named %s", z_struct_type_name(object.as.structure->type_id), name);
-    }
-    if (object.tag == ZV_ENUM_TYPE) {
-        int ordinal = z_enum_member_ordinal(object.as.id, name);
-        if (ordinal < 0) z_fatal("%s has no member named %s", z_enum_type_name(object.as.id), name);
-        return z_enum(object.as.id, ordinal);
-    }
     z_fatal("field access requires a struct or enum type");
     return z_null();
 }
 
 void z_set_field(ZValue object, const char *name, ZValue value) {
     if (object.tag != ZV_STRUCT) z_fatal("field assignment requires a struct instance");
-    int field = z_struct_field_index(object.as.structure->type_id, name);
-    if (field < 0) z_fatal("%s has no field named %s", z_struct_type_name(object.as.structure->type_id), name);
-    object.as.structure->fields[field] = value;
+    ZStructMemberCache *entry = z_struct_member_cache_entry(object.as.structure->type_id, name);
+    if (entry->field < 0) z_fatal("%s has no field named %s", z_struct_type_name(object.as.structure->type_id), name);
+    object.as.structure->fields[entry->field] = value;
 }
 
 
@@ -852,12 +1077,13 @@ static ZValue z_call_sync(ZValue callable, const ZValue *args, size_t argc) {
     if (callable.tag == ZV_BUILTIN) return z_call_builtin(callable.as.s, args, argc);
     if (callable.tag == ZV_STRUCT_TYPE) return z_construct_struct(callable.as.id, args, argc);
     if (callable.tag == ZV_BOUND_METHOD) {
-        ZValue *full = (ZValue *)z_alloc(sizeof(ZValue) * (argc + 1));
+        ZValue stack_values[16];
+        ZValue *full = argc + 1u <= 16u ? stack_values : (ZValue *)z_alloc(sizeof(ZValue) * (argc + 1u));
         ZValue receiver = z_value(ZV_STRUCT, ZK_STRUCT);
         receiver.as.structure = callable.as.method->receiver;
         full[0] = receiver;
         if (argc != 0) memcpy(full + 1, args, sizeof(ZValue) * argc);
-        return z_dispatch_function(callable.as.method->function_id, full, argc + 1);
+        return z_dispatch_function(callable.as.method->function_id, full, argc + 1u);
     }
     z_fatal("value is not callable");
     return z_null();
@@ -1022,12 +1248,13 @@ ZValue z_call(ZValue callable, const ZValue *args, size_t argc) {
     if (callable.tag == ZV_STRUCT_TYPE) return z_construct_struct(callable.as.id, args, argc);
     if (callable.tag == ZV_BOUND_METHOD) {
         if (z_function_is_async(callable.as.method->function_id)) return z_spawn(callable, args, argc);
-        ZValue *full = (ZValue *)z_alloc(sizeof(ZValue) * (argc + 1));
+        ZValue stack_values[16];
+        ZValue *full = argc + 1u <= 16u ? stack_values : (ZValue *)z_alloc(sizeof(ZValue) * (argc + 1u));
         ZValue receiver = z_value(ZV_STRUCT, ZK_STRUCT);
         receiver.as.structure = callable.as.method->receiver;
         full[0] = receiver;
         if (argc != 0) memcpy(full + 1, args, sizeof(ZValue) * argc);
-        return z_dispatch_function(callable.as.method->function_id, full, argc + 1);
+        return z_dispatch_function(callable.as.method->function_id, full, argc + 1u);
     }
     z_fatal("value is not callable");
     return z_null();

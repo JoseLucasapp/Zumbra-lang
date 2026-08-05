@@ -148,6 +148,29 @@ typedef enum {
     ZV_UI_METHOD
 } ZTag;
 
+
+typedef enum {
+    ZOP_ADD = 0,
+    ZOP_SUB,
+    ZOP_MUL,
+    ZOP_DIV,
+    ZOP_MOD,
+    ZOP_POW,
+    ZOP_LT,
+    ZOP_GT,
+    ZOP_LE,
+    ZOP_GE,
+    ZOP_EQ,
+    ZOP_NE,
+    ZOP_AND,
+    ZOP_OR,
+    ZOP_BAND,
+    ZOP_BOR,
+    ZOP_BXOR,
+    ZOP_SHL,
+    ZOP_SHR
+} ZBinaryOp;
+
 typedef struct ZValue ZValue;
 typedef struct ZArray ZArray;
 typedef struct ZDict ZDict;
@@ -187,6 +210,8 @@ struct ZDict {
     size_t cap;
     ZValue *keys;
     ZValue *values;
+    size_t hash_cap;
+    size_t *hash_slots;
 };
 
 struct ZPair {
@@ -227,6 +252,7 @@ ZValue z_signed(int64_t value, ZKind kind);
 ZValue z_float(double value);
 ZValue z_bool(bool value);
 ZValue z_string(const char *value);
+ZValue z_string_static(const char *value);
 ZValue z_pointer(void *value);
 ZValue z_function(int id);
 ZValue z_builtin(const char *name);
@@ -238,6 +264,7 @@ ZValue z_bound_method(int function_id, ZStruct *receiver);
 bool z_truthy(ZValue value);
 bool z_equal(ZValue left, ZValue right);
 ZValue z_unary(const char *op, ZValue value, ZKind target);
+ZValue z_binary_op(ZBinaryOp op, ZValue left, ZValue right, ZKind target);
 ZValue z_binary(const char *op, ZValue left, ZValue right, ZKind target);
 ZValue z_convert(ZValue value, ZKind target);
 int64_t z_as_i64(ZValue value);
@@ -251,13 +278,19 @@ ZValue z_array_from(const ZValue *items, size_t count);
 ZValue z_pair(ZValue key, ZValue value);
 ZValue z_dict_from(const ZValue *pairs, size_t count);
 ZValue z_index(ZValue collection, ZValue index);
+ZValue z_index_at(ZValue collection, size_t position);
+ZValue z_index_cstr(ZValue collection, const char *key);
 void z_set_index(ZValue collection, ZValue index, ZValue value);
+void z_set_index_at(ZValue collection, size_t position, ZValue value);
+void z_set_index_cstr(ZValue collection, const char *key, ZValue value);
 ZValue z_slice(ZValue collection, size_t start, size_t end);
 void z_fill(ZValue collection, ZValue value);
 size_t z_size_of(ZValue value);
 
 ZValue z_get_field(ZValue object, const char *name);
+ZValue z_get_struct_field_at(ZValue object, size_t field);
 void z_set_field(ZValue object, const char *name, ZValue value);
+void z_set_struct_field_at(ZValue object, size_t field, ZValue value);
 
 ZValue z_call(ZValue callable, const ZValue *args, size_t argc);
 ZValue z_spawn(ZValue callable, const ZValue *args, size_t argc);

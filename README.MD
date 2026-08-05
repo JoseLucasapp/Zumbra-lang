@@ -1,3 +1,7 @@
+## Native method hot-loop performance
+
+Zumbra 0.14.3 includes a local native-backend patch for synchronous struct method calls used as immediate call targets. This avoids materializing bound method values inside tight native loops while preserving async method semantics through the normal `z_call` path. See `docs/releases/0.14.3-native-method-hotloop-performance.md`.
+
 
 <p align="center">
 <img src="./assets/zumbra.png" width="100%"/>
@@ -21,7 +25,7 @@ Designed for clarity, simplicity, and extensibility, Zumbra is the perfect playg
 
 The rebuild now follows a clear direction: systems, emulation, and game development without abandoning Zumbra's simplicity. See the Portuguese design and feature documentation in [`docs/pt-BR/`](./docs/pt-BR/).
 
-**Zumbra 0.14.3** adds official real-time desktop/media APIs for RGBA framebuffer presentation, PCM audio queues, keyboard/gamepad state, VSync, process arguments and Unix timestamps. Game and emulator projects no longer need project-local C bridges or `extern "C"` declarations. See [`docs/releases/0.14.3.md`](./docs/releases/0.14.3.md).
+**Zumbra 0.14.3** adds official real-time desktop/media APIs for RGBA framebuffer presentation, PCM audio queues, keyboard/gamepad state, VSync, process arguments and Unix timestamps. Game and emulator projects no longer need project-local C bridges or `extern "C"` declarations. See [`docs/releases/0.14.3.md; docs/releases/0.14.3-native-hotloop-performance.md`](./docs/releases/0.14.3.md).
 
 **Zumbra 0.14.2** adds native C11 support for the `panic` builtin. Native programs can now keep defensive validation and assertion helpers without being rejected by `nativec`; a triggered panic writes a diagnostic to `stderr` and exits with a non-zero status. This patch closes the native-build blocker found by the Z19 NES/Famicom foundation. See [`docs/releases/0.14.2.md`](./docs/releases/0.14.2.md).
 
