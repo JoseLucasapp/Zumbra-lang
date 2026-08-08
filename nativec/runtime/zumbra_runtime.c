@@ -61,11 +61,18 @@
 
 typedef struct ZAllocation {
     void *pointer;
+    size_t size;
+    uint64_t id;
     struct ZAllocation *next;
 } ZAllocation;
 
 static ZAllocation *z_allocations = NULL;
 static pthread_mutex_t z_allocation_mutex = PTHREAD_MUTEX_INITIALIZER;
+static uint64_t z_next_allocation_id = 0;
+static uint64_t z_total_allocations = 0;
+static uint64_t z_total_frees = 0;
+static size_t z_active_allocation_bytes = 0;
+static size_t z_peak_allocation_bytes = 0;
 static pthread_mutex_t z_task_count_mutex = PTHREAD_MUTEX_INITIALIZER;
 static pthread_cond_t z_task_count_condition = PTHREAD_COND_INITIALIZER;
 static size_t z_active_tasks = 0;
@@ -187,6 +194,11 @@ static ZValue z_http_call_native_method(ZValue callable, const ZValue *args, siz
 
 void z_runtime_init(void) {
     z_allocations = NULL;
+    z_next_allocation_id = 0;
+    z_total_allocations = 0;
+    z_total_frees = 0;
+    z_active_allocation_bytes = 0;
+    z_peak_allocation_bytes = 0;
     z_active_tasks = 0;
 #if defined(ZUMBRA_ENABLE_SYSTEMS)
     z_systems_runtime_init();
@@ -237,6 +249,12 @@ void z_runtime_shutdown(void) {
     ZAllocation *current = z_allocations;
     while (current != NULL) {
         ZAllocation *next = current->next;
+        if (z_active_allocation_bytes >= current->size) {
+            z_active_allocation_bytes -= current->size;
+        } else {
+            z_active_allocation_bytes = 0;
+        }
+        z_total_frees++;
         free(current->pointer);
         free(current);
         current = next;
@@ -277,9 +295,16 @@ void *z_alloc(size_t size) {
         z_fatal("out of memory tracking allocation");
     }
     entry->pointer = pointer;
+    entry->size = size;
     pthread_mutex_lock(&z_allocation_mutex);
+    entry->id = ++z_next_allocation_id;
     entry->next = z_allocations;
     z_allocations = entry;
+    z_total_allocations++;
+    z_active_allocation_bytes += size;
+    if (z_active_allocation_bytes > z_peak_allocation_bytes) {
+        z_peak_allocation_bytes = z_active_allocation_bytes;
+    }
     pthread_mutex_unlock(&z_allocation_mutex);
     return pointer;
 }
@@ -340,6 +365,69 @@ ZValue z_bound_method(int function_id, ZStruct *receiver) {
     result.as.method = entry->method;
     return result;
 }
+
+uint64_t z_runtime_memory_mark(void) {
+    pthread_mutex_lock(&z_allocation_mutex);
+    uint64_t mark = z_allocations == NULL ? 0u : z_allocations->id;
+    pthread_mutex_unlock(&z_allocation_mutex);
+    return mark;
+}
+
+size_t z_runtime_memory_reset(uint64_t mark) {
+    size_t released = 0;
+    pthread_mutex_lock(&z_allocation_mutex);
+    if (mark != 0u) {
+        bool found = false;
+        for (ZAllocation *entry = z_allocations; entry != NULL; entry = entry->next) {
+            if (entry->id == mark) { found = true; break; }
+        }
+        if (!found) {
+            pthread_mutex_unlock(&z_allocation_mutex);
+            z_fatal("invalid runtime memory mark");
+        }
+    }
+    while (z_allocations != NULL && z_allocations->id != mark) {
+        ZAllocation *entry = z_allocations;
+        z_allocations = entry->next;
+        released += entry->size;
+        if (z_active_allocation_bytes >= entry->size) {
+            z_active_allocation_bytes -= entry->size;
+        } else {
+            z_active_allocation_bytes = 0;
+        }
+        z_total_frees++;
+        free(entry->pointer);
+        free(entry);
+    }
+    pthread_mutex_unlock(&z_allocation_mutex);
+    memset(z_bound_method_cache, 0, sizeof(z_bound_method_cache));
+    return released;
+}
+
+void z_runtime_memory_reset_peak(void) {
+    pthread_mutex_lock(&z_allocation_mutex);
+    z_peak_allocation_bytes = z_active_allocation_bytes;
+    pthread_mutex_unlock(&z_allocation_mutex);
+}
+
+ZValue z_runtime_memory_stats(void) {
+    pthread_mutex_lock(&z_allocation_mutex);
+    uint64_t allocations = z_total_allocations;
+    uint64_t frees = z_total_frees;
+    size_t active_bytes = z_active_allocation_bytes;
+    size_t peak_bytes = z_peak_allocation_bytes;
+    size_t active_blocks = 0;
+    for (ZAllocation *entry = z_allocations; entry != NULL; entry = entry->next) active_blocks++;
+    pthread_mutex_unlock(&z_allocation_mutex);
+    ZValue pairs[5];
+    pairs[0] = z_pair(z_string_static("allocations"), z_uint(allocations, ZK_U64));
+    pairs[1] = z_pair(z_string_static("frees"), z_uint(frees, ZK_U64));
+    pairs[2] = z_pair(z_string_static("activeBlocks"), z_uint((uint64_t)active_blocks, ZK_U64));
+    pairs[3] = z_pair(z_string_static("activeBytes"), z_uint((uint64_t)active_bytes, ZK_U64));
+    pairs[4] = z_pair(z_string_static("peakBytes"), z_uint((uint64_t)peak_bytes, ZK_U64));
+    return z_dict_from(pairs, 5);
+}
+
 
 static bool z_is_numeric(ZValue value) {
     return value.tag == ZV_INT || value.tag == ZV_UINT || value.tag == ZV_FLOAT || value.tag == ZV_BOOL;
@@ -2294,6 +2382,10 @@ ZValue z_call_builtin(const char *name, const ZValue *args, size_t argc) {
     if(strcmp(name,"atomicSwap")==0){z_expect_args(name,argc,2);if(args[0].tag!=ZV_ATOMIC_INT)z_fatal("atomicSwap expects AtomicInt");return z_int(atomic_exchange((_Atomic int64_t*)args[0].as.p,z_as_i64(args[1])));}
     if(strcmp(name,"atomicCompareSwap")==0){z_expect_args(name,argc,3);if(args[0].tag!=ZV_ATOMIC_INT)z_fatal("atomicCompareSwap expects AtomicInt");int64_t expected=z_as_i64(args[1]);return z_bool(atomic_compare_exchange_strong((_Atomic int64_t*)args[0].as.p,&expected,z_as_i64(args[2])));}
     if (strcmp(name,"panic")==0){z_expect_args(name,argc,1);z_panic_value(args[0]);}
+    if (strcmp(name,"runtimeMemoryMark")==0){z_expect_args(name,argc,0);return z_uint(z_runtime_memory_mark(), ZK_U64);}
+    if (strcmp(name,"runtimeMemoryReset")==0){z_expect_args(name,argc,1);z_runtime_memory_reset(z_as_u64(args[0]));return z_null();}
+    if (strcmp(name,"runtimeMemoryResetPeak")==0){z_expect_args(name,argc,0);z_runtime_memory_reset_peak();return z_bool(true);}
+    if (strcmp(name,"runtimeMemoryStats")==0){z_expect_args(name,argc,0);return z_runtime_memory_stats();}
     if (strcmp(name,"show")==0){z_expect_args(name,argc,1);z_show(args[0]);return z_null();}
     if (strcmp(name,"toString")==0){z_expect_args(name,argc,1);return z_to_string_value(args[0]);}
     if (strcmp(name,"sizeOf")==0){z_expect_args(name,argc,1);return z_int((int64_t)z_size_of(args[0]));}

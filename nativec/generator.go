@@ -56,6 +56,7 @@ var supportedBuiltins = map[string]bool{
 	"sizeOfType": true, "alignOfType": true, "byteSizeOf": true, "nativeStructLayout": true,
 	"arenaCreate": true, "arenaAlloc": true, "arenaReset": true, "arenaFree": true, "arenaStats": true,
 	"memoryStats": true, "memoryLeaks": true, "memoryValidate": true, "memoryResetStats": true,
+	"runtimeMemoryMark": true, "runtimeMemoryReset": true, "runtimeMemoryResetPeak": true, "runtimeMemoryStats": true,
 	"mmapOpen": true, "mmapPointer": true, "mmapFlush": true, "mmapClose": true, "mmapSize": true,
 	"sharedMemoryOpen": true, "sharedMemoryPointer": true, "sharedMemoryClose": true, "sharedMemoryUnlink": true,
 	"volatileRead": true, "volatileWrite": true, "memoryFence": true,
@@ -1899,7 +1900,7 @@ func constExpression(instruction *mir.Instruction) string {
 	}
 	switch kind {
 	case types.String:
-		return "z_string(" + cString(instruction.Literal) + ")"
+		return "z_string_static(" + cString(instruction.Literal) + ")"
 	case types.Bool:
 		return "z_bool(" + instruction.Literal + ")"
 	case types.Float:
@@ -2084,6 +2085,7 @@ var systemsBuiltins = map[string]bool{
 	"sizeOfType": true, "alignOfType": true, "byteSizeOf": true, "nativeStructLayout": true,
 	"arenaCreate": true, "arenaAlloc": true, "arenaReset": true, "arenaFree": true, "arenaStats": true,
 	"memoryStats": true, "memoryLeaks": true, "memoryValidate": true, "memoryResetStats": true,
+	"runtimeMemoryMark": true, "runtimeMemoryReset": true, "runtimeMemoryResetPeak": true, "runtimeMemoryStats": true,
 	"mmapOpen": true, "mmapPointer": true, "mmapFlush": true, "mmapClose": true, "mmapSize": true,
 	"sharedMemoryOpen": true, "sharedMemoryPointer": true, "sharedMemoryClose": true, "sharedMemoryUnlink": true,
 	"volatileRead": true, "volatileWrite": true, "memoryFence": true,

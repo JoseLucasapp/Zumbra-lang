@@ -120,12 +120,16 @@ func builtinType(name string) (*Type, bool) {
 		return FuncOf([]*Type{Simple(MemoryArena)}, Simple(Bool)), true
 	case "arenaStats":
 		return FuncOf([]*Type{Simple(MemoryArena)}, DictOf(Simple(String), Simple(Unknown))), true
-	case "memoryStats", "memoryValidate":
+	case "memoryStats", "memoryValidate", "runtimeMemoryStats":
 		return FuncOf(nil, DictOf(Simple(String), Simple(Unknown))), true
 	case "memoryLeaks":
 		return FuncOf(nil, ArrayOf(DictOf(Simple(String), Simple(Unknown)))), true
-	case "memoryResetStats":
+	case "memoryResetStats", "runtimeMemoryResetPeak":
 		return FuncOf(nil, Simple(Bool)), true
+	case "runtimeMemoryMark":
+		return FuncOf(nil, Simple(U64)), true
+	case "runtimeMemoryReset":
+		return FuncOf([]*Type{Simple(U64)}, Simple(Null)), true
 	case "mmapOpen":
 		return FuncOf([]*Type{Simple(String), Simple(String), Simple(Int)}, Simple(MappedMemory)), true
 	case "mmapPointer":

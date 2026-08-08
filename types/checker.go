@@ -517,7 +517,20 @@ func (c *Checker) checkStatement(stmt ast.Statement) {
 
 	case *ast.ExpressionStatement:
 		if s.Expression != nil {
-			c.inferExpression(s.Expression)
+			switch s.Expression.(type) {
+			case *ast.IfExpression, *ast.MatchExpression:
+				// When if/match is used as a statement, its branch values must not
+				// participate in return-value unification. Otherwise ordinary
+				// control-flow like `if (condition) { tick(); }` can fail with
+				// misleading errors such as `u64 and null` simply because one
+				// branch ends with a value-producing call and the other branch is
+				// absent. Final expression inference is still handled by
+				// inferBlockReturnType, so expression-valued functions keep their
+				// existing type checks.
+				c.checkStatementWithoutReturnUnification(stmt)
+			default:
+				c.inferExpression(s.Expression)
+			}
 		}
 
 	case *ast.ReturnStatement:

@@ -10,6 +10,7 @@ func init() {
 		"sizeOfType", "alignOfType", "byteSizeOf", "nativeStructLayout",
 		"arenaCreate", "arenaAlloc", "arenaReset", "arenaFree", "arenaStats",
 		"memoryStats", "memoryLeaks", "memoryValidate", "memoryResetStats",
+		"runtimeMemoryMark", "runtimeMemoryReset", "runtimeMemoryResetPeak", "runtimeMemoryStats",
 		"mmapOpen", "mmapPointer", "mmapFlush", "mmapClose", "mmapSize",
 		"sharedMemoryOpen", "sharedMemoryPointer", "sharedMemoryClose", "sharedMemoryUnlink",
 		"volatileRead", "volatileWrite", "memoryFence",

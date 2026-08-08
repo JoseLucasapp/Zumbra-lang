@@ -261,7 +261,23 @@ func Build(module *mir.Module, options BuildOptions) (*BuildResult, []Diagnostic
 		}
 	}
 	if options.Release {
-		args = append(args, "-O3", "-DNDEBUG")
+		args = append(args, "-O3", "-DNDEBUG", "-fomit-frame-pointer", "-fno-math-errno")
+		if targetOS == "linux" || targetOS == "macos" {
+			args = append(args, "-fno-semantic-interposition")
+		}
+		if tune := strings.ToLower(strings.TrimSpace(os.Getenv("ZUMBRA_NATIVE_TUNE"))); tune == "native" {
+			args = append(args, "-march=native")
+		}
+		switch strings.ToLower(strings.TrimSpace(os.Getenv("ZUMBRA_NATIVE_LTO"))) {
+		case "1", "true", "yes", "full":
+			args = append(args, "-flto")
+		case "thin":
+			if strings.Contains(filepath.Base(compiler), "clang") {
+				args = append(args, "-flto=thin")
+			} else {
+				args = append(args, "-flto")
+			}
+		}
 	} else {
 		args = append(args, "-O0", "-g3")
 	}

@@ -215,6 +215,20 @@ func TestIfConditionMustBeBool(t *testing.T) {
 	}
 }
 
+
+func TestIfStatementValueBranchDoesNotInferReturn(t *testing.T) {
+	errs := checkInput(t, `
+		var f << fct(a) {
+			if (a) { runtimeMemoryMark(); }
+			return true;
+		};
+		var x << f(true);
+	`)
+	if len(errs) != 0 {
+		t.Fatalf("expected 0 errors, got %d: %v", len(errs), errs)
+	}
+}
+
 func TestWhileConditionMustBeBool(t *testing.T) {
 	errs := checkInput(t, `
 		while (123) { show("y"); }
