@@ -257,9 +257,9 @@ render([{"id": 7, "name": "Final Fantasy IX"}]);
 	}
 	program := string(sources.Program)
 	for _, expected := range []string{
-		`z_string("game-row-")`,
-		`z_string("id")`,
-		`z_string("name")`,
+		`z_string_static("game-row-")`,
+		`z_string_static("id")`,
+		`z_string_static("name")`,
 	} {
 		if !strings.Contains(program, expected) {
 			t.Fatalf("generated C does not preserve %q:\n%s", expected, program)
