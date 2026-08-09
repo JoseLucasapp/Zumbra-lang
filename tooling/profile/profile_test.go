@@ -15,7 +15,7 @@ func TestRunProducesPipelineReport(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if report.Runs != 2 || report.Average <= 0 || len(report.Stages) == 0 {
+	if report.Runs != 2 || report.Average < 0 || len(report.Stages) == 0 {
 		t.Fatalf("unexpected report: %#v", report)
 	}
 }

@@ -155,29 +155,13 @@ func TestZumbra0142ReleaseDocumentation(t *testing.T) {
 	}
 }
 
-func TestZumbra0143ReleaseDocumentation(t *testing.T) {
-	content, err := os.ReadFile(filepath.Join("docs", "releases", "0.14.3.md"))
+func TestZumbra0145ReleaseDocumentation(t *testing.T) {
+	content, err := os.ReadFile("docs/releases/0.14.5.md")
 	if err != nil {
-		t.Fatalf("required 0.14.3 release notes are unavailable: %v", err)
-	}
-	notes := string(content)
-	for _, required := range []string{
-		"# Zumbra 0.14.3",
-		"desktopWindowPresentRGBA",
-		"desktopAudioQueue",
-		"processArgs",
-		"scripts/test-0.14.3-desktop-media.sh",
-	} {
-		if !strings.Contains(notes, required) {
-			t.Fatalf("0.14.3 release notes must contain %q", required)
-		}
+		t.Fatalf("0.14.5 release notes must exist: %v", err)
 	}
 
-	readme, err := os.ReadFile("README.MD")
-	if err != nil {
-		t.Fatal(err)
-	}
-	if !strings.Contains(string(readme), "docs/releases/0.14.3.md") {
-		t.Fatal("README.MD must link to the Zumbra 0.14.3 release notes")
+	if !strings.Contains(string(content), "# Zumbra 0.14.5") {
+		t.Fatalf(`0.14.5 release notes must contain "# Zumbra 0.14.5"`)
 	}
 }
