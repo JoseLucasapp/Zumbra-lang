@@ -2,7 +2,7 @@ package token
 
 import "fmt"
 
-//Position is the location of a code point in the source
+// Position is the location of a code point in the source
 type Position struct {
 	Filename string
 	Offset   int //offset relative to entire file
@@ -14,7 +14,7 @@ func (p Position) IsValid() bool {
 	return p.Line > 0
 }
 
-//Stringer method for Position
+// Stringer method for Position
 func (p Position) String() string {
 	var msg string
 	if p.Filename == "" {
@@ -26,7 +26,7 @@ func (p Position) String() string {
 	return msg
 }
 
-//We could not use `Line()` as function name, because `Line` is the struct's field
+// We could not use `Line()` as function name, because `Line` is the struct's field
 func (p Position) Sline() string { //String line
 	var msg string
 	if p.Filename == "" {

@@ -215,7 +215,6 @@ func TestIfConditionMustBeBool(t *testing.T) {
 	}
 }
 
-
 func TestIfStatementValueBranchDoesNotInferReturn(t *testing.T) {
 	errs := checkInput(t, `
 		var f << fct(a) {

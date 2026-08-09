@@ -13,8 +13,8 @@ import (
 )
 
 func TestZ18VersionAndIntegratedTooling(t *testing.T) {
-	if version != "0.14.3" {
-		t.Fatalf("current Z18 patch line must expose version 0.14.3, got %s", version)
+	if version != "0.14.5" {
+		t.Fatalf("current release line must expose version 0.14.5, got %s", version)
 	}
 	source := "/// Main entry.\npub fct main(){show(1);}\nmain();"
 	formatted, err := formatter.Format("main.zum", source, formatter.Options{})
